@@ -1,0 +1,18 @@
+# 后端
+server/modernchat
+server/*.exe
+server/.env
+
+# 前端
+node_modules/
+web/dist/
+web/.env.local
+
+# 编辑器/系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
