@@ -159,7 +159,7 @@ export interface PanelDesc {
 
 // ===== 插件 SDK 运行时（沙箱内可用的 api 对象，桥接层注入） =====
 
-export interface PluginBridgeMessage =
+export type PluginBridgeMessage =
   | { __mc: 'call'; callId: number; api: string; args: unknown[] }
   | { __mc: 'event'; event: string; payload: unknown }
   | { __mc: 'result'; callId: number; ok: boolean; data?: unknown; error?: string }

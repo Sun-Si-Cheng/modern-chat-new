@@ -62,9 +62,9 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   async function loadMore(convId: number) {
     const list = messagesByConv[convId]
-    if (!list || !hasMoreByConv[convId] || list.length === 0) return
+    if (!list || list.length === 0 || !hasMoreByConv[convId]) return
     const oldest = list[0]
-    if (oldest.id <= 0) return
+    if (!oldest || oldest.id <= 0) return
     loadingMessages.value = true
     try {
       const page = await convApi.messages(convId, oldest.id)
