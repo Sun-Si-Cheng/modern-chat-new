@@ -64,6 +64,20 @@ func validateNickname(s string) string {
 }
 
 // validateEmail 可空；非空需合法。
+// maxAvatarLen 头像 data URL 字符上限（约 256KB 二进制）。
+const maxAvatarLen = 512 * 1024
+
+var avatarDataURLRe = regexp.MustCompile(`^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$`)
+
+// validAvatarDataURL 校验头像：仅允许 png/jpeg/webp 的 base64 data URL，且不超长。
+// 头像由前端压缩到 256×256 后提交，服务端不再做图像处理。
+func validAvatarDataURL(s string) bool {
+	if len(s) > maxAvatarLen {
+		return false
+	}
+	return avatarDataURLRe.MatchString(s)
+}
+
 func validateEmail(s string) string {
 	if s == "" {
 		return ""

@@ -17,6 +17,7 @@ import {
 
 
 import AvatarBadge from './AvatarBadge.vue'
+import ProfileCard from './ProfileCard.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -37,7 +38,25 @@ const tab = ref<'chats' | 'contacts'>('chats')
 // ===== 新建菜单（头像行右侧的 + 按钮） =====
 
 const moreVisible = ref(false)
+const profileVisible = ref(false)
 const searchRef = ref<{ focus: () => void } | null>(null)
+
+/** 退出登录：先关资料卡，再走二次确认 */
+function confirmLogout() {
+  profileVisible.value = false
+  const dialog = DialogPlugin.confirm({
+    header: t('chat.logoutTitle'),
+    body: t('chat.logoutBody'),
+    onConfirm: () => {
+      auth.logout()
+      ws.disconnect()
+      convStore.reset()
+      friendsStore.reset()
+      void router.push('/login')
+      dialog.destroy()
+    },
+  })
+}
 
 function menuNewGroup() {
   moreVisible.value = false
@@ -188,9 +207,13 @@ function convName(c: Conversation): string {
   return c.type === 1 ? (c.peer?.nickname ?? '') : (c.name ?? '')
 }
 
-function convAvatar(c: Conversation): { name: string; color: string } {
+function convAvatar(c: Conversation): { name: string; color: string; avatar?: string } {
   return c.type === 1
-    ? { name: c.peer?.nickname ?? '?', color: c.peer?.avatarColor ?? '#0052d9' }
+    ? {
+        name: c.peer?.nickname ?? '?',
+        color: c.peer?.avatarColor ?? '#0052d9',
+        avatar: c.peer?.avatar,
+      }
     : { name: c.name ?? '#', color: '#2ba471' }
 }
 
@@ -217,19 +240,27 @@ const sortedConvs = computed(() =>
     <!-- 顶部：产品名 + 当前用户 -->
     <header class="mc-sidebar__me">
       <div class="mc-sidebar__userrow">
-        <button class="mc-sidebar__profile" :aria-label="t('settings.account')" @click="router.push('/settings')">
-          <AvatarBadge
-            :name="auth.user?.nickname ?? '?'"
-            :color="auth.user?.avatarColor ?? '#0052d9'"
-            :online="ws.connected"
-          />
-          <div class="mc-sidebar__me-info">
-            <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
-            <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-              {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
+        <!-- 点击头像行弹出个人资料卡（含更换头像、设置、退出、后台） -->
+        <TPopup v-model:visible="profileVisible" trigger="click" placement="right-top" :show-arrow="false">
+          <button class="mc-sidebar__profile" :aria-label="t('profile.menu')">
+            <AvatarBadge
+              :name="auth.user?.nickname ?? '?'"
+              :src="auth.user?.avatar"
+              :color="auth.user?.avatarColor ?? '#0052d9'"
+              :online="ws.connected"
+            />
+            <div class="mc-sidebar__me-info">
+              <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
+              <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
+                {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
+              </div>
             </div>
-          </div>
-        </button>
+          </button>
+
+          <template #content>
+            <ProfileCard @logout="confirmLogout" />
+          </template>
+        </TPopup>
 
         <!-- 新建菜单：右侧 + 按钮 -->
         <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
@@ -290,7 +321,7 @@ const sortedConvs = computed(() =>
       <div v-if="userResults.length" class="mc-sidebar__group-label">{{ t('chat.groupUsers') }}</div>
       <TList v-if="userResults.length">
         <TListItem v-for="u in userResults" :key="u.id" class="mc-sidebar__result-item" @click="startSingle(u)">
-          <AvatarBadge :name="u.nickname" :color="u.avatarColor" :size="32" />
+          <AvatarBadge :name="u.nickname" :src="u.avatar" :color="u.avatarColor" :size="32" />
           <span class="mc-sidebar__result-name">{{ u.nickname }}</span>
           <span class="text-placeholder">@{{ u.username }}</span>
         </TListItem>
@@ -319,6 +350,7 @@ const sortedConvs = computed(() =>
       >
         <AvatarBadge
           :name="convAvatar(c).name"
+          :src="convAvatar(c).avatar"
           :color="convAvatar(c).color"
           :online="c.type === 1 && c.peer ? ws.onlineUsers.has(c.peer.id) : false"
         />
@@ -344,7 +376,7 @@ const sortedConvs = computed(() =>
       <template v-if="friendsStore.requests.length">
         <div class="mc-sidebar__group-label">{{ t('friends.requests') }}</div>
         <div v-for="r in friendsStore.requests" :key="r.id" class="mc-friend-item">
-          <AvatarBadge :name="r.from.nickname" :color="r.from.avatarColor" :size="32" />
+          <AvatarBadge :name="r.from.nickname" :src="r.from.avatar" :color="r.from.avatarColor" :size="32" />
           <span class="mc-conv-item__name">{{ r.from.nickname }}</span>
           <div class="mc-friend-item__actions">
             <TButton size="small" theme="primary" variant="text" @click="handleRequest(r.id, true)">
@@ -359,6 +391,7 @@ const sortedConvs = computed(() =>
       <div v-for="f in friendsStore.accepted" :key="f.id" class="mc-friend-item">
         <AvatarBadge
           :name="f.friend.nickname"
+          :src="f.friend.avatar"
           :color="f.friend.avatarColor"
           :size="32"
           :online="ws.onlineUsers.has(f.friend.id)"

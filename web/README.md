@@ -34,15 +34,15 @@ src/
 │   └── usePluginHost.ts     # 插件沙箱宿主：srcdoc 注入、postMessage 桥、权限白名单、UI 描述校验
 ├── components/
 │   ├── common/
-│   │   └── PreferencesMenu.vue  # 语言（中/EN）+ 主题（跟随系统/亮/暗）切换
+│   │   └── QuickPrefs.vue       # 认证页快捷切换：语言 + 明暗 + 登录页背景(颜色/特效)
 │   ├── chat/
-│   │   ├── ConvSidebar.vue      # 产品名 + 用户行 + 搜索(人/群) + 会话/联系人
+│   │   ├── ConvSidebar.vue      # 用户行(头像/在线) + 新建菜单 + 搜索(人/群) + 会话/联系人
 │   │   ├── MessagePane.vue      # 虚拟滚动消息流、已读回执、撤回、插件消息渲染
 │   │   ├── MessageComposer.vue  # Enter 发送、typing 节流
 │   │   ├── DetailPanel.vue      # 群成员/群管理、单聊资料 + 插件侧栏
 │   │   ├── PluginDrawer.vue     # 上传/URL 安装、权限确认、启停、卸载、升级重载
-│   │   ├── ProfileDialog.vue    # 昵称/邮箱修改
-│   │   └── AvatarBadge.vue      # 取色头像（在线小圆点）
+│   │   ├── ProfileCard.vue      # 个人资料卡：头像上传(hover 相机)、设置/退出/后台
+│   │   └── AvatarBadge.vue      # 头像(自定义图/默认卡通图/首字母兜底) + 在线小圆点
 │   └── declarative/
 │       ├── index.ts             # 8 个白名单组件的渲染函数（仅原始值 props）
 │       └── PluginPanel.vue      # 插件面板 + 动作回传

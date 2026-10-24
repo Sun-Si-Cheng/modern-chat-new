@@ -277,6 +277,13 @@ export default {
     effectGrid: 'Grid',
     effectNone: 'None',
   },
+  profile: {
+    changeAvatar: 'Change avatar',
+    avatarUpdated: 'Avatar updated',
+    avatarInvalid: 'Please choose a png / jpeg / webp image',
+    avatarFailed: 'Failed to update avatar',
+    menu: 'Profile menu',
+  },
   settings: {
     title: 'Settings',
     back: 'Back',

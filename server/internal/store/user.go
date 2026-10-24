@@ -63,7 +63,7 @@ func (s *UserStore) Search(kw string, limit int) ([]model.UserBrief, error) {
 	var rows []model.UserBrief
 	pat := "%" + likeEscape(kw) + "%"
 	err := s.db.Model(&model.User{}).
-		Select("id, username, nickname, avatar_color").
+		Select("id, username, nickname, avatar_color, avatar").
 		Where("username LIKE ? OR nickname LIKE ?", pat, pat).
 		Order("id ASC").
 		Limit(limit).

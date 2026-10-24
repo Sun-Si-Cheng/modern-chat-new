@@ -20,7 +20,7 @@ export const authApi = {
   reset: (body: { token: string; newPassword: string }) =>
     http.post<{ ok: true }>('/auth/reset', { token: body.token, newPassword: body.newPassword }),
   me: () => http.get<User>('/me'),
-  updateMe: (body: { nickname?: string; email?: string }) => http.patch<User>('/me', body),
+  updateMe: (body: { nickname?: string; email?: string; avatar?: string }) => http.patch<User>('/me', body),
 }
 
 // ===== 用户搜索 =====

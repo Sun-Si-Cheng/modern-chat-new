@@ -252,7 +252,7 @@ func (s *ConversationStore) memberBriefs(convIDs []uint) (map[uint][]model.UserB
 		AvatarColor    string `gorm:"column:avatar_color"`
 	}
 	if err := s.db.Table("conversation_members cm").
-		Select("cm.conversation_id, u.id, u.username, u.nickname, u.avatar_color").
+		Select("cm.conversation_id, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
 		Joins("JOIN users u ON u.id = cm.user_id").
 		Where("cm.conversation_id IN ?", convIDs).
 		Scan(&rows).Error; err != nil {
@@ -289,7 +289,7 @@ func (s *ConversationStore) SearchGroups(kw string, limit int) ([]model.Conversa
 func (s *ConversationStore) MembersView(convID uint) ([]model.MemberView, error) {
 	var rows []model.MemberView
 	err := s.db.Table("conversation_members cm").
-		Select("cm.user_id, cm.role, cm.joined_at, u.id, u.username, u.nickname, u.avatar_color").
+		Select("cm.user_id, cm.role, cm.joined_at, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
 		Joins("JOIN users u ON u.id = cm.user_id").
 		Where("cm.conversation_id = ?", convID).
 		Order("cm.id ASC").

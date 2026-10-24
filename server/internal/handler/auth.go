@@ -261,11 +261,21 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	var req struct {
 		Nickname *string `json:"nickname"`
 		Email    *string `json:"email"`
+		Avatar   *string `json:"avatar"`
 	}
 	if !bind(c, &req) {
 		return
 	}
 	u := middleware.UserFrom(c)
+
+	if req.Avatar != nil {
+		a := strings.TrimSpace(*req.Avatar)
+		if a != "" && !validAvatarDataURL(a) {
+			fail(c, http.StatusBadRequest, "头像格式不支持（仅 png/jpeg/webp，≤256KB）")
+			return
+		}
+		u.Avatar = a
+	}
 
 	if req.Nickname != nil {
 		n := strings.TrimSpace(*req.Nickname)

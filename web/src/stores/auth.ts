@@ -35,7 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function updateMe(body: { nickname?: string; email?: string }) {
+  async function updateMe(body: { nickname?: string; email?: string; avatar?: string }) {
     user.value = await authApi.updateMe(body)
   }
 

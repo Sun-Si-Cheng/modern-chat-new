@@ -11,11 +11,15 @@ type UserBrief struct {
 	Username    string `json:"username"`
 	Nickname    string `json:"nickname"`
 	AvatarColor string `json:"avatarColor"`
+	Avatar      string `json:"avatar,omitempty"`
 }
 
 // Brief 从 User 提取摘要。
 func (u *User) Brief() UserBrief {
-	return UserBrief{ID: u.ID, Username: u.Username, Nickname: u.Nickname, AvatarColor: u.AvatarColor}
+	return UserBrief{
+		ID: u.ID, Username: u.Username, Nickname: u.Nickname,
+		AvatarColor: u.AvatarColor, Avatar: u.Avatar,
+	}
 }
 
 // ConversationView 会话列表 / 创建会话的响应体（§3.1 Conversation）。
