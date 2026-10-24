@@ -144,6 +144,8 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 
 安装后会弹出权限清单，**确认后才启用**；站长可在后台「插件」分区按插件名全局下架（对所有用户立即生效）。
 
+**升级**：再次上传同名插件即为版本升级——复用同一条安装记录（id 不变、启停状态保留）、更新代码与权限，已启用的插件确认后立即重载新代码。
+
 ### 试一试示例插件
 
 仓库自带 [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js)：侧边栏天气面板 + 自定义 `weather` 消息类型。

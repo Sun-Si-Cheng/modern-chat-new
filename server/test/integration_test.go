@@ -407,6 +407,26 @@ function __mcActivate(api) {}`
 		t.Fatalf("非 http(s) 应 400")
 	}
 
+	// 同名上传 = 升级覆盖：记录数不增加，version 更新，id 不变
+	upgraded := `/* {"name":"hello","version":"1.1.0","description":"升级版","permissions":["message:read"],"allowedHosts":[]} */
+function __mcActivate(api) { /* v1.1.0 */ }`
+	req2, _ := http.NewRequest("POST", e.ts.URL+"/api/plugins/upload", strings.NewReader(upgraded))
+	req2.Header.Set("Authorization", "Bearer "+token)
+	req2.Header.Set("Content-Type", "application/octet-stream")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("upgrade upload: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.Header.Get("X-Plugin-Updated") != "true" {
+		t.Fatalf("升级应带 X-Plugin-Updated 头")
+	}
+	var p2 map[string]any
+	_ = json.NewDecoder(resp2.Body).Decode(&p2)
+	if uint64(p2["id"].(float64)) != pid || p2["version"] != "1.1.0" {
+		t.Fatalf("升级应复用同一条记录并更新版本，got %v", p2)
+	}
+
 	// 站长全局下架：按 name 聚合 + 下架后代码下发 403
 	adminTok, _ := register(t, e, "plugadmin") // 首个注册者为 admin（本用例 setup 已清库）
 	code, listAny := apiAny(t, e, "GET", "/api/admin/plugins", adminTok, "")

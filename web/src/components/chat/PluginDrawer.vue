@@ -35,19 +35,21 @@ async function installFromUrl() {
   const url = urlInput.value.trim()
   if (!url) return
   await installConfirm(async () => {
-    const plugin = await pluginApi.fromUrl(url)
+    const r = await pluginApi.fromUrl(url)
     urlInput.value = ''
-    return plugin
+    return r
   })
 }
 
-/** 安装 → 弹权限清单，用户确认后启用（§8.4：确认才装） */
-async function installConfirm(action: () => Promise<Plugin>) {
+/** 安装 / 升级 → 弹权限清单，用户确认后才生效（§8.4） */
+async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: boolean }>) {
   installing.value = true
-  let plugin: Plugin | null = null
+  let plugin: Plugin
+  let updated = false
   try {
-    plugin = await action()
-    void MessagePlugin.success(`已安装 ${plugin.name}`)
+    const r = await action()
+    plugin = r.plugin
+    updated = r.updated
   } catch (e) {
     void MessagePlugin.error((e as Error).message || '安装失败')
     installing.value = false
@@ -59,15 +61,25 @@ async function installConfirm(action: () => Promise<Plugin>) {
   const permText = plugin.permissions.length ? plugin.permissions.join('、') : '无'
   const hostText = plugin.allowedHosts.length ? plugin.allowedHosts.join('、') : '无'
   const dialog = DialogPlugin.confirm({
-    header: `安装「${plugin.name}」v${plugin.version}`,
+    header: updated ? `更新「${plugin.name}」到 v${plugin.version}` : `安装「${plugin.name}」v${plugin.version}`,
     body: `该插件申请以下权限：\n${permText}\n\n网络访问白名单：${hostText}\n\n${plugin.description || ''}`,
-    confirmBtn: '确认并启用',
-    cancelBtn: '暂不启用',
+    confirmBtn: updated ? '更新并重载' : '确认并启用',
+    cancelBtn: updated ? '稍后生效' : '暂不启用',
     onConfirm: async () => {
       try {
-        await pluginsStore.setEnabled(plugin!.id, true)
-        await host.reloadPlugin({ ...plugin!, enabled: true })
-        void MessagePlugin.success('插件已启用')
+        if (updated) {
+          // 升级：保持原启停状态；已启用则立即重载新代码
+          if (plugin.enabled) {
+            await host.reloadPlugin(plugin)
+            void MessagePlugin.success('已更新并重载')
+          } else {
+            void MessagePlugin.success('已更新，启用后生效')
+          }
+        } else {
+          await pluginsStore.setEnabled(plugin.id, true)
+          await host.reloadPlugin({ ...plugin, enabled: true })
+          void MessagePlugin.success('插件已启用')
+        }
       } catch (e) {
         void MessagePlugin.error((e as Error).message)
       }

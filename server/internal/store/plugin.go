@@ -36,6 +36,19 @@ func (s *PluginStore) ByUser(userID uint) ([]model.Plugin, error) {
 	return rows, err
 }
 
+// ByUserAndName 某用户已安装的同名插件（用于上传即升级覆盖）。
+func (s *PluginStore) ByUserAndName(userID uint, name string) (*model.Plugin, error) {
+	var p model.Plugin
+	err := s.db.Where("installed_by = ? AND name = ?", userID, name).First(&p).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // Active 启用且未被全局下架。
 func (s *PluginStore) Active(userID uint) ([]model.Plugin, error) {
 	var rows []model.Plugin
