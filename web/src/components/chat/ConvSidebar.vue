@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Badge as TBadge,
@@ -10,9 +10,11 @@ import {
   List as TList,
   ListItem as TListItem,
   MessagePlugin,
+  Popup as TPopup,
   Tabs as TTabss,
   TabPanel as TTabPanel,
 } from 'tdesign-vue-next'
+
 
 import AvatarBadge from './AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -31,6 +33,28 @@ const ws = useWsStore()
 const { t, te } = useAppI18n()
 
 const tab = ref<'chats' | 'contacts'>('chats')
+
+// ===== 新建菜单（头像行右侧的 + 按钮） =====
+
+const moreVisible = ref(false)
+const searchRef = ref<{ focus: () => void } | null>(null)
+
+function menuNewGroup() {
+  moreVisible.value = false
+  createGroupVisible.value = true
+}
+
+function menuAddFriend() {
+  moreVisible.value = false
+  tab.value = 'contacts'
+  void nextTick(() => searchRef.value?.focus())
+}
+
+function menuSearchUser() {
+  moreVisible.value = false
+  tab.value = 'chats'
+  void nextTick(() => searchRef.value?.focus())
+}
 
 // ===== 搜索（人 + 群） =====
 
@@ -206,6 +230,32 @@ const sortedConvs = computed(() =>
             </div>
           </div>
         </button>
+
+        <!-- 新建菜单：右侧 + 按钮 -->
+        <TPopup v-model:visible="moreVisible" trigger="click" placement="bottom-right" :show-arrow="false">
+          <button type="button" class="mc-sidebar__more" :aria-label="t('chat.moreMenu')" :title="t('chat.moreMenu')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M11 11V8a1 1 0 1 1 2 0v3h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3H8a1 1 0 1 1 0-2h3Zm1 10a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+
+          <template #content>
+            <ul class="mc-sidebar__menu">
+              <li>
+                <button type="button" @click="menuSearchUser">{{ t('chat.menuSearch') }}</button>
+              </li>
+              <li>
+                <button type="button" @click="menuAddFriend">{{ t('chat.menuFriend') }}</button>
+              </li>
+              <li>
+                <button type="button" @click="menuNewGroup">{{ t('chat.menuGroup') }}</button>
+              </li>
+            </ul>
+          </template>
+        </TPopup>
       </div>
     </header>
 
@@ -222,7 +272,14 @@ const sortedConvs = computed(() =>
 
     <!-- 搜索：人 / 群 -->
     <div class="mc-sidebar__search">
-      <TInput v-model="kw" :placeholder="t('chat.searchPlaceholder')" clearable @change="onSearch" @enter="onSearch" />
+      <TInput
+        ref="searchRef"
+        v-model="kw"
+        :placeholder="t('chat.searchPlaceholder')"
+        clearable
+        @change="onSearch"
+        @enter="onSearch"
+      />
       <TButton v-if="tab === 'chats'" size="small" variant="outline" @click="createGroupVisible = true">
         {{ t('chat.createGroup') }}
       </TButton>
@@ -352,6 +409,58 @@ const sortedConvs = computed(() =>
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 头像行右侧的「新建」按钮 */
+.mc-sidebar__more {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+}
+
+.mc-sidebar__more:hover {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+}
+
+.mc-sidebar__more:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 1px;
+}
+
+/* 新建菜单 */
+.mc-sidebar__menu {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 128px;
+}
+
+.mc-sidebar__menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+}
+
+.mc-sidebar__menu button:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 /* 用户行即资料入口 */
