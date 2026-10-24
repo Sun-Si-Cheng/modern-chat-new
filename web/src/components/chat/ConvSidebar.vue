@@ -232,7 +232,8 @@ const sortedConvs = computed(() =>
         </button>
 
         <!-- 新建菜单：右侧 + 按钮 -->
-        <TPopup v-model:visible="moreVisible" trigger="click" placement="bottom-right" :show-arrow="false">
+        <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
+        <TPopup v-model:visible="moreVisible" trigger="click" placement="bottom-left" :show-arrow="false">
           <button type="button" class="mc-sidebar__more" :aria-label="t('chat.moreMenu')" :title="t('chat.moreMenu')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
