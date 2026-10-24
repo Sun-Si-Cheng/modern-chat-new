@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Form as TForm,
@@ -12,11 +12,14 @@ import {
 } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 
+import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const { t, te } = useAppI18n()
 
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
@@ -25,21 +28,21 @@ const form = ref<FormInstanceFunctions>()
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', nickname: '', password: '', confirm: '' })
 
-const rules: FormProps['rules'] = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+const rules = computed<FormProps['rules']>(() => ({
+  username: [{ required: true, message: t('auth.validation.usernameRequired'), trigger: 'blur' }],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+    { required: true, message: t('auth.validation.passwordRequired'), trigger: 'blur' },
+    { min: 6, message: t('auth.validation.passwordMin'), trigger: 'blur' },
   ],
-  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+  nickname: [{ required: true, message: t('auth.validation.nicknameRequired'), trigger: 'blur' }],
   confirm: [
     {
       validator: (val: string) => val === registerForm.password,
-      message: '两次输入的密码不一致',
+      message: t('auth.validation.confirmMismatch'),
       trigger: 'blur',
     },
   ],
-}
+}))
 
 async function doSubmit() {
   loading.value = true
@@ -48,12 +51,12 @@ async function doSubmit() {
       await auth.login(loginForm.username, loginForm.password)
     } else {
       await auth.register(registerForm.username, registerForm.password, registerForm.nickname)
-      void MessagePlugin.success('注册成功，欢迎！')
+      void MessagePlugin.success(t('auth.registerOk'))
     }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/chat'
     await router.push(redirect)
   } catch (e) {
-    void MessagePlugin.error((e as Error).message || '操作失败')
+    void MessagePlugin.error(te(e) || t('auth.opFailed'))
   } finally {
     loading.value = false
   }
@@ -71,53 +74,49 @@ function switchMode(m: 'login' | 'register') {
 
 <template>
   <div class="auth-page">
+    <div class="auth-page__prefs">
+      <PreferencesMenu />
+    </div>
+
     <!-- 品牌侧：产品真实能力，非装饰 -->
     <aside class="auth-brand">
       <div class="auth-brand__mark">M</div>
-      <h1 class="auth-brand__title">ModernChat</h1>
-      <p class="auth-brand__lead">
-        开箱即用的纯文本聊天内核，装上插件，它就是你要的样子。
-      </p>
+      <h1 class="auth-brand__title">{{ t('app.name') }}</h1>
+      <p class="auth-brand__lead">{{ t('auth.brand.lead') }}</p>
       <ul class="auth-brand__points">
         <li>
-          <strong>聊天内核</strong>
-          <span>好友、单聊群聊、已读回执、撤回，全部开箱即用</span>
+          <strong>{{ t('auth.brand.core') }}</strong>
+          <span>{{ t('auth.brand.coreDesc') }}</span>
         </li>
         <li>
-          <strong>插件扩展</strong>
-          <span>自己写 JS 插件：图片、机器人、主题，装上即生效</span>
+          <strong>{{ t('auth.brand.plugin') }}</strong>
+          <span>{{ t('auth.brand.pluginDesc') }}</span>
         </li>
         <li>
-          <strong>安全边界</strong>
-          <span>沙箱运行 + 权限白名单，插件碰不到你的登录态</span>
+          <strong>{{ t('auth.brand.secure') }}</strong>
+          <span>{{ t('auth.brand.secureDesc') }}</span>
         </li>
       </ul>
-      <p class="auth-brand__foot text-secondary">前后端分离 · 自托管</p>
+      <p class="auth-brand__foot text-secondary">{{ t('auth.brand.foot') }}</p>
     </aside>
 
     <!-- 表单侧 -->
     <main class="auth-panel">
       <div class="auth-panel__foot">
-        <span class="text-placeholder">数据存储在您自己的 MySQL</span>
-        <span class="text-placeholder">单实例自托管</span>
+        <span class="text-placeholder">{{ t('auth.footDb') }}</span>
+        <span class="text-placeholder">{{ t('auth.footSingle') }}</span>
       </div>
       <div class="auth-card">
         <div class="auth-card__brand">
           <span class="auth-card__mark">M</span>
-          <span class="auth-card__name">ModernChat</span>
+          <span class="auth-card__name">{{ t('app.name') }}</span>
         </div>
-        <h2 class="auth-card__title">{{ mode === 'login' ? '登录你的账号' : '创建你的账号' }}</h2>
-        <p class="auth-card__sub">
-          {{
-            mode === 'login'
-              ? '使用用户名与密码继续'
-              : '首个注册的用户将成为站长，之后注册的为普通用户'
-          }}
-        </p>
+        <h2 class="auth-card__title">{{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}</h2>
+        <p class="auth-card__sub">{{ mode === 'login' ? t('auth.loginSub') : t('auth.registerSub') }}</p>
 
         <TTabss v-model="mode" @change="(v: unknown) => switchMode(v as 'login' | 'register')">
-          <TTabPanel value="login" label="登录" />
-          <TTabPanel value="register" label="注册" />
+          <TTabPanel value="login" :label="t('auth.tabLogin')" />
+          <TTabPanel value="register" :label="t('auth.tabRegister')" />
         </TTabss>
 
         <TForm
@@ -130,33 +129,34 @@ function switchMode(m: 'login' | 'register') {
           @submit="onSubmit"
         >
           <TFormItem name="username">
-            <TInput v-model="(mode === 'login' ? loginForm : registerForm).username" placeholder="用户名" clearable />
+            <TInput
+              v-model="(mode === 'login' ? loginForm : registerForm).username"
+              :placeholder="t('auth.username')"
+              clearable
+            />
           </TFormItem>
           <TFormItem v-if="mode === 'register'" name="nickname">
-            <TInput v-model="registerForm.nickname" placeholder="昵称（别人看到的名字）" clearable />
+            <TInput v-model="registerForm.nickname" :placeholder="t('auth.nickname')" clearable />
           </TFormItem>
-          <TFormItem
-            name="password"
-            :help="mode === 'register' ? '至少 6 位，建议混合字母与数字' : undefined"
-          >
+          <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
             <TInput
               v-model="(mode === 'login' ? loginForm : registerForm).password"
               type="password"
-              placeholder="密码"
+              :placeholder="t('auth.password')"
             />
           </TFormItem>
           <TFormItem v-if="mode === 'register'" name="confirm">
-            <TInput v-model="registerForm.confirm" type="password" placeholder="确认密码" />
+            <TInput v-model="registerForm.confirm" type="password" :placeholder="t('auth.confirmPassword')" />
           </TFormItem>
 
           <TButton theme="primary" type="submit" block size="large" :loading="loading">
-            {{ mode === 'login' ? '登录' : '创建账号并进入' }}
+            {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
           </TButton>
         </TForm>
 
         <div class="auth-card__footer">
-          <RouterLink v-if="mode === 'login'" to="/forgot">忘记密码？</RouterLink>
-          <span v-else class="text-placeholder">忘记用户名？站长可代为重置</span>
+          <RouterLink v-if="mode === 'login'" to="/forgot">{{ t('auth.forgot') }}</RouterLink>
+          <span v-else class="text-placeholder">{{ t('auth.forgotUsername') }}</span>
         </div>
       </div>
     </main>
@@ -168,6 +168,17 @@ function switchMode(m: 'login' | 'register') {
   height: 100%;
   display: flex;
   background: var(--td-bg-color-container);
+  position: relative;
+}
+
+.auth-page__prefs {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 10;
+  background: var(--td-bg-color-container);
+  border-radius: 6px;
+  padding: 0 2px;
 }
 
 /* 品牌侧：近黑 ink 面板，品牌蓝只做点缀（mark 与关键词） */
@@ -180,7 +191,6 @@ function switchMode(m: 'login' | 'register') {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  position: relative;
 }
 
 .auth-brand__mark {

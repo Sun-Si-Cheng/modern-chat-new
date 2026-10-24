@@ -2,9 +2,12 @@
 import { ref } from 'vue'
 import { Button as TButton } from 'tdesign-vue-next'
 
+import { useAppI18n } from '@/composables/useAppI18n'
 import { useConversationsStore } from '@/stores/conversations'
 
 const convStore = useConversationsStore()
+const { t } = useAppI18n()
+
 const text = ref('')
 const lastTypingAt = ref(0)
 
@@ -37,7 +40,7 @@ function onKeydown(e: KeyboardEvent) {
     <textarea
       v-model="text"
       class="mc-composer__input"
-      placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+      :placeholder="t('message.composerPlaceholder')"
       maxlength="1000"
       rows="3"
       @keydown="onKeydown"
@@ -45,7 +48,7 @@ function onKeydown(e: KeyboardEvent) {
     />
     <div class="mc-composer__footer">
       <span class="text-placeholder num">{{ text.length }}/1000</span>
-      <TButton theme="primary" size="small" :disabled="!text.trim()" @click="send">发送</TButton>
+      <TButton theme="primary" size="small" :disabled="!text.trim()" @click="send">{{ t('message.send') }}</TButton>
     </div>
   </footer>
 </template>

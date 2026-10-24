@@ -10,11 +10,14 @@ import {
 } from 'tdesign-vue-next'
 import type { FormInstanceFunctions } from 'tdesign-vue-next'
 
+import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { authApi } from '@/api'
 
 const router = useRouter()
+const { t, te } = useAppI18n()
 
-/** step 1: 提交邮箱拿重置链接（开发期服务端打日志）；step 2: 用 token 设新密码 */
+/** step 1: 提交邮箱拿重置链接（开发期服务端打日志）；step 2: 用令牌设新密码 */
 const step = ref<1 | 2>(1)
 const loading = ref(false)
 const form = ref<FormInstanceFunctions>()
@@ -28,10 +31,10 @@ async function submitEmail() {
   loading.value = true
   try {
     await authApi.forgot({ email: forgotForm.email })
-    void MessagePlugin.success('若邮箱存在，重置链接已发送（开发环境查看服务端日志）')
+    void MessagePlugin.success(t('forgot.sent'))
     step.value = 2
   } catch (e) {
-    void MessagePlugin.error((e as Error).message || '发送失败')
+    void MessagePlugin.error(te(e) || t('forgot.sendFailed'))
   } finally {
     loading.value = false
   }
@@ -43,10 +46,10 @@ async function submitReset() {
   loading.value = true
   try {
     await authApi.reset({ token: resetForm.token, newPassword: resetForm.newPassword })
-    void MessagePlugin.success('密码已重置，请用新密码登录')
+    void MessagePlugin.success(t('forgot.resetOk'))
     await router.push('/login')
   } catch (e) {
-    void MessagePlugin.error((e as Error).message || '重置失败')
+    void MessagePlugin.error(te(e) || t('forgot.resetFailed'))
   } finally {
     loading.value = false
   }
@@ -55,55 +58,63 @@ async function submitReset() {
 
 <template>
   <div class="forgot-page">
+    <div class="forgot-page__prefs">
+      <PreferencesMenu />
+    </div>
+
     <div class="forgot-card">
       <div class="forgot-brand">
         <span class="forgot-brand__mark">M</span>
-        <span class="forgot-brand__name">ModernChat</span>
+        <span class="forgot-brand__name">{{ t('app.name') }}</span>
       </div>
-      <h1 class="forgot-title">找回密码</h1>
-      <p class="forgot-sub">通过注册邮箱重置。重置后所有已登录设备将被强制下线。</p>
+      <h1 class="forgot-title">{{ t('forgot.title') }}</h1>
+      <p class="forgot-sub">{{ t('forgot.sub') }}</p>
 
       <template v-if="step === 1">
         <TForm ref="form" :data="forgotForm" label-width="0" @submit.prevent>
-          <TFormItem name="email" :rules="[{ required: true, message: '请输入邮箱', trigger: 'blur' }]">
-            <TInput v-model="forgotForm.email" placeholder="注册邮箱" clearable />
+          <TFormItem name="email" :rules="[{ required: true, message: t('forgot.emailRequired'), trigger: 'blur' }]">
+            <TInput v-model="forgotForm.email" :placeholder="t('forgot.email')" clearable />
           </TFormItem>
-          <TButton theme="primary" block size="large" :loading="loading" @click="submitEmail">发送重置链接</TButton>
+          <TButton theme="primary" block size="large" :loading="loading" @click="submitEmail">
+            {{ t('forgot.sendLink') }}
+          </TButton>
         </TForm>
       </template>
 
       <template v-else>
         <TForm ref="form" :data="resetForm" label-width="0" @submit.prevent>
-          <TFormItem name="token" :rules="[{ required: true, message: '请输入邮件中的重置令牌', trigger: 'blur' }]">
-            <TInput v-model="resetForm.token" placeholder="邮件中的重置令牌" clearable />
+          <TFormItem name="token" :rules="[{ required: true, message: t('forgot.tokenRequired'), trigger: 'blur' }]">
+            <TInput v-model="resetForm.token" :placeholder="t('forgot.token')" clearable />
           </TFormItem>
           <TFormItem
             name="newPassword"
             :rules="[
-              { required: true, message: '请输入新密码', trigger: 'blur' },
-              { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+              { required: true, message: t('forgot.newPasswordRequired'), trigger: 'blur' },
+              { min: 6, message: t('auth.validation.passwordMin'), trigger: 'blur' },
             ]"
           >
-            <TInput v-model="resetForm.newPassword" type="password" placeholder="新密码" />
+            <TInput v-model="resetForm.newPassword" type="password" :placeholder="t('forgot.newPassword')" />
           </TFormItem>
           <TFormItem
             name="confirm"
             :rules="[
               {
                 validator: (val: string) => val === resetForm.newPassword,
-                message: '两次输入的密码不一致',
+                message: t('auth.validation.confirmMismatch'),
                 trigger: 'blur',
               },
             ]"
           >
-            <TInput v-model="resetForm.confirm" type="password" placeholder="确认新密码" />
+            <TInput v-model="resetForm.confirm" type="password" :placeholder="t('forgot.confirm')" />
           </TFormItem>
-          <TButton theme="primary" block size="large" :loading="loading" @click="submitReset">重置密码</TButton>
+          <TButton theme="primary" block size="large" :loading="loading" @click="submitReset">
+            {{ t('forgot.reset') }}
+          </TButton>
         </TForm>
       </template>
 
       <div class="forgot-footer">
-        <RouterLink to="/login">返回登录</RouterLink>
+        <RouterLink to="/login">{{ t('forgot.backToLogin') }}</RouterLink>
       </div>
     </div>
   </div>
@@ -117,6 +128,13 @@ async function submitReset() {
   justify-content: center;
   background: var(--td-bg-color-page);
   padding: 24px;
+  position: relative;
+}
+
+.forgot-page__prefs {
+  position: absolute;
+  top: 12px;
+  right: 16px;
 }
 
 .forgot-card {

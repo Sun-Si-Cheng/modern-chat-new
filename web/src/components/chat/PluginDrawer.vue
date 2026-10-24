@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import {
+  Button as TButton,
   DialogPlugin,
   Drawer as TDrawer,
   Input as TInput,
@@ -9,6 +10,7 @@ import {
   Tag as TTag,
 } from 'tdesign-vue-next'
 
+import { useAppI18n } from '@/composables/useAppI18n'
 import { pluginApi } from '@/api'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { usePluginsStore } from '@/stores/plugins'
@@ -17,11 +19,12 @@ import type { Plugin } from '@/types/proto'
 const visible = defineModel<boolean>({ default: false })
 const pluginsStore = usePluginsStore()
 const host = usePluginHost()
+const { t, te } = useAppI18n()
 
 const urlInput = ref('')
 const installing = ref(false)
 
-// ===== 安装 =====
+// ===== 安装 / 升级 =====
 
 async function onPickFile(ev: Event) {
   const input = ev.target as HTMLInputElement
@@ -51,41 +54,56 @@ async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: b
     plugin = r.plugin
     updated = r.updated
   } catch (e) {
-    void MessagePlugin.error((e as Error).message || '安装失败')
+    void MessagePlugin.error(te(e) || t('plugin.installFailed'))
     installing.value = false
     return
   }
   installing.value = false
   await pluginsStore.load()
 
-  const permText = plugin.permissions.length ? plugin.permissions.join('、') : '无'
-  const hostText = plugin.allowedHosts.length ? plugin.allowedHosts.join('、') : '无'
+  const permText = plugin.permissions.length
+    ? plugin.permissions.map((p) => permLabel(p)).join(', ')
+    : t('plugin.noPerm')
+  const hostText = plugin.allowedHosts.length ? plugin.allowedHosts.join(', ') : t('plugin.noPerm')
   const dialog = DialogPlugin.confirm({
-    header: updated ? `更新「${plugin.name}」到 v${plugin.version}` : `安装「${plugin.name}」v${plugin.version}`,
-    body: `该插件申请以下权限：\n${permText}\n\n网络访问白名单：${hostText}\n\n${plugin.description || ''}`,
-    confirmBtn: updated ? '更新并重载' : '确认并启用',
-    cancelBtn: updated ? '稍后生效' : '暂不启用',
+    header: updated
+      ? t('plugin.updateTitle', { name: plugin.name, version: plugin.version })
+      : t('plugin.installTitle', { name: plugin.name, version: plugin.version }),
+    body: t('plugin.permBody', {
+      perms: permText,
+      hosts: hostText,
+      desc: plugin.description || '',
+    }),
+    confirmBtn: updated ? t('plugin.confirmUpdate') : t('plugin.confirmEnable'),
+    cancelBtn: updated ? t('plugin.laterReload') : t('plugin.laterEnable'),
     onConfirm: async () => {
       try {
         if (updated) {
           // 升级：保持原启停状态；已启用则立即重载新代码
           if (plugin.enabled) {
             await host.reloadPlugin(plugin)
-            void MessagePlugin.success('已更新并重载')
+            void MessagePlugin.success(t('plugin.updatedReloadOk'))
           } else {
-            void MessagePlugin.success('已更新，启用后生效')
+            void MessagePlugin.success(t('plugin.updatedSavedOk'))
           }
         } else {
           await pluginsStore.setEnabled(plugin.id, true)
           await host.reloadPlugin({ ...plugin, enabled: true })
-          void MessagePlugin.success('插件已启用')
+          void MessagePlugin.success(t('plugin.enabledOk'))
         }
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
   })
+}
+
+/** 权限标签（未知权限原样显示） */
+function permLabel(perm: string): string {
+  const key = `plugin.perms.${perm}`
+  const label = t(key)
+  return label === key ? perm : label
 }
 
 // ===== 启停 / 卸载 =====
@@ -95,51 +113,43 @@ async function toggle(plugin: Plugin, enabled: boolean) {
     await pluginsStore.setEnabled(plugin.id, enabled)
     await host.reloadPlugin({ ...plugin, enabled })
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 async function uninstall(plugin: Plugin) {
   const dialog = DialogPlugin.confirm({
-    header: '卸载插件',
-    body: `确定卸载「${plugin.name}」吗？其存储数据将保留。`,
-    confirmBtn: { content: '卸载', theme: 'danger' },
+    header: t('plugin.uninstallTitle'),
+    body: t('plugin.uninstallBody', { name: plugin.name }),
+    confirmBtn: { content: t('plugin.uninstallBtn'), theme: 'danger' },
     onConfirm: async () => {
       try {
         await pluginsStore.remove(plugin.id)
         await host.reloadPlugin({ ...plugin, enabled: false })
-        void MessagePlugin.success('已卸载')
+        void MessagePlugin.success(t('plugin.uninstallOk'))
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
   })
 }
-
-const PERM_LABELS: Record<string, string> = {
-  'message:read': '读取新消息',
-  'message:send': '发送消息',
-  'message:render': '自定义消息渲染',
-  'ui:panel': '侧边栏面板',
-  storage: '本地存储',
-  net: '网络请求',
-  'ui:theme': '修改主题',
-}
 </script>
 
 <template>
-  <TDrawer v-model="visible" header="插件管理" size="420px" :footer="false">
+  <TDrawer v-model="visible" :header="t('plugin.title')" size="420px" :footer="false">
     <div class="mc-plugins">
       <!-- 安装 -->
       <div class="mc-plugins__install">
         <label class="mc-plugins__upload">
           <input type="file" accept=".js,application/javascript,text/javascript" @change="onPickFile" />
-          <TButton variant="outline" size="small" :loading="installing">上传 JS 文件安装</TButton>
+          <TButton variant="outline" size="small" :loading="installing">{{ t('plugin.upload') }}</TButton>
         </label>
         <div class="mc-plugins__url">
-          <TInput v-model="urlInput" placeholder="插件 URL（http/https）" clearable @enter="installFromUrl" />
-          <TButton variant="outline" size="small" :loading="installing" @click="installFromUrl">URL 安装</TButton>
+          <TInput v-model="urlInput" :placeholder="t('plugin.urlPlaceholder')" clearable @enter="installFromUrl" />
+          <TButton variant="outline" size="small" :loading="installing" @click="installFromUrl">
+            {{ t('plugin.urlInstall') }}
+          </TButton>
         </div>
       </div>
 
@@ -148,7 +158,7 @@ const PERM_LABELS: Record<string, string> = {
         <div class="mc-plugins__head">
           <span class="mc-plugins__name">
             {{ p.name }}
-            <span class="text-placeholder">v{{ p.version }}</span>
+            <span class="text-placeholder num">v{{ p.version }}</span>
           </span>
           <TSwitch
             :value="p.enabled && !p.globalDisabled"
@@ -156,21 +166,23 @@ const PERM_LABELS: Record<string, string> = {
             @change="(v: unknown) => toggle(p, v as boolean)"
           />
         </div>
-        <div class="mc-plugins__desc text-secondary">{{ p.description || '暂无描述' }}</div>
+        <div class="mc-plugins__desc text-secondary">{{ p.description || t('plugin.noDesc') }}</div>
         <div class="mc-plugins__tags">
           <TTag v-for="perm in p.permissions" :key="perm" size="small" theme="primary" variant="light">
-            {{ PERM_LABELS[perm] ?? perm }}
+            {{ permLabel(perm) }}
           </TTag>
           <TTag v-for="h in p.allowedHosts" :key="h" size="small" variant="outline">{{ h }}</TTag>
-          <TTag v-if="p.globalDisabled" size="small" theme="danger" variant="light">已被站长下架</TTag>
+          <TTag v-if="p.globalDisabled" size="small" theme="danger" variant="light">
+            {{ t('plugin.globalDisabled') }}
+          </TTag>
         </div>
         <div class="mc-plugins__ops">
-          <a class="mc-plugins__remove" @click="uninstall(p)">卸载</a>
+          <a class="mc-plugins__remove" @click="uninstall(p)">{{ t('plugin.uninstall') }}</a>
         </div>
       </div>
 
       <div v-if="!pluginsStore.plugins.length" class="text-placeholder mc-plugins__empty">
-        还没有安装插件。上传一个 JS 文件或用 URL 安装试试。
+        {{ t('plugin.empty') }}
       </div>
     </div>
   </TDrawer>

@@ -23,11 +23,18 @@ src/
 ├── api/
 │   ├── client.ts            # fetch 封装：/api 前缀、Bearer、401 统一清 token 跳登录
 │   └── index.ts             # 按域划分的接口（auth/user/friend/conv/plugin/admin/system）
-├── stores/                  # auth / ws（心跳+重连+帧路由）/ conversations / friends / plugins
+├── i18n/
+│   ├── index.ts             # createI18n（默认跟随浏览器语言，localStorage 持久化）
+│   ├── zh-CN.ts / en-US.ts  # 全量 UI 文案
+│   └── errors.ts            # 服务端中文错误 → 当前语言的映射
+├── stores/                  # auth / ws / conversations / friends / plugins / prefs（语言+主题）
 ├── composables/
 │   ├── useWebSocket.ts      # 挂载连接、卸载断开、上行出口绑定
+│   ├── useAppI18n.ts        # t（文案）+ te（错误翻译）
 │   └── usePluginHost.ts     # 插件沙箱宿主：srcdoc 注入、postMessage 桥、权限白名单、UI 描述校验
 ├── components/
+│   ├── common/
+│   │   └── PreferencesMenu.vue  # 语言（中/EN）+ 主题（跟随系统/亮/暗）切换
 │   ├── chat/
 │   │   ├── ConvSidebar.vue      # 产品名 + 用户行 + 搜索(人/群) + 会话/联系人
 │   │   ├── MessagePane.vue      # 虚拟滚动消息流、已读回执、撤回、插件消息渲染
@@ -46,8 +53,17 @@ src/
 │   ├── ChatLayout.vue       # 三栏布局 + 响应式（平板收详情、手机单面板）
 │   └── admin/AdminView.vue  # 站长后台：用户管理 / 插件聚合下架 / 构建版本
 ├── router/index.ts          # 路由 + 登录态/站长守卫
-└── assets/main.css          # 全局令牌与工具类（插件通过 --td-* 换肤）
+└── assets/main.css          # 辅助令牌（--mc-*）+ 全局工具类
 ```
+
+## 国际化与主题
+
+**语言**：`src/i18n/`，默认跟随浏览器语言（`zh` 开头为中文，其余英文），切换后写入 `localStorage.mc_lang`。
+新增文案时在 `zh-CN.ts` / `en-US.ts` 同步加键；服务端返回的中文错误由 `errors.ts` 按消息映射为英文（未收录的原样透传）。
+
+**主题**：`src/stores/prefs.ts` 以 `:root[theme-mode="dark"|"light"]` 驱动 TDesign 令牌，支持「跟随系统 / 亮 / 暗」三态，持久化在 `localStorage.mc_theme`。
+`index.html` 内联脚本在样式生效前预置主题，避免暗色首屏闪白。
+自定义颜色一律走令牌：`--td-*`（TDesign）或 `--mc-text-faint` / `--mc-link` / `--mc-selection`（本项目辅助），不要写死色值。
 
 ## 设计约定
 
