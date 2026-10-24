@@ -41,9 +41,7 @@ const rules: FormProps['rules'] = {
   ],
 }
 
-async function submit() {
-  const valid = await form.value?.validate()
-  if (valid !== true) return
+async function doSubmit() {
   loading.value = true
   try {
     if (mode.value === 'login') {
@@ -59,6 +57,11 @@ async function submit() {
   } finally {
     loading.value = false
   }
+}
+
+/** TForm 的 submit 事件：Enter 键与点击按钮统一走这里 */
+function onSubmit({ validateResult }: { validateResult: boolean | Record<string, unknown> }) {
+  if (validateResult === true) void doSubmit()
 }
 
 function switchMode(m: 'login' | 'register') {
@@ -103,7 +106,14 @@ function switchMode(m: 'login' | 'register') {
           <span class="auth-card__mark">M</span>
           <span class="auth-card__name">ModernChat</span>
         </div>
-        <h2 class="auth-card__title">{{ mode === 'login' ? '登录账号' : '创建账号' }}</h2>
+        <h2 class="auth-card__title">{{ mode === 'login' ? '登录你的账号' : '创建你的账号' }}</h2>
+        <p class="auth-card__sub">
+          {{
+            mode === 'login'
+              ? '使用用户名与密码继续'
+              : '首个注册的用户将成为站长，之后注册的为普通用户'
+          }}
+        </p>
 
         <TTabss v-model="mode" @change="(v: unknown) => switchMode(v as 'login' | 'register')">
           <TTabPanel value="login" label="登录" />
@@ -112,18 +122,23 @@ function switchMode(m: 'login' | 'register') {
 
         <TForm
           ref="form"
+          :key="mode"
+          class="auth-card__form"
           :data="mode === 'login' ? loginForm : registerForm"
           :rules="rules"
           label-width="0"
-          @submit.prevent
+          @submit="onSubmit"
         >
           <TFormItem name="username">
             <TInput v-model="(mode === 'login' ? loginForm : registerForm).username" placeholder="用户名" clearable />
           </TFormItem>
           <TFormItem v-if="mode === 'register'" name="nickname">
-            <TInput v-model="registerForm.nickname" placeholder="昵称" clearable />
+            <TInput v-model="registerForm.nickname" placeholder="昵称（别人看到的名字）" clearable />
           </TFormItem>
-          <TFormItem name="password">
+          <TFormItem
+            name="password"
+            :help="mode === 'register' ? '至少 6 位，建议混合字母与数字' : undefined"
+          >
             <TInput
               v-model="(mode === 'login' ? loginForm : registerForm).password"
               type="password"
@@ -134,14 +149,14 @@ function switchMode(m: 'login' | 'register') {
             <TInput v-model="registerForm.confirm" type="password" placeholder="确认密码" />
           </TFormItem>
 
-          <TButton theme="primary" type="submit" block size="large" :loading="loading" @click="submit">
-            {{ mode === 'login' ? '登录' : '注册' }}
+          <TButton theme="primary" type="submit" block size="large" :loading="loading">
+            {{ mode === 'login' ? '登录' : '创建账号并进入' }}
           </TButton>
         </TForm>
 
         <div class="auth-card__footer">
-          <RouterLink to="/forgot">忘记密码？</RouterLink>
-          <span v-if="mode === 'login'" class="text-placeholder">首个注册的用户将成为站长</span>
+          <RouterLink v-if="mode === 'login'" to="/forgot">忘记密码？</RouterLink>
+          <span v-else class="text-placeholder">忘记用户名？站长可代为重置</span>
         </div>
       </div>
     </main>
@@ -280,14 +295,43 @@ function switchMode(m: 'login' | 'register') {
 }
 
 .auth-card__title {
-  margin: 0 0 12px;
+  margin: 0 0 6px;
   font-size: 20px;
 }
 
+.auth-card__sub {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.auth-card__form {
+  animation: auth-form-in 0.16s ease-out;
+}
+
+@keyframes auth-form-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-card__form {
+    animation: none;
+  }
+}
+
 .auth-card__footer {
-  margin-top: 16px;
+  margin-top: 14px;
+  min-height: 20px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 13px;
 }
 
