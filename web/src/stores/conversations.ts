@@ -155,6 +155,14 @@ export const useConversationsStore = defineStore('conversations', () => {
     sendFrame({ type: 'recall', messageId })
   }
 
+  // ===== 会话筛选（分组栏） =====
+
+  const filter = ref<'all' | 'unread' | 'single' | 'group'>('all')
+
+  function setFilter(f: 'all' | 'unread' | 'single' | 'group') {
+    filter.value = f
+  }
+
   // ===== 断线重连后对齐服务端状态 =====
 
   /** 拉取最新一页并与本地合并：保留已读历史，追加断线期间的新消息 */
@@ -309,6 +317,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     openConversation,
     loadMore,
     resync,
+    filter,
+    setFilter,
     markRead,
     sendText,
     resend,

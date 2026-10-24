@@ -1,23 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 import {
   Badge as TBadge,
   Button as TButton,
-  Dialog as TDialog,
   DialogPlugin,
   Input as TInput,
   List as TList,
   ListItem as TListItem,
   MessagePlugin,
-  Popup as TPopup,
-  Tabs as TTabss,
-  TabPanel as TTabPanel,
 } from 'tdesign-vue-next'
 
-
 import AvatarBadge from './AvatarBadge.vue'
-import ProfileCard from './ProfileCard.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -26,54 +19,14 @@ import { useFriendsStore } from '@/stores/friends'
 import { useWsStore } from '@/stores/ws'
 import type { Conversation, User } from '@/types/proto'
 
-const router = useRouter()
+/** 会话 / 联系人列表栏（第二栏，视图由图标栏驱动） */
+const props = defineProps<{ view: 'chats' | 'contacts' }>()
+
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
-
-const tab = ref<'chats' | 'contacts'>('chats')
-
-// ===== 新建菜单（头像行右侧的 + 按钮） =====
-
-const moreVisible = ref(false)
-const profileVisible = ref(false)
-const searchRef = ref<{ focus: () => void } | null>(null)
-
-/** 退出登录：先关资料卡，再走二次确认 */
-function confirmLogout() {
-  profileVisible.value = false
-  const dialog = DialogPlugin.confirm({
-    header: t('chat.logoutTitle'),
-    body: t('chat.logoutBody'),
-    onConfirm: () => {
-      auth.logout()
-      ws.disconnect()
-      convStore.reset()
-      friendsStore.reset()
-      void router.push('/login')
-      dialog.destroy()
-    },
-  })
-}
-
-function menuNewGroup() {
-  moreVisible.value = false
-  createGroupVisible.value = true
-}
-
-function menuAddFriend() {
-  moreVisible.value = false
-  tab.value = 'contacts'
-  void nextTick(() => searchRef.value?.focus())
-}
-
-function menuSearchUser() {
-  moreVisible.value = false
-  tab.value = 'chats'
-  void nextTick(() => searchRef.value?.focus())
-}
 
 // ===== 搜索（人 + 群） =====
 
@@ -106,7 +59,6 @@ async function startSingle(u: User) {
     const conv = await convApi.createSingle(u.id)
     convStore.upsertConversation(conv)
     await convStore.openConversation(conv.id)
-    tab.value = 'chats'
     kw.value = ''
     userResults.value = []
   } catch (e) {
@@ -119,30 +71,9 @@ async function joinGroup(g: Conversation) {
     await convApi.join(g.id)
     await convStore.loadConversations()
     await convStore.openConversation(g.id)
-    tab.value = 'chats'
     kw.value = ''
     groupResults.value = []
     void MessagePlugin.success(t('chat.joinedGroup', { name: g.name ?? '' }))
-  } catch (e) {
-    void MessagePlugin.error(te(e))
-  }
-}
-
-// ===== 建群 =====
-
-const createGroupVisible = ref(false)
-const groupName = ref('')
-
-async function doCreateGroup() {
-  const name = groupName.value.trim()
-  if (!name) return
-  try {
-    const conv = await convApi.createGroup(name)
-    createGroupVisible.value = false
-    groupName.value = ''
-    await convStore.loadConversations()
-    await convStore.openConversation(conv.id)
-    void MessagePlugin.success(t('chat.createGroupOk'))
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
@@ -195,7 +126,6 @@ async function openFriendChat(friendId: number) {
     const conv = await convApi.createSingle(friendId)
     convStore.upsertConversation(conv)
     await convStore.openConversation(conv.id)
-    tab.value = 'chats'
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
@@ -229,107 +159,30 @@ function fmtTime(ts: string | null): string {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-const sortedConvs = computed(() =>
-  [...convStore.conversations].sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '')),
-)
+const sortedConvs = computed(() => {
+  let list = [...convStore.conversations].sort((a, b) =>
+    (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''),
+  )
+  const f = convStore.filter
+  if (f === 'unread') list = list.filter((c) => c.unreadCount > 0)
+  else if (f === 'single') list = list.filter((c) => c.type === 1)
+  else if (f === 'group') list = list.filter((c) => c.type === 2)
+  return list
+})
 
 </script>
 
 <template>
   <aside class="mc-sidebar">
-    <!-- 顶部：产品名 + 当前用户 -->
-    <header class="mc-sidebar__me">
-      <div class="mc-sidebar__userrow">
-        <!-- 头像：点击弹出资料卡，面板贴在头像图片右侧（attach=body 防侧栏裁剪） -->
-        <TPopup
-          v-model:visible="profileVisible"
-          trigger="click"
-          placement="right-top"
-          :show-arrow="false"
-          attach="body"
-        >
-          <button type="button" class="mc-sidebar__avatar-btn" :aria-label="t('profile.menu')">
-            <AvatarBadge
-              :name="auth.user?.nickname ?? '?'"
-              :src="auth.user?.avatar"
-              :color="auth.user?.avatarColor ?? '#0052d9'"
-              :online="ws.connected"
-            />
-          </button>
-          <template #content>
-            <ProfileCard @logout="confirmLogout" />
-          </template>
-        </TPopup>
-
-        <!-- 昵称/在线状态：纯展示 -->
-        <div class="mc-sidebar__profile">
-          <div class="mc-sidebar__me-info">
-            <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
-            <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-              {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
-            </div>
-          </div>
-        </div>
-
-        <!-- 新建菜单：右侧 + 按钮 -->
-        <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
-        <TPopup
-          v-model:visible="moreVisible"
-          trigger="click"
-          placement="bottom-left"
-          :show-arrow="false"
-          attach="body"
-        >
-          <button type="button" class="mc-sidebar__more" :aria-label="t('chat.moreMenu')" :title="t('chat.moreMenu')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M11 11V8a1 1 0 1 1 2 0v3h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3H8a1 1 0 1 1 0-2h3Zm1 10a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Z"
-                fill="currentColor"
-              />
-            </svg>
-          </button>
-
-          <template #content>
-            <ul class="mc-sidebar__menu">
-              <li>
-                <button type="button" @click="menuSearchUser">{{ t('chat.menuSearch') }}</button>
-              </li>
-              <li>
-                <button type="button" @click="menuAddFriend">{{ t('chat.menuFriend') }}</button>
-              </li>
-              <li>
-                <button type="button" @click="menuNewGroup">{{ t('chat.menuGroup') }}</button>
-              </li>
-            </ul>
-          </template>
-        </TPopup>
-      </div>
-    </header>
-
-    <TTabss v-model="tab">
-      <TTabPanel value="chats" :label="t('chat.tabChats')" />
-      <TTabPanel value="contacts">
-        <template #label>
-          <TBadge :count="friendsStore.requestCount" :offset="[6, -2]" size="small">
-            {{ t('chat.tabContacts') }}
-          </TBadge>
-        </template>
-      </TTabPanel>
-    </TTabss>
-
     <!-- 搜索：人 / 群 -->
     <div class="mc-sidebar__search">
       <TInput
-        ref="searchRef"
         v-model="kw"
         :placeholder="t('chat.searchPlaceholder')"
         clearable
         @change="onSearch"
         @enter="onSearch"
       />
-      <TButton v-if="tab === 'chats'" size="small" variant="outline" @click="createGroupVisible = true">
-        {{ t('chat.createGroup') }}
-      </TButton>
     </div>
 
     <div v-if="kw.trim()" class="mc-sidebar__results">
@@ -355,7 +208,7 @@ const sortedConvs = computed(() =>
     </div>
 
     <!-- 会话列表 -->
-    <div v-else-if="tab === 'chats'" class="mc-sidebar__list">
+    <div v-else-if="props.view === 'chats'" class="mc-sidebar__list">
       <div
         v-for="c in sortedConvs"
         :key="c.id"
@@ -419,20 +272,10 @@ const sortedConvs = computed(() =>
           </TButton>
         </div>
       </div>
-      <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">{{ t('friends.empty') }}</div>
+      <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">
+        {{ t('friends.empty') }}
+      </div>
     </div>
-
-
-
-    <!-- 建群弹窗 -->
-    <TDialog
-      v-model:visible="createGroupVisible"
-      :header="t('chat.createGroupTitle')"
-      :confirm-btn="{ content: t('chat.createGroup'), theme: 'primary' }"
-      @confirm="doCreateGroup"
-    >
-      <TInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
-    </TDialog>
   </aside>
 </template>
 
@@ -445,132 +288,6 @@ const sortedConvs = computed(() =>
   border-right: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
   overflow: hidden;
-}
-
-.mc-sidebar__me {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px 10px;
-}
-
-.mc-sidebar__userrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* 头像按钮：资料卡的触发元素（面板贴其右侧弹出） */
-.mc-sidebar__avatar-btn {
-  flex-shrink: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: 50%;
-  cursor: pointer;
-  line-height: 0;
-}
-
-.mc-sidebar__avatar-btn:focus-visible {
-  outline: 2px solid var(--td-brand-color);
-  outline-offset: 2px;
-}
-
-/* 头像行右侧的「新建」按钮 */
-.mc-sidebar__more {
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-}
-
-.mc-sidebar__more:hover {
-  background: var(--td-bg-color-secondarycontainer);
-  color: var(--td-text-color-primary);
-}
-
-.mc-sidebar__more:focus-visible {
-  outline: 2px solid var(--td-brand-color);
-  outline-offset: 1px;
-}
-
-/* 新建菜单 */
-.mc-sidebar__menu {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  min-width: 128px;
-}
-
-.mc-sidebar__menu button {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  color: var(--td-text-color-primary);
-  cursor: pointer;
-}
-
-.mc-sidebar__menu button:hover {
-  background: var(--td-bg-color-secondarycontainer);
-}
-
-/* 昵称行：纯展示 */
-.mc-sidebar__profile {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px;
-  margin: -4px;
-  text-align: left;
-}
-
-.mc-sidebar__profile:hover {
-  background: var(--td-bg-color-secondarycontainer);
-}
-
-.mc-sidebar__profile:focus-visible {
-  outline: 2px solid var(--td-brand-color);
-  outline-offset: 1px;
-}
-
-.mc-sidebar__me-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.mc-sidebar__me-name {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mc-sidebar__me-status {
-  font-size: 12px;
-}
-
-.mc-sidebar__me-status.on {
-  color: var(--td-success-color, #2ba471);
-}
-
-.mc-sidebar__me-status.off {
-  color: var(--td-text-color-placeholder);
 }
 
 .mc-sidebar__search {
