@@ -261,20 +261,15 @@ const sortedConvs = computed(() =>
           </template>
         </TPopup>
 
-        <!-- 昵称/在线状态：点击进设置页 -->
-        <button
-          type="button"
-          class="mc-sidebar__profile"
-          :aria-label="t('settings.account')"
-          @click="router.push('/settings')"
-        >
+        <!-- 昵称/在线状态：纯展示 -->
+        <div class="mc-sidebar__profile">
           <div class="mc-sidebar__me-info">
             <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
             <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
               {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
             </div>
           </div>
-        </button>
+        </div>
 
         <!-- 新建菜单：右侧 + 按钮 -->
         <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
@@ -533,7 +528,7 @@ const sortedConvs = computed(() =>
   background: var(--td-bg-color-secondarycontainer);
 }
 
-/* 昵称行：点击进设置页 */
+/* 昵称行：纯展示 */
 .mc-sidebar__profile {
   flex: 1;
   min-width: 0;
@@ -542,13 +537,7 @@ const sortedConvs = computed(() =>
   gap: 10px;
   padding: 4px;
   margin: -4px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
   text-align: left;
-  font: inherit;
-  color: inherit;
 }
 
 .mc-sidebar__profile:hover {
