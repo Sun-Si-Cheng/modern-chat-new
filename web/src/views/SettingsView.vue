@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button as TButton, DialogPlugin, Input as TInput, MessagePlugin } from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
@@ -9,7 +9,7 @@ import { systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
-import { SCENE_PRESETS, usePrefsStore, type SceneEffect, type Theme } from '@/stores/prefs'
+import { usePrefsStore, type Theme } from '@/stores/prefs'
 import { useWsStore } from '@/stores/ws'
 
 const router = useRouter()
@@ -27,19 +27,6 @@ const themeOptions: Array<{ value: Theme; label: string }> = [
   { value: 'light', label: 'prefs.themeLight' },
   { value: 'dark', label: 'prefs.themeDark' },
 ]
-
-const effectOptions: Array<{ value: SceneEffect; label: string }> = [
-  { value: 'aurora', label: 'prefs.effectAurora' },
-  { value: 'waves', label: 'prefs.effectWaves' },
-  { value: 'grid', label: 'prefs.effectGrid' },
-  { value: 'none', label: 'prefs.effectNone' },
-]
-
-function onColorInput(e: Event) {
-  prefs.setSceneColor((e.target as HTMLInputElement).value)
-}
-
-const showCustom = computed(() => !SCENE_PRESETS.some((c) => c.toLowerCase() === prefs.sceneColor.toLowerCase()))
 
 // ===== 账号 =====
 
@@ -156,56 +143,6 @@ function goBack() {
           </div>
         </div>
 
-        <!-- 背景设置独立成组，并标明作用范围 -->
-        <div class="settings-subhead">
-          <span class="settings-subhead__title">{{ t('settings.sceneTitle') }}</span>
-          <span class="settings-subhead__hint">{{ t('settings.sceneHint') }}</span>
-        </div>
-
-        <div class="settings-row settings-row--stack">
-          <span class="settings-row__label">{{ t('prefs.sceneColor') }}</span>
-          <div class="settings-colors">
-            <button
-              v-for="c in SCENE_PRESETS"
-              :key="c"
-              type="button"
-              class="settings-swatch"
-              :class="{ 'is-active': prefs.sceneColor.toLowerCase() === c.toLowerCase() }"
-              :style="{ background: c }"
-              :aria-label="c"
-              :aria-pressed="prefs.sceneColor.toLowerCase() === c.toLowerCase()"
-              @click="prefs.setSceneColor(c)"
-            />
-            <label
-              class="settings-swatch settings-swatch--custom"
-              :class="{ 'is-active': showCustom }"
-              :title="t('prefs.sceneCustom')"
-            >
-              <input type="color" :value="prefs.sceneColor" @input="onColorInput" />
-            </label>
-          </div>
-        </div>
-
-        <div class="settings-row settings-row--stack">
-          <span class="settings-row__label">{{ t('prefs.sceneEffect') }}</span>
-          <div class="settings-seg" role="group" :aria-label="t('prefs.sceneEffect')">
-            <button
-              v-for="opt in effectOptions"
-              :key="opt.value"
-              type="button"
-              :class="{ 'is-active': prefs.sceneEffect === opt.value }"
-              @click="prefs.setSceneEffect(opt.value)"
-            >
-              {{ t(opt.label) }}
-            </button>
-          </div>
-        </div>
-
-        <div class="settings-foot">
-          <button type="button" class="settings-link" @click="prefs.resetScene()">
-            {{ t('prefs.sceneReset') }}
-          </button>
-        </div>
       </section>
 
       <!-- 账号 -->
@@ -328,12 +265,6 @@ function goBack() {
   border-bottom: 1px solid var(--mc-hairline);
 }
 
-.settings-row--stack {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
-
 .settings-row--last {
   border-bottom: none;
 }
@@ -379,66 +310,6 @@ function goBack() {
   outline-offset: 1px;
 }
 
-/* 颜色块 */
-.settings-colors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.settings-swatch {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-  transition: box-shadow 0.12s ease-out;
-}
-
-.settings-swatch.is-active {
-  box-shadow:
-    0 0 0 2px var(--td-bg-color-container),
-    0 0 0 4px var(--td-brand-color);
-}
-
-.settings-swatch--custom {
-  position: relative;
-  background: conic-gradient(from 210deg, #7ec4ff, #60e2c8, #aa96ff, #ffb37e, #7ec4ff);
-  overflow: hidden;
-}
-
-.settings-swatch--custom input {
-  position: absolute;
-  inset: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.settings-swatch:focus-visible {
-  outline: 2px solid var(--td-brand-color);
-  outline-offset: 2px;
-}
-
-.settings-link {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--mc-link);
-  cursor: pointer;
-}
-
-.settings-link:hover {
-  text-decoration: underline;
-}
-
 /* 表单字段 */
 .settings-field {
   display: flex;
@@ -473,35 +344,6 @@ function goBack() {
   margin-left: 8px;
 }
 
-/* 分组小标题：说明该组设置的作用范围 */
-.settings-subhead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 14px 0 10px;
-  border-top: 1px solid var(--mc-hairline);
-}
-
-.settings-subhead__title {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.settings-subhead__hint {
-  font-size: 12px;
-  color: var(--mc-text-faint);
-}
-
-/* 卡片底部：重置入口 */
-.settings-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 0 14px;
-  font-size: 12px;
-}
-
 @media (max-width: 560px) {
   .settings-body {
     padding: 16px 12px 0;
@@ -512,7 +354,7 @@ function goBack() {
   }
 
   /* 窄屏：标签与控件上下排列，避免右侧被挤压 */
-  .settings-row:not(.settings-row--stack) {
+  .settings-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
