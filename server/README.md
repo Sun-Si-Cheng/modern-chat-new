@@ -4,8 +4,10 @@ Go 后端（Gin + GORM + MySQL + gorilla/websocket）。接口契约见 [docs/�
 
 ## 依赖
 
-- Go 1.22+
+- Go（以 `go.mod` 的 `go` 指令为准，当前依赖链要求 1.26+；本地运行 `go version` 需不低于该版本）
 - MySQL 8.0（utf8mb4）
+
+> 生产环境必须设置 `JWT_SECRET`（`GIN_MODE=release` 时缺省会拒绝启动）与 `FRONTEND_URL`（WS Origin 白名单 + 找回密码链接）。
 
 ## 十分钟跑起来
 

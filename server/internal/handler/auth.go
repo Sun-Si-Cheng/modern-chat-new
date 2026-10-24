@@ -152,7 +152,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
 }
 
-// Forgot 提交邮箱：始终返回 ok（不泄露邮箱是否存在）。
+// dummyHash 恒定时间路径用：用户不存在时也执行一次 bcrypt 比对，抹平主要时序差异。
+var dummyHash = func() string {
+	h, _ := bcrypt.GenerateFromPassword([]byte("timing-equalizer"), 10)
+	return string(h)
+}()
+
+// Forgot 提交邮箱：始终返回 ok 且保持近似恒定耗时（不泄露邮箱是否存在）。
 func (h *AuthHandler) Forgot(c *gin.Context) {
 	var req struct {
 		Email string `json:"email"`
@@ -181,8 +187,11 @@ func (h *AuthHandler) Forgot(c *gin.Context) {
 			internal(c, err)
 			return
 		}
-		link := "http://localhost:5173/forgot?token=" + token
+		link := h.cfg.FrontendURLs[0] + "/forgot?token=" + token
 		h.mailer.SendResetLink(req.Email, link)
+	} else {
+		// 均衡耗时：执行一次等价的 bcrypt 比对
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Email))
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

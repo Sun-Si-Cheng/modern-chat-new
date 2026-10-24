@@ -3,6 +3,7 @@ package ws
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -20,13 +21,31 @@ const (
 	maxMsgSize = 4096 // 上行帧上限
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+// upgraderFor 构造带 Origin 白名单的升级器：
+// 浏览器 WS 升级必带 Origin，非白名单来源拒绝（防跨站 WebSocket 劫持）；
+// 无 Origin（curl / 服务端客户端）放行，仍受 token 鉴权保护。
+func upgraderFor(allowed []string) websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			origin = strings.TrimSuffix(strings.ToLower(origin), "/")
+			for _, a := range allowed {
+				if origin == strings.ToLower(a) {
+					return true
+				}
+			}
+			return false
+		},
+	}
 }
 
 // Serve 握手 + 鉴权 + 启动读写 pump。
-func Serve(secret string, users *store.UserStore, hub *Hub, w http.ResponseWriter, r *http.Request) {
+func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *Hub, w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
 		http.Error(w, `{"error":"登录已失效，请重新登录"}`, http.StatusUnauthorized)
@@ -47,7 +66,8 @@ func Serve(secret string, users *store.UserStore, hub *Hub, w http.ResponseWrite
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	up := upgraderFor(allowedOrigins)
+	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

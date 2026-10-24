@@ -106,10 +106,10 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/users/:id/reset-password", adminH.ResetPassword)
 	}
 
-	// WebSocket（握手自行校验 JWT，不走中间件组）
+	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）
 	if d.WS != nil {
 		r.GET("/ws", func(c *gin.Context) {
-			ws.Serve(d.Cfg.JWTSecret, users, d.WS, c.Writer, c.Request)
+			ws.Serve(d.Cfg.JWTSecret, d.Cfg.FrontendURLs, users, d.WS, c.Writer, c.Request)
 		})
 	}
 
