@@ -2,8 +2,9 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button as TButton } from 'tdesign-vue-next'
-import { ArrowLeftIcon, SettingIcon } from 'tdesign-icons-vue-next'
+import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
+import QuickPrefs from '@/components/common/QuickPrefs.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { legalMeta, privacyEn, privacyZh, termsEn, termsZh, type LegalDoc } from '@/content/legal'
 import { usePrefsStore } from '@/stores/prefs'
@@ -54,14 +55,7 @@ function goBack() {
         <template #icon><ArrowLeftIcon /></template>
         {{ t('common.back') }}
       </TButton>
-      <TButton
-        variant="text"
-        shape="square"
-        :aria-label="t('settings.title')"
-        @click="router.push('/settings')"
-      >
-        <template #icon><SettingIcon /></template>
-      </TButton>
+      <QuickPrefs />
     </header>
 
     <article class="legal-doc">
