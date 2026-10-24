@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Dialog as TDialog, DialogPlugin, Input as TInput, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -8,17 +8,63 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import { useFriendsStore } from '@/stores/friends'
 import { useWsStore } from '@/stores/ws'
 import type { ConversationMember } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
+const friendsStore = useFriendsStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
 const conv = computed(() => convStore.currentConv)
 const isGroup = computed(() => conv.value?.type === 2)
 const isOwner = computed(() => conv.value?.ownerId === auth.user?.id)
+
+// ===== 单聊：加好友 =====
+
+/** 本次会话中已成功发出的申请（接口不返回「我发出的待处理申请」） */
+const sentRequestIds = reactive(new Set<number>())
+const addingFriend = ref(false)
+
+const peerId = computed(() => conv.value?.peer?.id ?? 0)
+
+const isPeerFriend = computed(
+  () => peerId.value > 0 && friendsStore.accepted.some((f) => f.friend.id === peerId.value),
+)
+
+const incomingRequest = computed(() =>
+  peerId.value > 0 ? friendsStore.requests.find((r) => r.from.id === peerId.value) : undefined,
+)
+
+const peerRequestSent = computed(() => sentRequestIds.has(peerId.value))
+
+async function addPeerAsFriend() {
+  const peer = conv.value?.peer
+  if (!peer || addingFriend.value) return
+  addingFriend.value = true
+  try {
+    await friendsStore.apply(peer.username)
+    sentRequestIds.add(peer.id)
+    void MessagePlugin.success(t('friends.applyOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    addingFriend.value = false
+  }
+}
+
+async function acceptPeerRequest() {
+  const req = incomingRequest.value
+  if (!req) return
+  try {
+    await friendsStore.handle(req.id, true)
+    void MessagePlugin.success(t('friends.acceptOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
 
 const members = ref<ConversationMember[]>([])
 
@@ -200,6 +246,24 @@ async function leave() {
             </div>
           </div>
         </div>
+
+        <div class="mc-detail__peer-actions">
+          <span v-if="isPeerFriend" class="mc-detail__tag">{{ t('friends.alreadyFriend') }}</span>
+          <TButton v-else-if="incomingRequest" block size="small" theme="primary" @click="acceptPeerRequest">
+            {{ t('friends.accept') }}
+          </TButton>
+          <span v-else-if="peerRequestSent" class="mc-detail__tag">{{ t('friends.sent') }}</span>
+          <TButton
+            v-else
+            block
+            size="small"
+            theme="primary"
+            :loading="addingFriend"
+            @click="addPeerAsFriend"
+          >
+            {{ t('friends.addAction') }}
+          </TButton>
+        </div>
       </div>
     </template>
 
@@ -342,6 +406,21 @@ async function leave() {
   margin-top: 2px;
   font-size: 12px;
   line-height: 1.4;
+}
+
+/* 单聊加好友：已是好友/已申请用状态标签，其余情况给一个可执行按钮 */
+.mc-detail__peer-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.mc-detail__tag {
+  padding: 3px 9px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
 }
 
 .mc-detail__footer {
