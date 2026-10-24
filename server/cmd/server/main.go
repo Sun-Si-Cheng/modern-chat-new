@@ -63,11 +63,11 @@ func main() {
 	go hub.Run()
 
 	r := router.New(router.Deps{
-		Cfg:      cfg,
-		DB:       db,
-		Mailer:   service.NewMailer(cfg.SMTP),
-		Notifier: hub,
-		WS:       hub,
+		Cfg:         cfg,
+		DB:          db,
+		Mailer:      service.NewMailer(cfg.SMTP),
+		Notifier:    hub,
+		WS:          hub,
 		AuthLimiter: authLimiter,
 	})
 

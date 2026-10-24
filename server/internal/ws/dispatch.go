@@ -207,12 +207,12 @@ func (h *Hub) sendError(c *Client, reason string) {
 
 func messageFrame(m *model.Message, clientMsgID string) ginH {
 	frame := ginH{
-		"type":     "message",
-		"id":       m.ID,
-		"convId":   m.ConversationID,
-		"from":     ginH{"id": m.SenderID},
-		"content":  m.Content,
-		"msgType":  m.MsgType,
+		"type":      "message",
+		"id":        m.ID,
+		"convId":    m.ConversationID,
+		"from":      ginH{"id": m.SenderID},
+		"content":   m.Content,
+		"msgType":   m.MsgType,
 		"createdAt": m.CreatedAt,
 	}
 	if clientMsgID != "" {

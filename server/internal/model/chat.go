@@ -4,10 +4,10 @@ import "time"
 
 // Conversation 统一会话：type=1 单聊、type=2 群聊（同构）。
 type Conversation struct {
-	ID        uint     `gorm:"primaryKey" json:"id"`
-	Type      int8     `gorm:"not null" json:"type"`
-	Name      *string  `gorm:"size:30" json:"name,omitempty"`
-	OwnerID   *uint    `json:"ownerId,omitempty"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Type      int8      `gorm:"not null" json:"type"`
+	Name      *string   `gorm:"size:30" json:"name,omitempty"`
+	OwnerID   *uint     `json:"ownerId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 

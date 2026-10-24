@@ -22,7 +22,7 @@ func Open(dsn string, retries int, interval time.Duration) (*gorm.DB, error) {
 	)
 	for attempt := 1; attempt <= retries; attempt++ {
 		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-			Logger: gormlog.Default.LogMode(gormlogger.Warn),
+			Logger:  gormlog.Default.LogMode(gormlogger.Warn),
 			NowFunc: time.Now,
 		})
 		if err == nil {

@@ -16,10 +16,10 @@ const maxGroupMembers = 200
 
 // ConversationHandler 会话与消息 REST。
 type ConversationHandler struct {
-	users  *store.UserStore
+	users   *store.UserStore
 	friends *store.FriendStore
-	convs  *store.ConversationStore
-	msgs   *store.MessageStore
+	convs   *store.ConversationStore
+	msgs    *store.MessageStore
 }
 
 func NewConversationHandler(users *store.UserStore, friends *store.FriendStore, convs *store.ConversationStore, msgs *store.MessageStore) *ConversationHandler {
