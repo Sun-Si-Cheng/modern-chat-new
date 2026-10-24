@@ -261,4 +261,15 @@ export default {
     switchLang: '切换到中文',
     switchTheme: 'Toggle theme',
   },
+  legal: {
+    terms: 'Terms of Service',
+    privacy: 'Privacy Policy',
+    updated: 'Updated',
+    effective: 'Effective',
+    agreePrefix: 'By signing up you agree to the',
+    and: 'and',
+    zhPrevails: 'This English translation is provided for convenience only. If it conflicts with the Chinese version, the Chinese version prevails.',
+    termsLink: 'Terms of Service',
+    privacyLink: 'Privacy Policy',
+  },
 }

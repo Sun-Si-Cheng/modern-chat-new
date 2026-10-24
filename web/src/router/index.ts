@@ -7,6 +7,19 @@ const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue'), meta: { guest: true } },
+    // 法律文档：公开可访问（登录前后都能打开）
+    {
+      path: '/terms',
+      name: 'terms',
+      component: () => import('@/views/LegalView.vue'),
+      meta: { legal: 'terms' },
+    },
+    {
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('@/views/LegalView.vue'),
+      meta: { legal: 'privacy' },
+    },
     { path: '/chat', name: 'chat', component: () => import('@/views/ChatLayout.vue'), meta: { requiresAuth: true } },
     {
       path: '/admin',

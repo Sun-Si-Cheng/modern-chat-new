@@ -158,6 +158,14 @@ function switchMode(m: 'login' | 'register') {
           <RouterLink v-if="mode === 'login'" to="/forgot">{{ t('auth.forgot') }}</RouterLink>
           <span v-else class="text-placeholder">{{ t('auth.forgotUsername') }}</span>
         </div>
+
+        <!-- 法律文档入口：注册前可读，符合"展示并可访问"的要求 -->
+        <p class="auth-card__legal">
+          <span v-if="mode === 'register'" class="text-placeholder">{{ t('legal.agreePrefix') }}</span>
+          <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
+          <span class="text-placeholder">{{ t('legal.and') }}</span>
+          <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
+        </p>
       </div>
     </main>
   </div>
@@ -343,6 +351,21 @@ function switchMode(m: 'login' | 'register') {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
+}
+
+.auth-card__legal {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mc-text-faint);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.auth-card__legal a {
+  color: var(--mc-link);
 }
 
 /* 窄屏：品牌侧折叠为顶部条 */

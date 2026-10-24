@@ -15,6 +15,7 @@
 | [docs/后端需求规格.md](docs/后端需求规格.md) | 接口契约（请求/响应字段）、校验规则、错误码、验收标准 | 改接口 / 做联调 / 验收 |
 | [server/README.md](server/README.md) | 后端运行手册（配置、迁移、测试、结构） | 部署与运维后端 |
 | [web/README.md](web/README.md) | 前端结构速览与命令 | 改前端 |
+| [docs/legal/README.md](docs/legal/README.md) | 用户协议 / 隐私协议的维护方式与合规提示 | 部署上线前替换运营主体信息 |
 
 ## 核心理念：内核 vs 插件
 
@@ -261,3 +262,9 @@ Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
 本项目采用 [Apache License 2.0](LICENSE) 授权，Copyright 2026 Sun-Si-Cheng。
 
 在遵守许可证的前提下可自由使用、修改与分发（含商业用途）；再分发时需保留版权与许可声明，修改过的文件需注明变更。完整条款见 [LICENSE](LICENSE)。
+
+## 协议与合规
+
+站内提供[用户协议](/terms)与[隐私协议](/privacy)页面（中英双语，登录页与个人资料弹窗均有入口），正文维护在 [`web/src/content/legal.ts`](web/src/content/legal.ts)。
+
+自建实例对外运营前，务必替换 `legalMeta` 中的运营主体、联系邮箱与域名，并参阅 [docs/legal/README.md](docs/legal/README.md)（含协议条款与实现代码的对应表、不同法域的合规提示）。
