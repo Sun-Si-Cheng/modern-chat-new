@@ -45,7 +45,7 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `LOG_DIR` | 日志目录，默认 `logs`（相对运行目录）；留空则只输出 stdout |
 | `LOG_RETAIN_DAYS` | 日志保留天数，默认 **15**；超期文件自动删除 |
 | `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` | 可选。配置后限流走 Redis 共享配额（支持多实例）；**连接失败自动降级为内存限流并打 WARN 日志**，不影响启动 |
-| `SMTP_*` | 可选；留空时找回密码链接打印到日志 |
+| `SMTP_*` | 可选；留空时找回密码链接打印到日志。端口 `465` 走隐式 TLS（QQ/163 推荐）、`587` 走 STARTTLS；QQ/163 需用 **SMTP 授权码**，且 `SMTP_FROM` 必须与 `SMTP_USER` 一致 |
 
 ## 日志
 
