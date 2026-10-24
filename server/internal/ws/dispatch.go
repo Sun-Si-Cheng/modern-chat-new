@@ -50,6 +50,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 	// 限流：每用户 20 条/分
 	if !h.deps.MsgLimiter.Allow(ukey(c.UserID)) {
+		slog.Warn("ws message rate limited", "uid", c.UserID, "conv", f.ConvID)
 		h.sendError(c, "操作过于频繁，请稍后再试")
 		return
 	}
@@ -93,10 +94,14 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		CreatedAt:      time.Now(),
 	}
 	if err := h.deps.Messages.Create(msg); err != nil {
-		slog.Error("ws create message", "err", err.Error())
+		slog.Error("ws create message", "err", err.Error(), "uid", c.UserID, "conv", f.ConvID)
 		h.sendError(c, "服务器开小差了，请稍后再试")
 		return
 	}
+	// 消息正文不入日志（隐私），只记元数据
+	slog.Debug("message stored",
+		"msg", msg.ID, "conv", msg.ConversationID, "from", msg.SenderID,
+		"type", msg.MsgType, "chars", len([]rune(msg.Content)))
 
 	// 收件箱冗余：全员 last=新消息；新成员行在此首次创建
 	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
@@ -181,6 +186,7 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 	if err := h.deps.Messages.RecallUnreadAdjust(msg.ConversationID, c.UserID, uint64(msg.ID)); err != nil {
 		slog.Error("ws recall unread adjust", "err", err.Error())
 	}
+	slog.Info("message recalled", "msg", msg.ID, "conv", msg.ConversationID, "by", c.UserID)
 	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
 	if err != nil {
 		return
@@ -195,10 +201,19 @@ func (h *Hub) requireMember(c *Client, convID uint) bool {
 	}
 	m, err := h.deps.Convs.MemberOf(convID, c.UserID)
 	if err != nil || m == nil {
+		// 非成员上行帧可能来自被踢后的残留客户端，也可能是越权探测：记 info 便于排查
+		slog.Info("ws frame rejected: not a member", "uid", c.UserID, "conv", convID, "err", errStr(err))
 		h.sendError(c, "无权访问该会话")
 		return false
 	}
 	return true
+}
+
+func errStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (h *Hub) sendError(c *Client, reason string) {
