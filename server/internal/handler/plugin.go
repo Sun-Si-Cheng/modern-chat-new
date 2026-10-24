@@ -120,6 +120,27 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string) {
 	}
 	perms, _ := json.Marshal(m.Permissions)
 	hosts, _ := json.Marshal(m.AllowedHosts)
+	me := middleware.UserFrom(c).ID
+
+	// 同名插件已安装：视为升级覆盖（保留 id / 启停状态 / 全局下架状态）
+	if existing, err := h.plugins.ByUserAndName(me, m.Name); err != nil {
+		internal(c, err)
+		return
+	} else if existing != nil {
+		existing.Version = m.Version
+		existing.Description = m.Description
+		existing.CodeText = code
+		existing.Permissions = string(perms)
+		existing.AllowedHosts = string(hosts)
+		if err := h.plugins.Save(existing); err != nil {
+			internal(c, err)
+			return
+		}
+		c.Header("X-Plugin-Updated", "true")
+		c.JSON(http.StatusOK, existing.View())
+		return
+	}
+
 	p := &model.Plugin{
 		Name:         m.Name,
 		Version:      m.Version,
@@ -128,7 +149,7 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string) {
 		Permissions:  string(perms),
 		AllowedHosts: string(hosts),
 		Enabled:      false,
-		InstalledBy:  middleware.UserFrom(c).ID,
+		InstalledBy:  me,
 	}
 	if err := h.plugins.Create(p); err != nil {
 		internal(c, err)

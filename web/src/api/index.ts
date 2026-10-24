@@ -1,4 +1,4 @@
-import { http } from './client'
+import { ApiError, http } from './client'
 import type {
   AuthPayload,
   Conversation,
@@ -89,10 +89,22 @@ export const pluginApi = {
     }).then(async (res) => {
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
       if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : '上传失败')
-      return data as unknown as Plugin
+      return { plugin: data as unknown as Plugin, updated: res.headers.get('X-Plugin-Updated') === 'true' }
     })
   },
-  fromUrl: (url: string) => http.post<Plugin>('/plugins/from-url', { url }),
+  /** URL 安装 / 升级（同名覆盖由服务端处理，updated 由响应头标记） */
+  fromUrl: (url: string) => {
+    const token = localStorage.getItem('mc_token') ?? ''
+    return fetch('/api/plugins/from-url', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }).then(async (res) => {
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+      if (!res.ok) throw new ApiError(res.status, typeof data.error === 'string' ? data.error : '安装失败')
+      return { plugin: data as unknown as Plugin, updated: res.headers.get('X-Plugin-Updated') === 'true' }
+    })
+  },
   setEnabled: (id: number, enabled: boolean) => http.patch<Plugin>(`/plugins/${id}`, { enabled }),
   remove: (id: number) => http.delete<{ ok: true }>(`/plugins/${id}`),
 }
