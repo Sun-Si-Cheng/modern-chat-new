@@ -28,7 +28,6 @@ const tab = ref<'users' | 'plugins'>('users')
 
 const loading = ref(false)
 const users = ref<AdminUserRow[]>([])
-const total = ref(0)
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 
 // ---- 插件聚合管理 ----
@@ -226,7 +225,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           :data="users"
           :columns="columns"
           :loading="loading"
-          :pagination="{ ...pagination, total }"
+          :pagination="pagination"
           @page-change="onPageChange"
         >
           <template #user="{ row }">

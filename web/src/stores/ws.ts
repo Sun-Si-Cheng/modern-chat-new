@@ -23,6 +23,8 @@ export const useWsStore = defineStore('ws', () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectDelay = 1000
   let closedByUser = false
+  /** 是否成功建立过连接：用于区分首连与重连（重连后需补数据） */
+  let hasConnected = false
 
   /** 旁路帧监听（插件宿主等），不参与状态机 */
   const frameListeners = new Set<(frame: ServerFrame) => void>()
@@ -48,6 +50,9 @@ export const useWsStore = defineStore('ws', () => {
       connected.value = true
       reconnectDelay = 1000
       startHeartbeat()
+      // 重连：断线期间的消息不会补发帧，必须重新对齐服务端状态
+      if (hasConnected) void conversations.resync()
+      hasConnected = true
     }
 
     socket.onmessage = (ev) => {
@@ -62,6 +67,8 @@ export const useWsStore = defineStore('ws', () => {
 
     socket.onclose = () => {
       connected.value = false
+      // 断开后无法再得知他人在线状态，清空避免继续显示过期的"在线"
+      onlineUsers.value = new Set()
       stopHeartbeat()
       if (!closedByUser) scheduleReconnect()
     }
@@ -103,10 +110,13 @@ export const useWsStore = defineStore('ws', () => {
     }
   }
 
-  function send(frame: ClientFrame) {
+  /** 返回是否真的写出：连接未就绪时调用方需要把消息标记为失败而不是静默丢弃 */
+  function send(frame: ClientFrame): boolean {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(frame))
+      return true
     }
+    return false
   }
 
   // ===== 心跳 =====
@@ -145,6 +155,7 @@ export const useWsStore = defineStore('ws', () => {
 
   function disconnect() {
     closedByUser = true
+    hasConnected = false
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
@@ -153,6 +164,7 @@ export const useWsStore = defineStore('ws', () => {
     socket?.close()
     socket = null
     connected.value = false
+    onlineUsers.value = new Set()
   }
 
   function resetPresence() {

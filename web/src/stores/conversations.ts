@@ -57,6 +57,12 @@ export const useConversationsStore = defineStore('conversations', () => {
         const page = await convApi.messages(convId)
         messagesByConv[convId] = page.messages.slice().reverse()
         hasMoreByConv[convId] = page.hasMore
+      } catch (e) {
+        // 会话已失效（被踢 / 已退群）或网络异常：回退选择，避免停在空白会话
+        console.warn('[conv] open failed:', e)
+        messagesByConv[convId] = []
+        if (currentConvId.value === convId) currentConvId.value = null
+        return
       } finally {
         loadingMessages.value = false
       }
@@ -76,6 +82,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       if (page.messages.length) {
         messagesByConv[convId] = [...page.messages.slice().reverse(), ...list]
       }
+    } catch (e) {
+      // 分页失败不影响已有消息，下次滚动会重试
+      console.warn('[conv] load more failed:', e)
     } finally {
       loadingMessages.value = false
     }
@@ -115,13 +124,27 @@ export const useConversationsStore = defineStore('conversations', () => {
       pending: true,
     }
     ;(messagesByConv[convId] ??= []).push(optimistic)
-    sendFrame({ type: 'chat', convId, clientMsgId, content: trimmed })
+    // 连接不可用时立即标记失败，避免消息永远停在"发送中"
+    const sent = sendFrame({ type: 'chat', convId, clientMsgId, content: trimmed })
+    if (!sent) {
+      optimistic.pending = false
+      optimistic.failed = true
+    }
   }
 
   function resend(msg: Message) {
     msg.pending = true
     msg.failed = false
-    sendFrame({ type: 'chat', convId: msg.conversationId, clientMsgId: msg.clientMsgId, content: msg.content })
+    const sent = sendFrame({
+      type: 'chat',
+      convId: msg.conversationId,
+      clientMsgId: msg.clientMsgId,
+      content: msg.content,
+    })
+    if (!sent) {
+      msg.pending = false
+      msg.failed = true
+    }
   }
 
   function sendTyping(convId: number) {
@@ -132,16 +155,51 @@ export const useConversationsStore = defineStore('conversations', () => {
     sendFrame({ type: 'recall', messageId })
   }
 
+  // ===== 断线重连后对齐服务端状态 =====
+
+  /** 拉取最新一页并与本地合并：保留已读历史，追加断线期间的新消息 */
+  async function loadLatest(convId: number) {
+    const page = await convApi.messages(convId)
+    // 接口按 id 倒序返回（新→旧），本地列表是正序，需先反转
+    const incoming = page.messages.slice().reverse()
+    const list = (messagesByConv[convId] ??= [])
+    const knownIds = new Set(list.map((m) => m.id))
+    const byClientId = new Map(list.filter((m) => m.clientMsgId).map((m) => [m.clientMsgId, m] as const))
+
+    for (const m of incoming) {
+      if (knownIds.has(m.id)) continue
+      const local = m.clientMsgId ? byClientId.get(m.clientMsgId) : undefined
+      if (local) Object.assign(local, m) // 服务端已落库：就地确认，避免重复气泡
+      else list.push(m)
+    }
+    if (list.length) hasMoreByConv[convId] = page.hasMore
+  }
+
+  /** 重连后调用：重拉会话列表与当前会话最新消息（断线期间的增量无法从帧恢复） */
+  async function resync() {
+    try {
+      await loadConversations()
+      const id = currentConvId.value
+      if (id !== null) {
+        await loadLatest(id)
+        markRead(id)
+      }
+    } catch {
+      /* 忽略：用户切换会话时会重新拉取 */
+    }
+  }
+
   // ===== 上行出口（由 ws store 注入，避免循环 import） =====
 
-  let frameSender: ((frame: ClientFrame) => void) | null = null
+  /** 返回是否真的写出（连接断开时为 false，调用方据此标记失败） */
+  let frameSender: ((frame: ClientFrame) => boolean) | null = null
 
-  function bindSender(sender: (frame: ClientFrame) => void) {
+  function bindSender(sender: (frame: ClientFrame) => boolean) {
     frameSender = sender
   }
 
-  function sendFrame(frame: ClientFrame) {
-    frameSender?.(frame)
+  function sendFrame(frame: ClientFrame): boolean {
+    return frameSender?.(frame) ?? false
   }
 
   // ===== 下行帧处理（ws store 转发） =====
@@ -250,6 +308,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     upsertConversation,
     openConversation,
     loadMore,
+    resync,
     markRead,
     sendText,
     resend,
