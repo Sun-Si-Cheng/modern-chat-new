@@ -237,6 +237,7 @@ function switchMode(m: 'login' | 'register') {
 .auth-card__brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-bottom: 26px;
 }
@@ -266,6 +267,7 @@ function switchMode(m: 'login' | 'register') {
   margin: 0;
   font-size: 26px;
   letter-spacing: -0.02em;
+  text-align: center;
 }
 
 /* 表单与标题之间留白；字段间距用 flex gap 统一控制

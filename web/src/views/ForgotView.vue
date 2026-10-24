@@ -225,6 +225,7 @@ function backToStep1() {
 .auth-card__brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-bottom: 26px;
 }
@@ -254,6 +255,7 @@ function backToStep1() {
   margin: 0 0 10px;
   font-size: 26px;
   letter-spacing: -0.02em;
+  text-align: center;
 }
 
 .auth-card__sub {
@@ -261,6 +263,7 @@ function backToStep1() {
   font-size: 14px;
   line-height: 1.6;
   color: var(--mc-text-faint);
+  text-align: center;
 }
 
 /* ===== 步骤条 ===== */
