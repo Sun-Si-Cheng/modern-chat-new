@@ -113,22 +113,22 @@ function scrollToBottom() {
 const animatedKey = ref('')
 let animateTimer: ReturnType<typeof setTimeout> | null = null
 
-watch(
-  () => messages.value.length,
-  (len, prev) => {
-    if (prev !== undefined && len > prev) {
-      const last = messages.value[messages.value.length - 1]
-      if (last) {
-        animatedKey.value = last.clientMsgId || `msg-${last.id}`
-        if (animateTimer) clearTimeout(animateTimer)
-        animateTimer = setTimeout(() => {
-          animatedKey.value = ''
-        }, 460)
-      }
-    }
-    if (stickToBottom.value) scrollToBottom()
-  },
-)
+/** 只观察最后一条消息的 key：追加新消息时变化，向上翻历史时不变 */
+const lastMessageKey = computed(() => {
+  const last = messages.value[messages.value.length - 1]
+  return last ? last.clientMsgId || `msg-${last.id}` : ''
+})
+
+watch(lastMessageKey, (key, prevKey) => {
+  if (key && prevKey !== undefined && key !== prevKey) {
+    animatedKey.value = key
+    if (animateTimer) clearTimeout(animateTimer)
+    animateTimer = setTimeout(() => {
+      animatedKey.value = ''
+    }, 460)
+  }
+  if (stickToBottom.value) scrollToBottom()
+})
 
 onBeforeUnmount(() => {
   if (animateTimer) clearTimeout(animateTimer)
