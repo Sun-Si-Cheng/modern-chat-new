@@ -164,6 +164,25 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 - **REST**：前缀 `/api`，除注册 / 登录 / 找回外均需 `Authorization: Bearer <token>`；错误统一 `{ "error": "msg" }`。全量接口见设计文档 §6。
 - **WebSocket**：`GET /ws?token=<JWT>`。上行帧 `chat / typing / read / recall / ping`，下行帧 `message / recall / read / typing / presence / conv_change / kicked / pong / error`。消息以 `client_msg_id`（UUID）幂等去重，重连不重复收发。详见设计文档 §7。
 
+## 更新与升级
+
+代码推到 Gitee 后，在部署机上**一条命令**从远端拉取并重建（不用手动上传文件）：
+
+```bash
+./scripts/update.sh                          # 拉 master → 构建前后端 → 重启
+./scripts/update.sh dev                      # 指定分支
+./scripts/update.sh --no-restart             # 只构建产物，稍后自己挑时间重启
+RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
+```
+
+Windows 本地：`.\scripts\update.ps1`（同样支持 `-Branch` / `-NoRestart`）。
+
+脚本做的事：`git pull --ff-only`（本地有分叉会直接报错，不自动合并）→ `go build`（注入版本号）→ `npm ci && npm run build` → 按 `RESTART_CMD` / docker compose / systemd 依次尝试重启。
+
+**核对是否生效**：`curl http://127.0.0.1:8080/api/version`，或看站长后台右上角的构建信息（`版本 · 提交 · 构建时间`）。
+
+> 为什么没有"后台点一下自动升级"：管理员接口触发 `git pull` + 重启等于给该账号挂上远程代码执行权限，账号一旦泄露等同丢服务器。升级始终由运维脚本执行。
+
 ## 部署
 
 - **Docker**：`docker compose up -d --build` 起 MySQL + 后端；前端可构建后由 `deploy/nginx.compose.conf` 的 nginx 容器托管（配置见 `docker-compose.yml` 末尾注释）

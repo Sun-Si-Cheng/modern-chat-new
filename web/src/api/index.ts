@@ -134,6 +134,19 @@ export const adminApi = {
     http.post<{ ok: true; affected: number }>('/admin/plugins/global-disable', { name, disabled }),
 }
 
+// ===== 系统信息 =====
+
+export interface VersionInfo {
+  version: string
+  commit: string
+  buildTime: string
+}
+
+export const systemApi = {
+  /** 当前构建版本（免鉴权，用于核对升级是否生效） */
+  version: () => http.get<VersionInfo>('/version'),
+}
+
 /** 站长视角：按插件名聚合的行 */
 export interface AdminPluginRow {
   name: string
