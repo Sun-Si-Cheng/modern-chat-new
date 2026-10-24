@@ -34,6 +34,15 @@ watch(
   { immediate: true },
 )
 
+// 群成员变动（他人入群 / 被踢 / 转让）后刷新成员列表
+watch(
+  () => conv.value?.memberCount,
+  async (count, prev) => {
+    if (prev === undefined || count === prev || !conv.value || !isGroup.value) return
+    await refreshMembers().catch(() => undefined)
+  },
+)
+
 // ===== 群管理 =====
 
 const renameVisible = ref(false)

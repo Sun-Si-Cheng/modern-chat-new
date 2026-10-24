@@ -35,6 +35,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     for (const c of conversations.value) {
       if (hasMoreByConv[c.id] === undefined) hasMoreByConv[c.id] = true
     }
+    // 当前会话已不在列表中（被踢 / 已退群）：清空选择，避免展示失效会话
+    if (currentConvId.value !== null && !conversations.value.some((c) => c.id === currentConvId.value)) {
+      currentConvId.value = null
+    }
   }
 
   function upsertConversation(conv: Conversation) {
