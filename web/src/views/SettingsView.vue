@@ -251,17 +251,10 @@ function goBack() {
       <!-- 关于 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.about') }}</h2>
-        <div class="settings-row">
+        <div class="settings-row settings-row--last">
           <span class="settings-row__label">{{ t('settings.version') }}</span>
           <span class="settings-row__value text-placeholder num">
             {{ build ? `${build.version} · ${build.commit}` : '—' }}
-          </span>
-        </div>
-        <div class="settings-row settings-row--last">
-          <span class="settings-row__label">{{ t('legal.terms') }}</span>
-          <span class="settings-row__links">
-            <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
-            <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
           </span>
         </div>
       </section>
@@ -345,12 +338,6 @@ function goBack() {
 }
 
 .settings-row__value {
-  font-size: 13px;
-}
-
-.settings-row__links {
-  display: flex;
-  gap: 14px;
   font-size: 13px;
 }
 
