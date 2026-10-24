@@ -23,8 +23,6 @@ export default {
     },
     loginTitle: 'Sign in to your account',
     registerTitle: 'Create your account',
-    loginSub: 'Continue with your username and password',
-    registerSub: 'Sign up to add friends and start chatting',
     tabLogin: 'Sign in',
     tabRegister: 'Sign up',
     username: 'Username',

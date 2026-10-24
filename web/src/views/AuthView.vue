@@ -123,9 +123,6 @@ function switchMode(m: 'login' | 'register') {
       <h1 class="auth-card__title">
         {{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}
       </h1>
-      <p class="auth-card__sub">
-        {{ mode === 'login' ? t('auth.loginSub') : t('auth.registerSub') }}
-      </p>
 
       <TForm
         ref="form"
@@ -266,21 +263,14 @@ function switchMode(m: 'login' | 'register') {
 }
 
 .auth-card__title {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 26px;
   letter-spacing: -0.02em;
 }
 
-.auth-card__sub {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--mc-text-faint);
-}
-
 /* 表单与标题之间留白，字段之间统一 22px */
 .auth-card__form {
-  margin-top: 24px;
+  margin-top: 26px;
   animation: auth-form-in 0.16s ease-out;
 }
 

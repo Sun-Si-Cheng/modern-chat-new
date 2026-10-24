@@ -23,8 +23,6 @@ export default {
     },
     loginTitle: '登录你的账号',
     registerTitle: '创建你的账号',
-    loginSub: '使用用户名与密码继续',
-    registerSub: '注册后即可添加好友、开始聊天',
     tabLogin: '登录',
     tabRegister: '注册',
     username: '用户名',
