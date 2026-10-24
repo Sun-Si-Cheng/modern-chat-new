@@ -95,7 +95,7 @@ function backToStep1() {
 
     <main class="auth-card">
       <div class="auth-card__brand">
-        <span class="auth-card__mark">M</span>
+        <img class="auth-card__mark" src="/favicon.ico" alt="" width="24" height="24" />
         <span class="auth-card__product">{{ t('app.name') }}</span>
       </div>
 
@@ -223,18 +223,18 @@ function backToStep1() {
   margin-bottom: 24px;
 }
 
+/* 产品图标：ico 自带白色底，用 1px 描边避免在深色卡片上糊成一块 */
 .auth-card__mark {
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: var(--td-brand-color);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
   flex-shrink: 0;
+  display: block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+:root[theme-mode='dark'] .auth-card__mark {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .auth-card__product {
