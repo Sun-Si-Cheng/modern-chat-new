@@ -6,6 +6,7 @@
 import { defineComponent, h, type PropType, type VNode } from 'vue'
 import { Button as TButton, Divider as TDivider, Input as TInput } from 'tdesign-vue-next'
 
+import i18n from '@/i18n'
 import type { UIDescNode } from '@/types/proto'
 
 function safeProps(raw: Record<string, unknown>): Record<string, unknown> {
@@ -98,7 +99,7 @@ export const DeclarativeNodes = defineComponent({
           )
         default:
           // 白名单外：拒绝渲染
-          return h('span', { class: 'text-placeholder' }, '[已拒绝渲染未知组件]')
+          return h('span', { class: 'text-placeholder' }, i18n.global.t('message.rejectedComponent'))
       }
     }
 

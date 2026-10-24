@@ -1,10 +1,24 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" theme-mode="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ModernChat</title>
+    <script>
+      // 首屏防闪烁：在样式生效前应用已保存的主题（auto 跟随系统）
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('mc_theme') || 'auto'
+          var dark =
+            saved === 'dark' ||
+            (saved === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.setAttribute('theme-mode', dark ? 'dark' : 'light')
+        } catch (e) {
+          /* 隐私模式下 localStorage 不可用：保持默认 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -3,12 +3,13 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin, Button as TButton } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
+import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
 import DeclarativeNodes from '@/components/declarative'
-import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 import { usePluginHost } from '@/composables/usePluginHost'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -19,6 +20,7 @@ const auth = useAuthStore()
 const convStore = useConversationsStore()
 const ws = useWsStore()
 const host = usePluginHost()
+const { t } = useAppI18n()
 
 const scrollerRef = ref<{ $el: HTMLElement } | null>(null)
 const stickToBottom = ref(true)
@@ -50,10 +52,10 @@ const displayItems = computed<DisplayItem[]>(() => {
 function formatDateLabel(ts: string): string {
   const d = new Date(ts)
   const now = new Date()
-  if (d.toDateString() === now.toDateString()) return '今天'
+  if (d.toDateString() === now.toDateString()) return t('message.today')
   const y = new Date(now)
   y.setDate(now.getDate() - 1)
-  if (d.toDateString() === y.toDateString()) return '昨天'
+  if (d.toDateString() === y.toDateString()) return t('message.yesterday')
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -106,7 +108,7 @@ const memberNameCache = reactive<Record<number, string>>({})
 function memberName(userId: number): string {
   if (memberNameCache[userId]) return memberNameCache[userId]
   void loadMemberNames()
-  return `用户${userId}`
+  return t('message.userFallback', { n: userId })
 }
 
 let memberNamesLoading = false
@@ -133,7 +135,7 @@ function canRecall(m: Message): boolean {
 
 function recall(m: Message) {
   convStore.recallMessage(m.id)
-  void MessagePlugin.success('已撤回')
+  void MessagePlugin.success(t('message.recallOk'))
 }
 
 // ===== 已读回执（单聊） =====
@@ -220,7 +222,7 @@ const senderAvatarColor = (m: Message) => {
         class="mc-msgpane__back"
         variant="text"
         shape="square"
-        aria-label="返回会话列表"
+        :aria-label="t('message.backToConversations')"
         @click="convStore.currentConvId = null"
       >
         <template #icon><ArrowLeftIcon /></template>
@@ -229,7 +231,13 @@ const senderAvatarColor = (m: Message) => {
         <div class="mc-msgpane__title">
           {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
           <span class="text-placeholder mc-msgpane__sub">
-            {{ conv.type === 1 ? (conv.peer && ws.onlineUsers.has(conv.peer.id) ? '在线' : '离线') : `${conv.memberCount} 人` }}
+            {{
+              conv.type === 1
+                ? conv.peer && ws.onlineUsers.has(conv.peer.id)
+                  ? t('chat.online')
+                  : t('chat.offline')
+                : t('chat.membersCount', { n: conv.memberCount })
+            }}
           </span>
         </div>
       </template>
@@ -245,8 +253,12 @@ const senderAvatarColor = (m: Message) => {
       @scroll="onScroll"
     >
       <template #before>
-        <div v-if="convStore.loadingMessages" class="text-placeholder mc-msgpane__loading">加载中…</div>
-        <div v-else-if="!convStore.hasMoreByConv[conv.id]" class="text-placeholder mc-msgpane__loading">没有更早的消息了</div>
+        <div v-if="convStore.loadingMessages" class="text-placeholder mc-msgpane__loading">
+          {{ t('common.loading') }}
+        </div>
+        <div v-else-if="!convStore.hasMoreByConv[conv.id]" class="text-placeholder mc-msgpane__loading">
+          {{ t('message.noEarlier') }}
+        </div>
       </template>
 
       <template #default="{ item }">
@@ -268,12 +280,14 @@ const senderAvatarColor = (m: Message) => {
                 </div>
 
                 <!-- 撤回 -->
-                <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">消息已撤回</div>
+                <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">{{ t('message.recalled') }}</div>
 
                 <!-- 自定义类型：插件白名单渲染 -->
                 <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">
                   <DeclarativeNodes v-if="isRenderedOk(item.msg)" :nodes="renderedNodes(item.msg)" />
-                  <span v-else class="text-placeholder">[{{ item.msg.msgType }} 消息]</span>
+                  <span v-else class="text-placeholder">
+                    {{ t('message.unknownType', { type: item.msg.msgType }) }}
+                  </span>
                 </div>
 
                 <!-- 普通文本 -->
@@ -284,15 +298,18 @@ const senderAvatarColor = (m: Message) => {
                     class="mc-msg__recall"
                     role="button"
                     tabindex="0"
+                    :aria-label="t('message.recallAria')"
                     @click="recall(item.msg)"
                     @keydown.enter="recall(item.msg)"
-                  >撤回</span>
-                  <span v-if="item.msg.failed" class="mc-msg__resend" @click="convStore.resend(item.msg)">重发</span>
+                  >{{ t('message.recall') }}</span>
+                  <span v-if="item.msg.failed" class="mc-msg__resend" @click="convStore.resend(item.msg)">
+                    {{ t('message.resend') }}
+                  </span>
                 </div>
 
                 <div class="mc-msg__meta text-placeholder num">
                   <template v-if="senderOf(item.msg) && conv?.type === 1">
-                    {{ peerReadUpTo >= item.msg.id ? '已读' : '未读' }} ·
+                    {{ peerReadUpTo >= item.msg.id ? t('message.read') : t('message.unread') }} ·
                   </template>
                   {{ fmtTime(item.msg.createdAt) }}
                 </div>
@@ -304,7 +321,7 @@ const senderAvatarColor = (m: Message) => {
     </DynamicScroller>
 
     <div v-if="typingNames.length" class="mc-msgpane__typing text-placeholder">
-      {{ typingNames.join('、') }} 正在输入…
+      {{ t('message.typingOnly', { names: typingNames.join(', ') }) }}
     </div>
 
     <MessageComposer v-if="conv" />
@@ -445,14 +462,15 @@ const senderAvatarColor = (m: Message) => {
   opacity: 0;
   transition: opacity 0.15s;
   user-select: none;
+  white-space: nowrap;
 }
 
 .mc-msg__recall {
-  right: -36px;
+  right: -46px;
 }
 
 .mc-msg.mine .mc-msg__recall {
-  left: -36px;
+  left: -46px;
   right: auto;
 }
 
@@ -468,7 +486,7 @@ const senderAvatarColor = (m: Message) => {
 }
 
 .mc-msg__resend {
-  right: -36px;
+  right: -52px;
   color: var(--td-error-color);
   opacity: 1;
 }

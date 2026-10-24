@@ -4,6 +4,7 @@ import { Dialog as TDialog, DialogPlugin, Input as TInput, MessagePlugin, Select
 
 import AvatarBadge from './AvatarBadge.vue'
 import PluginPanel from '@/components/declarative/PluginPanel.vue'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -13,6 +14,7 @@ import type { ConversationMember } from '@/types/proto'
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const ws = useWsStore()
+const { t, te } = useAppI18n()
 
 const conv = computed(() => convStore.currentConv)
 const isGroup = computed(() => conv.value?.type === 2)
@@ -62,26 +64,26 @@ async function doRename() {
     await convApi.rename(conv.value.id, newName.value.trim())
     await convStore.loadConversations()
     renameVisible.value = false
-    void MessagePlugin.success('群名已更新')
+    void MessagePlugin.success(t('group.renameOk'))
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 function kick(userId: number, nickname: string) {
   if (!conv.value) return
   const dialog = DialogPlugin.confirm({
-    header: '移出群聊',
-    body: `确定将「${nickname}」移出群聊吗？`,
-    confirmBtn: { content: '移出', theme: 'danger' },
+    header: t('group.kickTitle'),
+    body: t('group.kickBody', { name: nickname }),
+    confirmBtn: { content: t('group.kickBtn'), theme: 'danger' },
     onConfirm: async () => {
       try {
         await convApi.kick(conv.value!.id, userId)
         members.value = members.value.filter((m) => m.userId !== userId)
         await convStore.loadConversations()
-        void MessagePlugin.success('已移出')
+        void MessagePlugin.success(t('group.kickOk'))
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
@@ -94,9 +96,9 @@ async function doTransfer() {
     await convApi.transfer(conv.value.id, transferTarget.value)
     transferVisible.value = false
     await Promise.all([convStore.loadConversations(), refreshMembers()])
-    void MessagePlugin.success('群主已转让')
+    void MessagePlugin.success(t('group.transferOk'))
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
@@ -108,9 +110,12 @@ async function refreshMembers() {
 async function leave() {
   if (!conv.value) return
   const dialog = DialogPlugin.confirm({
-    header: '退出群聊',
-    body: isOwner.value ? '群主不能退群，请先转让群主。' : '确定退出该群聊吗？',
-    confirmBtn: { content: isOwner.value ? '知道了' : '退出', theme: isOwner.value ? 'default' : 'danger' },
+    header: t('group.leaveTitle'),
+    body: isOwner.value ? t('group.leaveOwnerBody') : t('group.leaveBody'),
+    confirmBtn: {
+      content: isOwner.value ? t('group.gotIt') : t('group.leaveBtn'),
+      theme: isOwner.value ? 'default' : 'danger',
+    },
     onConfirm: async () => {
       if (isOwner.value) {
         dialog.destroy()
@@ -120,9 +125,9 @@ async function leave() {
         await convApi.leave(conv.value!.id)
         await convStore.loadConversations()
         convStore.currentConvId = convStore.conversations[0]?.id ?? null
-        void MessagePlugin.success('已退出群聊')
+        void MessagePlugin.success(t('group.leaveOk'))
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
@@ -136,37 +141,47 @@ async function leave() {
     <template v-if="conv">
       <div v-if="isGroup" class="mc-detail__section">
         <div class="mc-detail__title">
-          群聊信息
+          {{ t('group.info') }}
           <span v-if="isOwner" class="mc-detail__actions">
-            <a @click="newName = conv.name ?? ''; renameVisible = true">改群名</a>
-            <a @click="transferVisible = true">转让群主</a>
+            <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
+            <a @click="transferVisible = true">{{ t('group.transfer') }}</a>
           </span>
         </div>
 
         <div class="mc-detail__member" v-for="m in members" :key="m.userId">
-          <AvatarBadge :name="m.user.nickname" :color="m.user.avatarColor" :size="30" :online="ws.onlineUsers.has(m.userId)" />
+          <AvatarBadge
+            :name="m.user.nickname"
+            :color="m.user.avatarColor"
+            :size="30"
+            :online="ws.onlineUsers.has(m.userId)"
+          />
           <span class="mc-detail__member-name">
             {{ m.user.nickname }}
-            <span v-if="m.role === 'owner'" class="text-placeholder">（群主）</span>
-            <span v-if="m.userId === auth.user?.id" class="text-placeholder">（我）</span>
+            <span v-if="m.role === 'owner'" class="text-placeholder">{{ t('group.owner') }}</span>
+            <span v-if="m.userId === auth.user?.id" class="text-placeholder">{{ t('group.me') }}</span>
           </span>
           <span v-if="isOwner && m.userId !== auth.user?.id" class="mc-detail__member-ops">
-            <a @click="kick(m.userId, m.user.nickname)">移出</a>
+            <a @click="kick(m.userId, m.user.nickname)">{{ t('group.kick') }}</a>
           </span>
         </div>
 
         <div class="mc-detail__footer">
           <TButton variant="outline" theme="danger" size="small" block @click="leave">
-            {{ isOwner ? '退群（需先转让）' : '退出群聊' }}
+            {{ isOwner ? t('group.leaveOwner') : t('group.leave') }}
           </TButton>
         </div>
       </div>
 
       <!-- 单聊资料 -->
       <div v-else class="mc-detail__section">
-        <div class="mc-detail__title">对方资料</div>
+        <div class="mc-detail__title">{{ t('group.peerInfo') }}</div>
         <div class="mc-detail__member">
-          <AvatarBadge :name="conv.peer?.nickname ?? '?'" :color="conv.peer?.avatarColor" :size="40" :online="conv.peer ? ws.onlineUsers.has(conv.peer.id) : false" />
+          <AvatarBadge
+            :name="conv.peer?.nickname ?? '?'"
+            :color="conv.peer?.avatarColor"
+            :size="40"
+            :online="conv.peer ? ws.onlineUsers.has(conv.peer.id) : false"
+          />
           <div>
             <div>{{ conv.peer?.nickname }}</div>
             <div class="text-placeholder">@{{ conv.peer?.username }}</div>
@@ -180,13 +195,13 @@ async function leave() {
   </div>
 
   <!-- 改群名 -->
-  <TDialog v-model:visible="renameVisible" header="修改群名" @confirm="doRename">
-    <TInput v-model="newName" placeholder="新群名" clearable @enter="doRename" />
+  <TDialog v-model:visible="renameVisible" :header="t('group.renameTitle')" @confirm="doRename">
+    <TInput v-model="newName" :placeholder="t('group.newName')" clearable @enter="doRename" />
   </TDialog>
 
   <!-- 转让群主 -->
-  <TDialog v-model:visible="transferVisible" header="转让群主" @confirm="doTransfer">
-    <TSelect v-model="transferTarget" :options="memberOptions" placeholder="选择新群主" clearable />
+  <TDialog v-model:visible="transferVisible" :header="t('group.transferTitle')" @confirm="doTransfer">
+    <TSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
   </TDialog>
 </template>
 

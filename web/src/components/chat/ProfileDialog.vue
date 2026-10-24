@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import {
-  Button as TButton,
-  Dialog as TDialog,
-  Input as TInput,
-  MessagePlugin,
-} from 'tdesign-vue-next'
+import { Button as TButton, Dialog as TDialog, Input as TInput, MessagePlugin } from 'tdesign-vue-next'
 
+import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 
 const visible = defineModel<boolean>({ default: false })
 const auth = useAuthStore()
+const { t, te } = useAppI18n()
 
 const nickname = ref('')
 const email = ref('')
@@ -26,16 +23,16 @@ watch(visible, (v) => {
 async function save() {
   const name = nickname.value.trim()
   if (!name) {
-    void MessagePlugin.warning('昵称不能为空')
+    void MessagePlugin.warning(t('chat.nicknameEmpty'))
     return
   }
   saving.value = true
   try {
     await auth.updateMe({ nickname: name, email: email.value.trim() })
-    void MessagePlugin.success('资料已保存')
+    void MessagePlugin.success(t('chat.profileSaved'))
     visible.value = false
   } catch (e) {
-    void MessagePlugin.error((e as Error).message || '保存失败')
+    void MessagePlugin.error(te(e) || t('chat.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -43,20 +40,18 @@ async function save() {
 </script>
 
 <template>
-  <TDialog v-model:visible="visible" header="个人资料" width="420px" :footer="false">
+  <TDialog v-model:visible="visible" :header="t('chat.profileTitle')" width="420px" :footer="false">
     <div class="profile-form">
-      <label class="profile-form__label">昵称</label>
-      <TInput v-model="nickname" placeholder="别人看到的名字" :maxlength="20" clearable />
+      <label class="profile-form__label">{{ t('chat.nickname') }}</label>
+      <TInput v-model="nickname" :placeholder="t('chat.nicknamePlaceholder')" :maxlength="20" clearable />
 
-      <label class="profile-form__label">邮箱</label>
-      <TInput v-model="email" placeholder="用于找回密码（可留空）" clearable />
-      <p class="text-placeholder profile-form__hint">
-        邮箱仅用于找回密码。修改后需要重新验证（本期无邮件验证流程）。
-      </p>
+      <label class="profile-form__label">{{ t('chat.email') }}</label>
+      <TInput v-model="email" :placeholder="t('chat.emailPlaceholder')" clearable />
+      <p class="text-placeholder profile-form__hint">{{ t('chat.emailHint') }}</p>
 
       <div class="profile-form__actions">
-        <TButton variant="outline" @click="visible = false">取消</TButton>
-        <TButton theme="primary" :loading="saving" @click="save">保存</TButton>
+        <TButton variant="outline" @click="visible = false">{{ t('common.cancel') }}</TButton>
+        <TButton theme="primary" :loading="saving" @click="save">{{ t('common.save') }}</TButton>
       </div>
     </div>
   </TDialog>

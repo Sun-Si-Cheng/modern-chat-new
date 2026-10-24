@@ -14,11 +14,13 @@ import {
   TabPanel as TTabPanel,
   Tooltip as TTooltip,
 } from 'tdesign-vue-next'
+import { DashboardIcon, ExtensionIcon, PoweroffIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import PluginDrawer from './PluginDrawer.vue'
 import ProfileDialog from './ProfileDialog.vue'
-import { DashboardIcon, ExtensionIcon, PoweroffIcon } from 'tdesign-icons-vue-next'
+import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -31,6 +33,7 @@ const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
 const ws = useWsStore()
+const { t, te } = useAppI18n()
 
 const tab = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
@@ -56,7 +59,7 @@ async function onSearch() {
     userResults.value = users.filter((u) => u.id !== auth.user?.id)
     groupResults.value = groups
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   } finally {
     searching.value = false
   }
@@ -71,7 +74,7 @@ async function startSingle(u: User) {
     kw.value = ''
     userResults.value = []
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
@@ -83,9 +86,9 @@ async function joinGroup(g: Conversation) {
     tab.value = 'chats'
     kw.value = ''
     groupResults.value = []
-    void MessagePlugin.success(`已加入「${g.name}」`)
+    void MessagePlugin.success(t('chat.joinedGroup', { name: g.name ?? '' }))
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
@@ -103,9 +106,9 @@ async function doCreateGroup() {
     groupName.value = ''
     await convStore.loadConversations()
     await convStore.openConversation(conv.id)
-    void MessagePlugin.success('群聊已创建')
+    void MessagePlugin.success(t('chat.createGroupOk'))
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
@@ -118,33 +121,33 @@ async function applyFriend() {
   if (!name) return
   try {
     await friendsStore.apply(name)
-    void MessagePlugin.success('申请已发送')
+    void MessagePlugin.success(t('friends.applyOk'))
     applyName.value = ''
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 async function handleRequest(id: number, accept: boolean) {
   try {
     await friendsStore.handle(id, accept)
-    void MessagePlugin.success(accept ? '已同意' : '已拒绝')
+    void MessagePlugin.success(accept ? t('friends.acceptOk') : t('friends.rejectOk'))
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 async function removeFriend(friendId: number, nickname: string) {
   const dialog = DialogPlugin.confirm({
-    header: '删除好友',
-    body: `确定删除好友「${nickname}」吗？单聊记录将保留。`,
-    confirmBtn: { content: '删除', theme: 'danger' },
+    header: t('friends.removeTitle'),
+    body: t('friends.removeBody', { name: nickname }),
+    confirmBtn: { content: t('friends.remove'), theme: 'danger' },
     onConfirm: async () => {
       try {
         await friendsStore.remove(friendId)
-        void MessagePlugin.success('已删除')
+        void MessagePlugin.success(t('friends.removeOk'))
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
@@ -158,20 +161,20 @@ async function openFriendChat(friendId: number) {
     await convStore.openConversation(conv.id)
     tab.value = 'chats'
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 // ===== 会话展示 =====
 
 function convName(c: Conversation): string {
-  return c.type === 1 ? (c.peer?.nickname ?? '单聊') : (c.name ?? '群聊')
+  return c.type === 1 ? (c.peer?.nickname ?? '') : (c.name ?? '')
 }
 
 function convAvatar(c: Conversation): { name: string; color: string } {
   return c.type === 1
     ? { name: c.peer?.nickname ?? '?', color: c.peer?.avatarColor ?? '#0052d9' }
-    : { name: c.name ?? '群', color: '#2ba471' }
+    : { name: c.name ?? '#', color: '#2ba471' }
 }
 
 function fmtTime(ts: string | null): string {
@@ -182,7 +185,7 @@ function fmtTime(ts: string | null): string {
   if (d.toDateString() === now.toDateString()) return hm
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
-  if (d.toDateString() === yesterday.toDateString()) return '昨天'
+  if (d.toDateString() === yesterday.toDateString()) return t('message.yesterday')
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -194,8 +197,8 @@ const sortedConvs = computed(() =>
 
 function confirmLogout() {
   const dialog = DialogPlugin.confirm({
-    header: '退出登录',
-    body: '确定退出当前账号吗？',
+    header: t('chat.logoutTitle'),
+    body: t('chat.logoutBody'),
     onConfirm: () => {
       auth.logout()
       ws.disconnect()
@@ -214,10 +217,11 @@ function confirmLogout() {
     <header class="mc-sidebar__me">
       <div class="mc-sidebar__wordmark">
         <span class="mc-sidebar__mark">M</span>
-        <span class="mc-sidebar__product">ModernChat</span>
+        <span class="mc-sidebar__product">{{ t('app.name') }}</span>
+        <PreferencesMenu class="mc-sidebar__prefs" />
       </div>
       <div class="mc-sidebar__userrow">
-        <button class="mc-sidebar__profile" aria-label="编辑个人资料" @click="profileVisible = true">
+        <button class="mc-sidebar__profile" :aria-label="t('chat.profileAria')" @click="profileVisible = true">
           <AvatarBadge
             :name="auth.user?.nickname ?? '?'"
             :color="auth.user?.avatarColor ?? '#0052d9'"
@@ -226,23 +230,23 @@ function confirmLogout() {
           <div class="mc-sidebar__me-info">
             <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
             <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-              {{ ws.connected ? '在线' : '连接中…' }}
+              {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
             </div>
           </div>
         </button>
         <div class="mc-sidebar__me-actions">
-          <TTooltip content="插件管理">
-            <TButton variant="text" shape="square" aria-label="插件管理" @click="pluginDrawerVisible = true">
+          <TTooltip :content="t('plugin.title')">
+            <TButton variant="text" shape="square" :aria-label="t('plugin.title')" @click="pluginDrawerVisible = true">
               <template #icon><ExtensionIcon /></template>
             </TButton>
           </TTooltip>
-          <TTooltip v-if="auth.isAdmin" content="站长后台">
-            <TButton variant="text" shape="square" aria-label="站长后台" @click="router.push('/admin')">
+          <TTooltip v-if="auth.isAdmin" :content="t('admin.title')">
+            <TButton variant="text" shape="square" :aria-label="t('admin.title')" @click="router.push('/admin')">
               <template #icon><DashboardIcon /></template>
             </TButton>
           </TTooltip>
-          <TTooltip content="退出登录">
-            <TButton variant="text" shape="square" aria-label="退出登录" @click="confirmLogout">
+          <TTooltip :content="t('chat.logoutTitle')">
+            <TButton variant="text" shape="square" :aria-label="t('chat.logoutAria')" @click="confirmLogout">
               <template #icon><PoweroffIcon /></template>
             </TButton>
           </TTooltip>
@@ -251,22 +255,26 @@ function confirmLogout() {
     </header>
 
     <TTabss v-model="tab">
-      <TTabPanel value="chats" label="聊天" />
+      <TTabPanel value="chats" :label="t('chat.tabChats')" />
       <TTabPanel value="contacts">
         <template #label>
-          <TBadge :count="friendsStore.requestCount" :offset="[6, -2]" size="small">联系人</TBadge>
+          <TBadge :count="friendsStore.requestCount" :offset="[6, -2]" size="small">
+            {{ t('chat.tabContacts') }}
+          </TBadge>
         </template>
       </TTabPanel>
     </TTabss>
 
     <!-- 搜索：人 / 群 -->
     <div class="mc-sidebar__search">
-      <TInput v-model="kw" placeholder="搜索用户 / 群聊" clearable @change="onSearch" @enter="onSearch" />
-      <TButton v-if="tab === 'chats'" size="small" variant="outline" @click="createGroupVisible = true">建群</TButton>
+      <TInput v-model="kw" :placeholder="t('chat.searchPlaceholder')" clearable @change="onSearch" @enter="onSearch" />
+      <TButton v-if="tab === 'chats'" size="small" variant="outline" @click="createGroupVisible = true">
+        {{ t('chat.createGroup') }}
+      </TButton>
     </div>
 
     <div v-if="kw.trim()" class="mc-sidebar__results">
-      <div v-if="userResults.length" class="mc-sidebar__group-label">用户</div>
+      <div v-if="userResults.length" class="mc-sidebar__group-label">{{ t('chat.groupUsers') }}</div>
       <TList v-if="userResults.length">
         <TListItem v-for="u in userResults" :key="u.id" class="mc-sidebar__result-item" @click="startSingle(u)">
           <AvatarBadge :name="u.nickname" :color="u.avatarColor" :size="32" />
@@ -274,16 +282,16 @@ function confirmLogout() {
           <span class="text-placeholder">@{{ u.username }}</span>
         </TListItem>
       </TList>
-      <div v-if="groupResults.length" class="mc-sidebar__group-label">群聊</div>
+      <div v-if="groupResults.length" class="mc-sidebar__group-label">{{ t('chat.groupChats') }}</div>
       <TList v-if="groupResults.length">
         <TListItem v-for="g in groupResults" :key="g.id" class="mc-sidebar__result-item" @click="joinGroup(g)">
-          <AvatarBadge :name="g.name ?? '群'" color="#2ba471" :size="32" />
+          <AvatarBadge :name="g.name ?? '#'" color="#2ba471" :size="32" />
           <span class="mc-sidebar__result-name">{{ g.name }}</span>
-          <span class="text-placeholder">{{ g.memberCount }} 人</span>
+          <span class="text-placeholder num">{{ t('chat.membersCount', { n: g.memberCount }) }}</span>
         </TListItem>
       </TList>
       <div v-if="!userResults.length && !groupResults.length && !searching" class="text-placeholder mc-sidebar__empty">
-        无匹配结果
+        {{ t('chat.noResults') }}
       </div>
     </div>
 
@@ -296,48 +304,61 @@ function confirmLogout() {
         :class="{ active: c.id === convStore.currentConvId }"
         @click="convStore.openConversation(c.id)"
       >
-        <AvatarBadge :name="convAvatar(c).name" :color="convAvatar(c).color" :online="c.type === 1 && c.peer ? ws.onlineUsers.has(c.peer.id) : false" />
+        <AvatarBadge
+          :name="convAvatar(c).name"
+          :color="convAvatar(c).color"
+          :online="c.type === 1 && c.peer ? ws.onlineUsers.has(c.peer.id) : false"
+        />
         <div class="mc-conv-item__mid">
           <div class="mc-conv-item__name">{{ convName(c) }}</div>
-          <div class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || '暂无消息' }}</div>
+          <div class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || t('chat.noMessage') }}</div>
         </div>
         <div class="mc-conv-item__right">
           <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>
           <TBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
         </div>
       </div>
-      <div v-if="!sortedConvs.length" class="text-placeholder mc-sidebar__empty">还没有会话，搜索用户开始聊天</div>
+      <div v-if="!sortedConvs.length" class="text-placeholder mc-sidebar__empty">{{ t('chat.noConversation') }}</div>
     </div>
 
     <!-- 联系人 -->
     <div v-else class="mc-sidebar__list">
       <div class="mc-sidebar__add-friend">
-        <TInput v-model="applyName" placeholder="输入用户名添加好友" clearable @enter="applyFriend" />
-        <TButton size="small" variant="outline" @click="applyFriend">申请</TButton>
+        <TInput v-model="applyName" :placeholder="t('friends.addPlaceholder')" clearable @enter="applyFriend" />
+        <TButton size="small" variant="outline" @click="applyFriend">{{ t('friends.apply') }}</TButton>
       </div>
 
       <template v-if="friendsStore.requests.length">
-        <div class="mc-sidebar__group-label">收到的好友申请</div>
+        <div class="mc-sidebar__group-label">{{ t('friends.requests') }}</div>
         <div v-for="r in friendsStore.requests" :key="r.id" class="mc-friend-item">
           <AvatarBadge :name="r.from.nickname" :color="r.from.avatarColor" :size="32" />
           <span class="mc-conv-item__name">{{ r.from.nickname }}</span>
           <div class="mc-friend-item__actions">
-            <TButton size="small" theme="primary" variant="text" @click="handleRequest(r.id, true)">同意</TButton>
-            <TButton size="small" variant="text" @click="handleRequest(r.id, false)">拒绝</TButton>
+            <TButton size="small" theme="primary" variant="text" @click="handleRequest(r.id, true)">
+              {{ t('friends.accept') }}
+            </TButton>
+            <TButton size="small" variant="text" @click="handleRequest(r.id, false)">{{ t('friends.reject') }}</TButton>
           </div>
         </div>
       </template>
 
-      <div class="mc-sidebar__group-label">我的好友（{{ friendsStore.accepted.length }}）</div>
+      <div class="mc-sidebar__group-label">{{ t('friends.mine', { n: friendsStore.accepted.length }) }}</div>
       <div v-for="f in friendsStore.accepted" :key="f.id" class="mc-friend-item">
-        <AvatarBadge :name="f.friend.nickname" :color="f.friend.avatarColor" :size="32" :online="ws.onlineUsers.has(f.friend.id)" />
+        <AvatarBadge
+          :name="f.friend.nickname"
+          :color="f.friend.avatarColor"
+          :size="32"
+          :online="ws.onlineUsers.has(f.friend.id)"
+        />
         <span class="mc-conv-item__name">{{ f.friend.nickname }}</span>
         <div class="mc-friend-item__actions">
-          <TButton size="small" variant="text" @click="openFriendChat(f.friend.id)">发消息</TButton>
-          <TButton size="small" variant="text" theme="danger" @click="removeFriend(f.friend.id, f.friend.nickname)">删除</TButton>
+          <TButton size="small" variant="text" @click="openFriendChat(f.friend.id)">{{ t('friends.send') }}</TButton>
+          <TButton size="small" variant="text" theme="danger" @click="removeFriend(f.friend.id, f.friend.nickname)">
+            {{ t('friends.remove') }}
+          </TButton>
         </div>
       </div>
-      <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">还没有好友</div>
+      <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">{{ t('friends.empty') }}</div>
     </div>
 
     <!-- 插件管理 / 个人资料 -->
@@ -347,11 +368,11 @@ function confirmLogout() {
     <!-- 建群弹窗 -->
     <TDialog
       v-model:visible="createGroupVisible"
-      header="创建群聊"
-      :confirm-btn="{ content: '创建', theme: 'primary' }"
+      :header="t('chat.createGroupTitle')"
+      :confirm-btn="{ content: t('chat.createGroup'), theme: 'primary' }"
       @confirm="doCreateGroup"
     >
-      <TInput v-model="groupName" placeholder="群名称" clearable @enter="doCreateGroup" />
+      <TInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
     </TDialog>
   </aside>
 </template>
@@ -379,6 +400,10 @@ function confirmLogout() {
   align-items: center;
   gap: 8px;
   padding: 2px 2px 0;
+}
+
+.mc-sidebar__prefs {
+  margin-left: auto;
 }
 
 .mc-sidebar__mark {

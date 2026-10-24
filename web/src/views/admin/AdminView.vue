@@ -11,15 +11,19 @@ import {
   Tabs as TTabss,
   Table as TTable,
   Tag as TTag,
+  Button as TButton,
 } from 'tdesign-vue-next'
-import type { TableRowData, TableProps } from 'tdesign-vue-next'
+
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
+import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
+import { useAppI18n } from '@/composables/useAppI18n'
 import { adminApi, systemApi, type AdminPluginRow, type AdminUserRow, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { t, te } = useAppI18n()
 
 const tab = ref<'users' | 'plugins'>('users')
 
@@ -36,11 +40,36 @@ const pluginPagination = ref({ current: 1, pageSize: 20, total: 0 })
 // 当前构建版本（升级后刷新本页即可确认是否生效）
 const buildInfo = ref<VersionInfo | null>(null)
 
+// TDesign 的 TableProps['columns'] 递归类型过深（TS2589），此处放宽为宽松列定义
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const columns = ref<any[]>([])
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pluginColumns = ref<any[]>([])
+
+function buildColumns() {
+  columns.value = [
+    { colKey: 'user', title: t('admin.colUser'), width: 200 },
+    { colKey: 'username', title: t('admin.colUsername') },
+    { colKey: 'role', title: t('admin.colRole'), width: 90 },
+    { colKey: 'status', title: t('admin.colStatus'), width: 160 },
+    { colKey: 'ops', title: t('admin.colOps'), width: 220 },
+  ]
+  pluginColumns.value = [
+    { colKey: 'name', title: t('admin.colPlugin'), width: 220 },
+    { colKey: 'version', title: t('admin.colVersion'), width: 100 },
+    { colKey: 'installCount', title: t('admin.colInstalls'), width: 100 },
+    { colKey: 'enabledCount', title: t('admin.colEnabled'), width: 100 },
+    { colKey: 'globalStatus', title: t('admin.colGlobal'), width: 120 },
+    { colKey: 'ops', title: t('admin.colOps'), width: 120 },
+  ]
+}
+
 onMounted(() => {
   if (auth.user?.role !== 'admin') {
     void router.replace('/chat')
     return
   }
+  buildColumns()
   void fetchUsers()
   void fetchPlugins()
   systemApi
@@ -51,46 +80,6 @@ onMounted(() => {
     .catch(() => undefined)
 })
 
-async function fetchPlugins() {
-  pluginsLoading.value = true
-  try {
-    const page = await adminApi.plugins(pluginPagination.value.current, pluginPagination.value.pageSize)
-    plugins.value = page.plugins
-    pluginPagination.value.total = page.total
-  } catch (e) {
-    void MessagePlugin.error((e as Error).message)
-  } finally {
-    pluginsLoading.value = false
-  }
-}
-
-function onPluginPageChange(info: { current: number; pageSize: number }) {
-  pluginPagination.value.current = info.current
-  pluginPagination.value.pageSize = info.pageSize
-  void fetchPlugins()
-}
-
-async function toggleGlobalDisabled(row: AdminPluginRow) {
-  const next = !row.globalDisabled
-  const dialog = DialogPlugin.confirm({
-    header: next ? '全局下架插件' : '恢复插件',
-    body: next
-      ? `下架「${row.name}」后，所有用户的该插件将立即停用（${row.installCount} 份安装记录受影响）。`
-      : `恢复「${row.name}」后，用户可自行重新启用。`,
-    confirmBtn: next ? { content: '下架', theme: 'danger' } : '恢复',
-    onConfirm: async () => {
-      try {
-        const r = await adminApi.setPluginGlobalDisabled(row.name, next)
-        void MessagePlugin.success(next ? `已下架（影响 ${r.affected} 份安装）` : '已恢复')
-        await fetchPlugins()
-      } catch (e) {
-        void MessagePlugin.error((e as Error).message)
-      }
-      dialog.destroy()
-    },
-  })
-}
-
 async function fetchUsers() {
   loading.value = true
   try {
@@ -98,7 +87,7 @@ async function fetchUsers() {
     users.value = page.users
     pagination.value.total = page.total
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   } finally {
     loading.value = false
   }
@@ -110,6 +99,25 @@ function onPageChange(info: { current: number; pageSize: number }) {
   void fetchUsers()
 }
 
+async function fetchPlugins() {
+  pluginsLoading.value = true
+  try {
+    const page = await adminApi.plugins(pluginPagination.value.current, pluginPagination.value.pageSize)
+    plugins.value = page.plugins
+    pluginPagination.value.total = page.total
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    pluginsLoading.value = false
+  }
+}
+
+function onPluginPageChange(info: { current: number; pageSize: number }) {
+  pluginPagination.value.current = info.current
+  pluginPagination.value.pageSize = info.pageSize
+  void fetchPlugins()
+}
+
 // ===== 封禁 =====
 
 const banVisible = ref(false)
@@ -117,8 +125,8 @@ const banTarget = ref<AdminUserRow | null>(null)
 const banDays = ref(3)
 const banReason = ref('')
 
-function openBan(row: TableRowData) {
-  banTarget.value = row as AdminUserRow
+function openBan(row: AdminUserRow) {
+  banTarget.value = row
   banDays.value = 3
   banReason.value = ''
   banVisible.value = true
@@ -129,34 +137,37 @@ async function doBan() {
   try {
     await adminApi.ban(banTarget.value.id, banDays.value, banReason.value.trim())
     banVisible.value = false
-    void MessagePlugin.success('已封禁并强制下线')
+    void MessagePlugin.success(t('admin.banOk'))
     await fetchUsers()
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 async function unban(row: AdminUserRow) {
   try {
     await adminApi.unban(row.id)
-    void MessagePlugin.success('已解封')
+    void MessagePlugin.success(t('admin.unbanOk'))
     await fetchUsers()
   } catch (e) {
-    void MessagePlugin.error((e as Error).message)
+    void MessagePlugin.error(te(e))
   }
 }
 
 async function resetPassword(row: AdminUserRow) {
   const dialog = DialogPlugin.confirm({
-    header: '重置密码',
-    body: `确定为「${row.nickname}」生成新随机密码吗？`,
+    header: t('admin.resetTitle'),
+    body: t('admin.resetBody', { name: row.nickname }),
     onConfirm: async () => {
       try {
         const r = await adminApi.resetPassword(row.id)
-        DialogPlugin.alert({ header: '新密码', body: `新密码：${r.newPassword}\n\n请立即告知用户，此提示仅显示一次。` })
+        DialogPlugin.alert({
+          header: t('admin.newPasswordTitle'),
+          body: t('admin.newPasswordBody', { pwd: r.newPassword }),
+        })
         await fetchUsers()
       } catch (e) {
-        void MessagePlugin.error((e as Error).message)
+        void MessagePlugin.error(te(e))
       }
       dialog.destroy()
     },
@@ -167,38 +178,43 @@ function isBanned(row: AdminUserRow): boolean {
   return !!row.bannedUntil && new Date(row.bannedUntil).getTime() > Date.now()
 }
 
-const columns: TableProps['columns'] = [
-  { colKey: 'user', title: '用户', width: 200 },
-  { colKey: 'username', title: '用户名' },
-  { colKey: 'role', title: '角色', width: 90 },
-  { colKey: 'status', title: '状态', width: 160 },
-  { colKey: 'ops', title: '操作', width: 220 },
-]
-
-const pluginColumns: TableProps['columns'] = [
-  { colKey: 'name', title: '插件', width: 220 },
-  { colKey: 'version', title: '版本', width: 100 },
-  { colKey: 'installCount', title: '安装数', width: 100 },
-  { colKey: 'enabledCount', title: '启用数', width: 100 },
-  { colKey: 'globalStatus', title: '全局状态', width: 120 },
-  { colKey: 'ops', title: '操作', width: 120 },
-]
+async function toggleGlobalDisabled(row: AdminPluginRow) {
+  const next = !row.globalDisabled
+  const dialog = DialogPlugin.confirm({
+    header: next ? t('admin.disableTitle') : t('admin.enableTitle'),
+    body: next
+      ? t('admin.disableBody', { name: row.name, n: row.installCount })
+      : t('admin.enableBody', { name: row.name }),
+    confirmBtn: next ? { content: t('admin.disableBtn'), theme: 'danger' } : t('admin.enableBtn'),
+    onConfirm: async () => {
+      try {
+        const r = await adminApi.setPluginGlobalDisabled(row.name, next)
+        void MessagePlugin.success(next ? t('admin.disabledOk', { n: r.affected }) : t('admin.enabledOk'))
+        await fetchPlugins()
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
+}
 </script>
 
 <template>
   <div class="mc-admin">
     <header class="mc-admin__header">
-      <h2>站长后台</h2>
+      <h2>{{ t('admin.title') }}</h2>
       <div class="mc-admin__header-right">
-        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" title="升级：在服务器运行 scripts/update.sh 从 Gitee 拉取">
+        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" :title="t('admin.buildHint')">
           {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
         </span>
-        <TButton variant="text" @click="router.push('/chat')">返回聊天</TButton>
+        <PreferencesMenu />
+        <TButton variant="text" @click="router.push('/chat')">{{ t('admin.backToChat') }}</TButton>
       </div>
     </header>
 
     <TTabss v-model="tab" class="mc-admin__tabs">
-      <TTabPanel value="users" label="用户">
+      <TTabPanel value="users" :label="t('admin.tabUsers')">
         <TTable
           row-key="id"
           :data="users"
@@ -215,30 +231,28 @@ const pluginColumns: TableProps['columns'] = [
           </template>
 
           <template #role="{ row }">
-            {{ row.role === 'admin' ? '站长' : '用户' }}
+            {{ row.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser') }}
           </template>
 
           <template #status="{ row }">
             <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
-              已封禁{{ row.banReason ? `：${row.banReason}` : '' }}
+              {{ row.banReason ? t('admin.banned', { reason: row.banReason }) : t('admin.bannedShort') }}
             </TTag>
-            <TTag v-else theme="success" variant="light" size="small">正常</TTag>
+            <TTag v-else theme="success" variant="light" size="small">{{ t('admin.normal') }}</TTag>
           </template>
 
           <template #ops="{ row }">
             <div class="mc-admin__ops">
-              <a v-if="!isBanned(row)" @click="openBan(row)">封禁</a>
-              <a v-else @click="unban(row)">解封</a>
-              <a @click="resetPassword(row)">重置密码</a>
+              <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
+              <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
+              <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
             </div>
           </template>
         </TTable>
       </TTabPanel>
 
-      <TTabPanel value="plugins" label="插件">
-        <p class="mc-admin__hint text-placeholder">
-          按插件名聚合所有用户的安装记录。全局下架后，所有用户的该插件立即停用。
-        </p>
+      <TTabPanel value="plugins" :label="t('admin.tabPlugins')">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.pluginHint') }}</p>
         <TTable
           row-key="name"
           :data="plugins"
@@ -257,12 +271,16 @@ const pluginColumns: TableProps['columns'] = [
             <span class="mc-admin__num">{{ row.enabledCount }}</span>
           </template>
           <template #globalStatus="{ row }">
-            <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">已下架</TTag>
-            <TTag v-else theme="success" variant="light" size="small">正常</TTag>
+            <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
+              {{ t('admin.disabledTag') }}
+            </TTag>
+            <TTag v-else theme="success" variant="light" size="small">{{ t('admin.globalNormal') }}</TTag>
           </template>
           <template #ops="{ row }">
             <div class="mc-admin__ops">
-              <a @click="toggleGlobalDisabled(row)">{{ row.globalDisabled ? '恢复' : '全局下架' }}</a>
+              <a @click="toggleGlobalDisabled(row)">
+                {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
+              </a>
             </div>
           </template>
         </TTable>
@@ -270,11 +288,11 @@ const pluginColumns: TableProps['columns'] = [
     </TTabss>
 
     <!-- 封禁弹窗 -->
-    <TDialog v-model:visible="banVisible" header="封禁用户" @confirm="doBan">
+    <TDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
       <div class="mc-admin__ban">
-        <TInputNumber v-model="banDays" :min="0" theme="column" suffix="天" style="width: 160px" />
-        <p class="text-placeholder">填 0 表示永久封禁；封禁将立即强制下线（token 失效）。</p>
-        <TInput v-model="banReason" placeholder="封禁原因（可选）" clearable />
+        <TInputNumber v-model="banDays" :min="0" theme="column" :suffix="t('admin.daysSuffix')" style="width: 160px" />
+        <p class="text-placeholder">{{ t('admin.banHint') }}</p>
+        <TInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
       </div>
     </TDialog>
   </div>
@@ -336,11 +354,6 @@ const pluginColumns: TableProps['columns'] = [
   font-variant-numeric: tabular-nums;
 }
 
-.mc-admin__ops a {
-  cursor: pointer;
-  font-size: 13px;
-}
-
 .mc-admin__ban {
   display: flex;
   flex-direction: column;
@@ -350,7 +363,7 @@ const pluginColumns: TableProps['columns'] = [
 /* 表头回归数据本身：无色带、12px 常规灰字 */
 .mc-admin :deep(.t-table__header th) {
   background: transparent;
-  color: #6b6b6b;
+  color: var(--mc-text-faint);
   font-weight: 400;
   font-size: 12px;
 }

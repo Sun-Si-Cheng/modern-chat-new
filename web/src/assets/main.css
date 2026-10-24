@@ -22,13 +22,27 @@ body {
 }
 
 a {
-  color: var(--td-brand-color);
+  color: var(--mc-link);
   text-decoration: none;
+}
+
+/* 主题相关的辅助令牌（跟随 TDesign 的 theme-mode 切换）。
+ * 两套取值都以「正文文字 ≥4.5:1」为准，包含链接与最浅层级文字。 */
+:root {
+  --mc-text-faint: #6b6b6b;
+  --mc-link: #0052d9;
+  --mc-selection: rgba(0, 82, 217, 0.16);
+}
+
+:root[theme-mode='dark'] {
+  --mc-text-faint: #a8a8a8;
+  --mc-link: #7cb8ff;
+  --mc-selection: rgba(110, 168, 255, 0.28);
 }
 
 /* 浏览器表面主题化（craft floor） */
 ::selection {
-  background: rgba(0, 82, 217, 0.16);
+  background: var(--mc-selection);
 }
 
 /* TDesign 激活 tab 自带 text-shadow 描边：以字重替代 */
@@ -47,9 +61,9 @@ a {
   color: var(--td-text-color-secondary);
 }
 
-/* 承载文字的最浅层级，白底上 ≥4.5:1 */
+/* 承载文字的最浅层级，亮/暗主题下均 ≥4.5:1 */
 .text-placeholder {
-  color: #6b6b6b;
+  color: var(--mc-text-faint);
 }
 
 /* 数字等宽（时间、未读数、计数） */
