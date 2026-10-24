@@ -275,8 +275,6 @@ const sortedConvs = computed(() =>
             </div>
           </div>
         </button>
-      </div>
-    </header>
 
         <!-- 新建菜单：右侧 + 按钮 -->
         <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
