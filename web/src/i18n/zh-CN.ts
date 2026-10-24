@@ -52,7 +52,12 @@ export default {
   },
   forgot: {
     title: '找回密码',
-    sub: '通过注册邮箱重置。重置后所有已登录设备将被强制下线。',
+    sub: '输入注册邮箱获取重置链接。重置后所有已登录设备将被强制下线。',
+    titleStep2: '设置新密码',
+    subStep2: '把邮件中的重置令牌粘贴到下方，然后设置新密码。',
+    step1Label: '填写邮箱',
+    step2Label: '设置新密码',
+    backStep: '返回上一步',
     email: '注册邮箱',
     emailRequired: '请输入邮箱',
     token: '邮件中的重置令牌',

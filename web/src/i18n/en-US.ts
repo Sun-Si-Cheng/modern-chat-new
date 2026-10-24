@@ -52,7 +52,12 @@ export default {
   },
   forgot: {
     title: 'Reset password',
-    sub: 'Reset via your registered email. All signed-in devices will be signed out afterwards.',
+    sub: 'Enter your registered email to receive a reset link. All signed-in devices will be signed out afterwards.',
+    titleStep2: 'Set a new password',
+    subStep2: 'Paste the reset token from your email below, then set a new password.',
+    step1Label: 'Email',
+    step2Label: 'New password',
+    backStep: 'Back',
     email: 'Registered email',
     emailRequired: 'Please enter your email',
     token: 'Reset token from the email',
