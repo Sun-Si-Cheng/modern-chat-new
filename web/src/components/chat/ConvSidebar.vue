@@ -240,8 +240,7 @@ const sortedConvs = computed(() =>
     <!-- 顶部：产品名 + 当前用户 -->
     <header class="mc-sidebar__me">
       <div class="mc-sidebar__userrow">
-        <!-- 点击头像行弹出个人资料卡（含更换头像、设置、退出、后台） -->
-        <!-- attach="body"：脱离侧栏的 overflow:hidden 裁剪，面板才能完整显示在头像右侧 -->
+        <!-- 头像：点击弹出资料卡，面板贴在头像图片右侧（attach=body 防侧栏裁剪） -->
         <TPopup
           v-model:visible="profileVisible"
           trigger="click"
@@ -249,25 +248,35 @@ const sortedConvs = computed(() =>
           :show-arrow="false"
           attach="body"
         >
-          <button class="mc-sidebar__profile" :aria-label="t('profile.menu')">
+          <button type="button" class="mc-sidebar__avatar-btn" :aria-label="t('profile.menu')">
             <AvatarBadge
               :name="auth.user?.nickname ?? '?'"
               :src="auth.user?.avatar"
               :color="auth.user?.avatarColor ?? '#0052d9'"
               :online="ws.connected"
             />
-            <div class="mc-sidebar__me-info">
-              <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
-              <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-                {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
-              </div>
-            </div>
           </button>
-
           <template #content>
             <ProfileCard @logout="confirmLogout" />
           </template>
         </TPopup>
+
+        <!-- 昵称/在线状态：点击进设置页 -->
+        <button
+          type="button"
+          class="mc-sidebar__profile"
+          :aria-label="t('settings.account')"
+          @click="router.push('/settings')"
+        >
+          <div class="mc-sidebar__me-info">
+            <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
+            <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
+              {{ ws.connected ? t('chat.online') : t('chat.connecting') }}
+            </div>
+          </div>
+        </button>
+      </div>
+    </header>
 
         <!-- 新建菜单：右侧 + 按钮 -->
         <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
@@ -458,6 +467,22 @@ const sortedConvs = computed(() =>
   gap: 10px;
 }
 
+/* 头像按钮：资料卡的触发元素（面板贴其右侧弹出） */
+.mc-sidebar__avatar-btn {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.mc-sidebar__avatar-btn:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 2px;
+}
+
 /* 头像行右侧的「新建」按钮 */
 .mc-sidebar__more {
   flex-shrink: 0;
@@ -510,7 +535,7 @@ const sortedConvs = computed(() =>
   background: var(--td-bg-color-secondarycontainer);
 }
 
-/* 用户行即资料入口 */
+/* 昵称行：点击进设置页 */
 .mc-sidebar__profile {
   flex: 1;
   min-width: 0;
