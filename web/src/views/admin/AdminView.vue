@@ -205,7 +205,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
     <header class="mc-admin__header">
       <h2>{{ t('admin.title') }}</h2>
       <div class="mc-admin__header-right">
-        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" :title="t('admin.buildHint')">
+        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" :title="t('admin.buildVersion')">
           {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
         </span>
         <PreferencesMenu />
