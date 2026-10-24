@@ -1,0 +1,8 @@
+# Go 构建产物与本地文件
+*.exe
+*.exe~
+*.test
+*.out
+cover
+cover.out
+.env
