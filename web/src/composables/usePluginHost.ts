@@ -136,7 +136,7 @@ ${safeCode}
     post({ __mc: "ready", error: "missing __mcActivate" });
   }
 })();
-<\/script></body></html>`
+</script></body></html>`
 }
 
 // ===== 运行时 =====
@@ -224,8 +224,8 @@ function createHost() {
           break
         }
         case 'addSidePanel': {
-          const desc = validateUIDesc({ ...args[0], kind: undefined })
           const raw = args[0] as Record<string, unknown>
+          const desc = validateUIDesc({ ...raw, kind: undefined })
           if (!desc || typeof raw?.title !== 'string' || !Array.isArray(raw?.body)) {
             reply(runtime, callId, false, undefined, 'invalid panel desc')
             return
@@ -424,6 +424,12 @@ function createHost() {
     mountRuntime(plugin)
   }
 
+  /** 侧边栏 UI 动作回传（§8.2 button/input 的 action） */
+  function panelAction(pluginId: number, action: string, value?: unknown) {
+    const rt = runtimes.get(pluginId)
+    rt?.iframe.contentWindow?.postMessage({ __mc: 'event', event: 'ui:action', payload: { action, value } }, '*')
+  }
+
   return {
     state: readonly(state),
     start,
@@ -431,6 +437,7 @@ function createHost() {
     reloadPlugin,
     requestRender,
     hasRenderer,
+    panelAction,
     notifyConvOpen: (convId: number) => dispatchEvent('conv:open', { convId }),
   }
 }

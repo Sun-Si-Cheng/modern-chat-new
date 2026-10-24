@@ -24,8 +24,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          tdesign: ['tdesign-vue-next', 'tdesign-icons-vue-next'],
+        manualChunks(id: string) {
+          if (id.includes('tdesign-vue-next') || id.includes('tdesign-icons-vue-next')) return 'tdesign'
+          if (id.includes('node_modules')) return 'vendor'
         },
       },
     },
