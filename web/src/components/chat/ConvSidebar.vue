@@ -241,7 +241,14 @@ const sortedConvs = computed(() =>
     <header class="mc-sidebar__me">
       <div class="mc-sidebar__userrow">
         <!-- 点击头像行弹出个人资料卡（含更换头像、设置、退出、后台） -->
-        <TPopup v-model:visible="profileVisible" trigger="click" placement="right-top" :show-arrow="false">
+        <!-- attach="body"：脱离侧栏的 overflow:hidden 裁剪，面板才能完整显示在头像右侧 -->
+        <TPopup
+          v-model:visible="profileVisible"
+          trigger="click"
+          placement="right-top"
+          :show-arrow="false"
+          attach="body"
+        >
           <button class="mc-sidebar__profile" :aria-label="t('profile.menu')">
             <AvatarBadge
               :name="auth.user?.nickname ?? '?'"
@@ -264,7 +271,13 @@ const sortedConvs = computed(() =>
 
         <!-- 新建菜单：右侧 + 按钮 -->
         <!-- 按钮在侧栏最右，面板向右下展开（left 对齐按钮左边缘），避免向左盖住会话列表 -->
-        <TPopup v-model:visible="moreVisible" trigger="click" placement="bottom-left" :show-arrow="false">
+        <TPopup
+          v-model:visible="moreVisible"
+          trigger="click"
+          placement="bottom-left"
+          :show-arrow="false"
+          attach="body"
+        >
           <button type="button" class="mc-sidebar__more" :aria-label="t('chat.moreMenu')" :title="t('chat.moreMenu')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
