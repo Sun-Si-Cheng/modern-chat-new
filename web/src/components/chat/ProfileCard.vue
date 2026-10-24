@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin, Popup as TPopup } from 'tdesign-vue-next'
 import { EditIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -16,8 +16,6 @@ const { t, te } = useAppI18n()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
-/** 头像大图预览弹窗 */
-const previewOpen = ref(false)
 
 function pickFile() {
   fileInput.value?.click()
@@ -78,15 +76,29 @@ function goSettings() {
 <template>
   <div class="profile-card">
     <div class="profile-card__head">
-      <!-- 头像：点击弹出大图预览（预览内可更换） -->
-      <AvatarBadge
-        :name="auth.user?.nickname ?? '?'"
-        :src="auth.user?.avatar"
-        :color="auth.user?.avatarColor ?? '#0052d9'"
-        :size="72"
-        preview
-        @preview="previewOpen = true"
-      />
+      <!-- 头像：点击弹出 TPopup 面板（大图 + 更换头像） -->
+      <TPopup trigger="click" placement="right-top" :show-arrow="false">
+        <AvatarBadge
+          :name="auth.user?.nickname ?? '?'"
+          :src="auth.user?.avatar"
+          :color="auth.user?.avatarColor ?? '#0052d9'"
+          :size="72"
+          clickable
+        />
+        <template #content>
+          <div class="avatar-pop">
+            <img
+              class="avatar-pop__img"
+              :src="auth.user?.avatar || '/default-avatar.svg'"
+              :alt="auth.user?.nickname"
+              draggable="false"
+            />
+            <button type="button" class="avatar-pop__change" :disabled="uploading" @click="pickFile">
+              {{ uploading ? t('profile.uploading') : t('profile.changeAvatar') }}
+            </button>
+          </div>
+        </template>
+      </TPopup>
 
       <div class="profile-card__info">
         <div class="profile-card__name-row">
@@ -106,29 +118,6 @@ function goSettings() {
       accept="image/png,image/jpeg,image/webp"
       @change="onFileChange"
     />
-
-    <!-- 头像大图预览 -->
-    <Teleport to="body">
-      <div v-if="previewOpen" class="avatar-viewer" @click="previewOpen = false">
-        <div class="avatar-viewer__panel" @click.stop>
-          <img
-            class="avatar-viewer__img"
-            :src="auth.user?.avatar || '/default-avatar.svg'"
-            :alt="auth.user?.nickname"
-            draggable="false"
-          />
-          <div class="avatar-viewer__name">{{ auth.user?.nickname }}</div>
-          <div class="avatar-viewer__actions">
-            <button type="button" class="avatar-viewer__change" :disabled="uploading" @click="pickFile">
-              {{ uploading ? t('profile.uploading') : t('profile.changeAvatar') }}
-            </button>
-            <button type="button" class="avatar-viewer__close" @click="previewOpen = false">
-              {{ t('common.close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <ul class="profile-card__menu">
       <li>
@@ -158,80 +147,42 @@ function goSettings() {
   gap: 12px;
 }
 
-/* 头像大图预览弹窗 */
-.avatar-viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.72);
-}
-
-.avatar-viewer__panel {
+/* 头像弹层（t-popup 内容）：大图 + 更换头像 */
+.avatar-pop {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 24px;
+  gap: 12px;
+  padding: 14px;
 }
 
-.avatar-viewer__img {
-  width: 240px;
-  height: 240px;
+.avatar-pop__img {
+  width: 168px;
+  height: 168px;
   border-radius: 50%;
   object-fit: cover;
+  display: block;
   background: #e4efff;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
 
-.avatar-viewer__name {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.avatar-viewer__actions {
-  display: flex;
-  gap: 10px;
-}
-
-.avatar-viewer__actions button {
-  padding: 6px 14px;
+.avatar-pop__change {
+  padding: 6px 16px;
   border-radius: 6px;
   border: none;
   font: inherit;
   font-size: 13px;
+  background: var(--td-brand-color);
+  color: #fff;
   cursor: pointer;
 }
 
-.avatar-viewer__change {
-  background: var(--td-brand-color);
-  color: #fff;
-}
-
-.avatar-viewer__change:disabled {
+.avatar-pop__change:disabled {
   opacity: 0.6;
   cursor: progress;
 }
 
-.avatar-viewer__close {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
-.avatar-viewer__change:hover {
+.avatar-pop__change:hover {
   filter: brightness(1.08);
-}
-
-.avatar-viewer__close:hover {
-  background: rgba(255, 255, 255, 0.22);
-}
-
-.avatar-viewer__actions button:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 2px;
 }
 
 .profile-card__info {
