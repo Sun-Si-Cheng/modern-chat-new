@@ -65,16 +65,24 @@ src/
 `index.html` 内联脚本在样式生效前预置主题，避免暗色首屏闪白。
 自定义颜色一律走令牌：`--td-*`（TDesign）或 `--mc-text-faint` / `--mc-link` / `--mc-selection`（本项目辅助），不要写死色值。
 
-## 登录页背景图
+## 登录页背景（颜色与特效）
 
-登录页默认是两段纯色（天 / 水）+ 地平线。想换成图片时：
+登录 / 找回密码页共用 `components/common/AuthScene.vue`：
 
-1. 把图片放到 `web/public/login-bg.jpg`（构建时会复制到站点根目录）
-2. 无需改代码——CSS 已按 `url('/login-bg.jpg')` 引用；文件不存在时自动保留纯色底
-3. 图片上会自动叠加一层蒙版（暗色主题下更深），保证卡片与页脚文字可读
+- **基色**：默认 `#123a5c`（深蓝），由 CSS 变量 `--mc-scene-color` 驱动
+- **特效**（三种，纯 CSS，无图片、无外部依赖）：
+  - `aurora` 光晕：三团柔光（`filter: blur` 的实心圆）缓慢漂移，默认
+  - `waves` 波纹：同心圆环由内向外扩散
+  - `grid` 网格：极淡网格缓慢流动 + 中央光晕呼吸
+  - `none` 纯色
+- **访客可自选**：右上角调色板 → 6 个预设色 + 自定义取色器 + 4 种特效 + 恢复默认；偏好存 `localStorage`（`mc_scene_color` / `mc_scene_effect`），只影响本人浏览器
+- **改默认值**：`stores/prefs.ts` 里的 `DEFAULT_SCENE_COLOR` 与 `detectSceneEffect()` 的返回值
+- **无障碍**：`prefers-reduced-motion` 下自动停止所有动画
+- **性能**：动画只用 `transform` / `opacity`（`grid` 用 `background-position`），不触发重排
 
-建议尺寸 ≥ 1920×1080、横图、主体不要压在画面正中（卡片会盖住中间约 400×560 区域）。
-用 `.png` / `.webp` 时改 `AuthView.vue` 里 `.auth-scene__img` 的 `url()` 一行即可。
+### 用图片替换
+
+把图片放到 `web/public/login-bg.jpg` 即自动覆盖基色（构建会复制到站点根目录），并在其上叠加按主题变化的暗化层，保证卡片可读。建议 ≥1920×1080 横图、主体避开画面正中（卡片会盖住中间约 420×360 区域）。用 `.png` / `.webp` 时改 `AuthScene.vue` 里 `.auth-scene__img` 的 `url()` 一行。
 
 ## 设计约定
 
