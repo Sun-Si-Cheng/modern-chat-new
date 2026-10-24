@@ -342,6 +342,19 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("B 未读应为 1，got %v", unread)
 	}
 
+	// A 改昵称 → 好友 B 与其本人连接都收到 user_change（实时同步头像/昵称）
+	if code, _ := apiJSON(t, e, "PATCH", "/api/me", tokenA, `{"nickname":"A新昵称"}`); code != 200 {
+		t.Fatalf("改昵称应 200，got %d", code)
+	}
+	changedB := readFrame(t, connB, "user_change")
+	if changedB["nickname"] != "A新昵称" || uint64(changedB["userId"].(float64)) != uint64(userA.ID) {
+		t.Fatalf("B 收到的 user_change 帧异常: %v", changedB)
+	}
+	changedA := readFrame(t, connA, "user_change")
+	if changedA["nickname"] != "A新昵称" {
+		t.Fatalf("A 自身多端同步帧异常: %v", changedA)
+	}
+
 	// 群聊：B 建群，A 加入
 	code, group := apiJSON(t, e, "POST", "/api/conversations/group", tokenB, `{"name":"测试群"}`)
 	if code != 200 {
