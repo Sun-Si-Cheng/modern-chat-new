@@ -237,7 +237,6 @@ function switchMode(m: 'login' | 'register') {
 .auth-card__brand {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
   margin-bottom: 26px;
 }
