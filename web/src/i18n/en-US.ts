@@ -282,6 +282,7 @@ export default {
     avatarUpdated: 'Avatar updated',
     avatarInvalid: 'Please choose a png / jpeg / webp image',
     avatarFailed: 'Failed to update avatar',
+    uploading: 'Uploading…',
     menu: 'Profile menu',
   },
   settings: {
