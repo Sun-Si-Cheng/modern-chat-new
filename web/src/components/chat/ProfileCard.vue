@@ -18,6 +18,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 
 function pickFile() {
+  if (uploading.value) return
   fileInput.value?.click()
 }
 
@@ -77,13 +78,7 @@ function goSettings() {
   <div class="profile-card">
     <div class="profile-card__head">
       <!-- 头像：hover 相机遮罩，点击选图上传 -->
-      <button
-        type="button"
-        class="profile-card__avatar"
-        :aria-label="t('profile.changeAvatar')"
-        :disabled="uploading"
-        @click="pickFile"
-      >
+      <div class="profile-card__avatar" :aria-label="t('profile.changeAvatar')" @click="pickFile">
         <AvatarBadge
           :name="auth.user?.nickname ?? '?'"
           :src="auth.user?.avatar"
@@ -101,7 +96,7 @@ function goSettings() {
             <circle cx="12" cy="13" r="3.5" stroke="currentColor" stroke-width="1.7" />
           </svg>
         </span>
-      </button>
+      </div>
 
       <div class="profile-card__info">
         <div class="profile-card__name-row">
@@ -150,19 +145,12 @@ function goSettings() {
   gap: 12px;
 }
 
-/* 头像按钮：hover / 键盘聚焦时显示相机遮罩 */
+/* 头像：hover 显示相机遮罩，点击选图 */
 .profile-card__avatar {
   position: relative;
-  padding: 0;
-  border: none;
-  background: none;
   border-radius: 50%;
   cursor: pointer;
   line-height: 0;
-}
-
-.profile-card__avatar:disabled {
-  cursor: progress;
 }
 
 .profile-card__cam {
