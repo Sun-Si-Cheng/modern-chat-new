@@ -6,11 +6,10 @@ import {
   FormItem as TFormItem,
   Input as TInput,
   Button as TButton,
-  Tabs as TTabss,
-  TabPanel as TTabPanel,
   MessagePlugin,
 } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
+import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
 
 import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -27,6 +26,9 @@ const form = ref<FormInstanceFunctions>()
 
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', nickname: '', password: '', confirm: '' })
+
+/** 当前模式的表单数据（模板与校验共用） */
+const data = computed(() => (mode.value === 'login' ? loginForm : registerForm))
 
 const rules = computed<FormProps['rules']>(() => ({
   username: [{ required: true, message: t('auth.validation.usernameRequired'), trigger: 'blur' }],
@@ -62,7 +64,7 @@ async function doSubmit() {
   }
 }
 
-/** TForm 的 submit 事件：Enter 键与点击按钮统一走这里 */
+/** TForm 的 submit：Enter 与按钮统一走校验→提交 */
 function onSubmit({ validateResult }: { validateResult: boolean | Record<string, unknown> }) {
   if (validateResult === true) void doSubmit()
 }
@@ -74,253 +76,221 @@ function switchMode(m: 'login' | 'register') {
 
 <template>
   <div class="auth-page">
-    <div class="auth-page__prefs">
+    <!-- 背景层：两段纯色（天 / 水）+ 地平线；放置 web/public/login-bg.jpg 可覆盖为自定义图片 -->
+    <div class="auth-scene" aria-hidden="true">
+      <div class="auth-scene__water" />
+      <div class="auth-scene__img" />
+    </div>
+
+    <div class="auth-top">
       <PreferencesMenu />
     </div>
 
-    <!-- 品牌侧：产品真实能力，非装饰 -->
-    <aside class="auth-brand">
-      <div class="auth-brand__mark">M</div>
-      <h1 class="auth-brand__title">{{ t('app.name') }}</h1>
-      <p class="auth-brand__lead">{{ t('auth.brand.lead') }}</p>
-      <ul class="auth-brand__points">
-        <li>
-          <strong>{{ t('auth.brand.core') }}</strong>
-          <span>{{ t('auth.brand.coreDesc') }}</span>
-        </li>
-        <li>
-          <strong>{{ t('auth.brand.plugin') }}</strong>
-          <span>{{ t('auth.brand.pluginDesc') }}</span>
-        </li>
-        <li>
-          <strong>{{ t('auth.brand.secure') }}</strong>
-          <span>{{ t('auth.brand.secureDesc') }}</span>
-        </li>
-      </ul>
-      <p class="auth-brand__foot text-secondary">{{ t('auth.brand.foot') }}</p>
-    </aside>
-
-    <!-- 表单侧 -->
-    <main class="auth-panel">
-      <div class="auth-panel__foot">
-        <span class="text-placeholder">{{ t('auth.footDb') }}</span>
-        <span class="text-placeholder">{{ t('auth.footSingle') }}</span>
+    <main class="auth-card">
+      <div class="auth-card__brand">
+        <span class="auth-card__mark">M</span>
+        <span class="auth-card__product">{{ t('app.name') }}</span>
       </div>
-      <div class="auth-card">
-        <div class="auth-card__brand">
-          <span class="auth-card__mark">M</span>
-          <span class="auth-card__name">{{ t('app.name') }}</span>
-        </div>
-        <h2 class="auth-card__title">{{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}</h2>
-        <p class="auth-card__sub">{{ mode === 'login' ? t('auth.loginSub') : t('auth.registerSub') }}</p>
 
-        <TTabss v-model="mode" @change="(v: unknown) => switchMode(v as 'login' | 'register')">
-          <TTabPanel value="login" :label="t('auth.tabLogin')" />
-          <TTabPanel value="register" :label="t('auth.tabRegister')" />
-        </TTabss>
+      <h1 class="auth-card__title">
+        {{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}
+      </h1>
+      <p class="auth-card__sub">
+        {{ mode === 'login' ? t('auth.loginSub') : t('auth.registerSub') }}
+      </p>
 
-        <TForm
-          ref="form"
-          :key="mode"
-          class="auth-card__form"
-          :data="mode === 'login' ? loginForm : registerForm"
-          :rules="rules"
-          label-width="0"
-          @submit="onSubmit"
-        >
-          <TFormItem name="username">
-            <TInput
-              v-model="(mode === 'login' ? loginForm : registerForm).username"
-              :placeholder="t('auth.username')"
-              clearable
-            />
-          </TFormItem>
-          <TFormItem v-if="mode === 'register'" name="nickname">
-            <TInput v-model="registerForm.nickname" :placeholder="t('auth.nickname')" clearable />
-          </TFormItem>
-          <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
-            <TInput
-              v-model="(mode === 'login' ? loginForm : registerForm).password"
-              type="password"
-              :placeholder="t('auth.password')"
-            />
-          </TFormItem>
-          <TFormItem v-if="mode === 'register'" name="confirm">
-            <TInput v-model="registerForm.confirm" type="password" :placeholder="t('auth.confirmPassword')" />
-          </TFormItem>
+      <TForm
+        ref="form"
+        :key="mode"
+        class="auth-card__form"
+        :data="data"
+        :rules="rules"
+        label-width="0"
+        @submit="onSubmit"
+      >
+        <TFormItem name="username">
+          <TInput v-model="data.username" :placeholder="t('auth.username')" clearable>
+            <template #prefix-icon><UserIcon /></template>
+          </TInput>
+        </TFormItem>
 
-          <TButton theme="primary" type="submit" block size="large" :loading="loading">
-            {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
-          </TButton>
-        </TForm>
+        <TFormItem v-if="mode === 'register'" name="nickname">
+          <TInput v-model="registerForm.nickname" :placeholder="t('auth.nickname')" clearable>
+            <template #prefix-icon><UserIcon /></template>
+          </TInput>
+        </TFormItem>
 
-        <div class="auth-card__footer">
-          <RouterLink v-if="mode === 'login'" to="/forgot">{{ t('auth.forgot') }}</RouterLink>
-          <span v-else class="text-placeholder">{{ t('auth.forgotUsername') }}</span>
-        </div>
+        <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
+          <TInput v-model="data.password" type="password" :placeholder="t('auth.password')">
+            <template #prefix-icon><LockOnIcon /></template>
+          </TInput>
+        </TFormItem>
 
-        <!-- 法律文档入口：注册前可读，符合"展示并可访问"的要求 -->
-        <p class="auth-card__legal">
-          <span v-if="mode === 'register'" class="text-placeholder">{{ t('legal.agreePrefix') }}</span>
-          <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
-          <span class="text-placeholder">{{ t('legal.and') }}</span>
-          <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
-        </p>
+        <TFormItem v-if="mode === 'register'" name="confirm">
+          <TInput v-model="registerForm.confirm" type="password" :placeholder="t('auth.confirmPassword')">
+            <template #prefix-icon><LockOnIcon /></template>
+          </TInput>
+        </TFormItem>
+
+        <TButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">
+          {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
+        </TButton>
+      </TForm>
+
+      <div class="auth-card__links">
+        <template v-if="mode === 'login'">
+          <RouterLink to="/forgot">{{ t('auth.forgot') }}</RouterLink>
+          <span class="auth-card__dot" aria-hidden="true">·</span>
+          <span class="text-placeholder">{{ t('auth.noAccount') }}</span>
+          <button type="button" class="auth-card__link-btn" @click="switchMode('register')">
+            {{ t('auth.signupLink') }}
+          </button>
+        </template>
+        <template v-else>
+          <span class="text-placeholder">{{ t('auth.haveAccount') }}</span>
+          <button type="button" class="auth-card__link-btn" @click="switchMode('login')">
+            {{ t('auth.loginLink') }}
+          </button>
+        </template>
       </div>
+
+      <p class="auth-card__legal">
+        <span v-if="mode === 'register'" class="text-placeholder">{{ t('legal.agreePrefix') }}</span>
+        <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
+        <span class="text-placeholder">{{ t('legal.and') }}</span>
+        <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
+      </p>
     </main>
+
+    <p class="auth-foot text-placeholder">{{ t('auth.footDb') }} · {{ t('auth.footSingle') }}</p>
   </div>
 </template>
 
 <style scoped>
+/* ===== 场景层：两段纯色（天 / 水）由一条地平线分开，无渐变、无装饰光斑 ===== */
 .auth-page {
-  height: 100%;
-  display: flex;
-  background: var(--td-bg-color-container);
   position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px 56px;
+  overflow-y: auto;
 }
 
-.auth-page__prefs {
+.auth-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #123a5c; /* 天 */
+}
+
+.auth-scene__water {
   position: absolute;
-  top: 12px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34%;
+  background: #0b2436; /* 水 */
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* 地平线 */
+}
+
+/* 可选自定义背景图：把图片放到 web/public/login-bg.jpg 即自动覆盖纯色（404 时无副作用） */
+.auth-scene__img {
+  position: absolute;
+  inset: 0;
+  background: url('/login-bg.jpg') center / cover no-repeat;
+}
+
+/* 图片蒙版：无论用户放什么图，都保证卡片周围与页脚文字可读；暗色主题下压得更沉 */
+.auth-scene__img::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 19, 31, 0.28);
+}
+
+:root[theme-mode='dark'] .auth-scene__img::after {
+  background: rgba(3, 8, 14, 0.52);
+}
+
+:root[theme-mode='dark'] .auth-scene {
+  background: #08131f;
+}
+
+:root[theme-mode='dark'] .auth-scene__water {
+  background: #050d16;
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ===== 顶部偏好（语言 / 主题） ===== */
+.auth-top {
+  position: fixed;
+  top: 14px;
   right: 16px;
-  z-index: 10;
-  background: var(--td-bg-color-container);
-  border-radius: 6px;
-  padding: 0 2px;
-}
-
-/* 品牌侧：近黑 ink 面板，品牌蓝只做点缀（mark 与关键词） */
-.auth-brand {
-  flex: 1 1 46%;
-  background: #17191c;
-  color: #fff;
-  padding: 56px 64px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-.auth-brand__mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--td-brand-color);
-  color: #fff;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 20px;
-}
-
-.auth-brand__title {
-  margin: 0 0 10px;
-  font-size: 30px;
-  letter-spacing: -0.02em;
-}
-
-.auth-brand__lead {
-  margin: 0 0 32px;
-  font-size: 16px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.92);
-  max-width: 34em;
-}
-
-.auth-brand__points {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 26em;
-}
-
-.auth-brand__points strong {
-  display: block;
-  font-size: 15px;
-  margin-bottom: 2px;
-  color: #7cb8ff;
-}
-
-.auth-brand__points span {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.78);
-  line-height: 1.55;
-}
-
-.auth-brand__foot {
-  margin-top: 40px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-/* 表单侧：与卡片同色，靠 1px 边框与留白区分 */
-.auth-panel {
-  flex: 1 1 54%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 24px 64px;
+  padding: 2px 4px;
+  border-radius: 8px;
   background: var(--td-bg-color-container);
-  position: relative;
+  border: 1px solid var(--td-component-border);
 }
 
+/* ===== 卡片 ===== */
 .auth-card {
-  width: 440px;
+  position: relative;
+  z-index: 1;
+  width: 400px;
   max-width: 100%;
-  padding: 32px;
+  padding: 28px 28px 18px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
   border-radius: 12px;
-}
-
-.auth-panel__foot {
-  position: absolute;
-  left: 32px;
-  right: 32px;
-  bottom: 20px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
+  /* 浮于场景之上，允许一层柔和阴影 */
+  box-shadow: 0 12px 40px rgba(6, 18, 34, 0.22);
 }
 
 .auth-card__brand {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 18px;
 }
 
 .auth-card__mark {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   background: var(--td-brand-color);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
-.auth-card__name {
+.auth-card__product {
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--td-text-color-secondary);
 }
 
 .auth-card__title {
   margin: 0 0 6px;
-  font-size: 20px;
+  font-size: 24px;
+  letter-spacing: -0.02em;
 }
 
 .auth-card__sub {
-  margin: 0 0 10px;
-  font-size: 13px;
-  line-height: 1.55;
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--mc-text-faint);
 }
 
 .auth-card__form {
@@ -344,76 +314,94 @@ function switchMode(m: 'login' | 'register') {
   }
 }
 
-.auth-card__footer {
-  margin-top: 14px;
-  min-height: 20px;
+.auth-card__submit {
+  margin-top: 4px;
+}
+
+.auth-card__links {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td-component-border);
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  font-size: 13px;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.auth-card__dot {
+  color: var(--mc-text-faint);
+}
+
+/* 切换模式是动作而非跳转，用按钮保持语义与键盘可达 */
+.auth-card__link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--mc-link);
+  cursor: pointer;
+}
+
+.auth-card__link-btn:hover {
+  text-decoration: underline;
+}
+
+.auth-card__link-btn:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .auth-card__legal {
-  margin: 6px 0 0;
+  margin: 14px 0 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--mc-text-faint);
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  align-items: center;
+  justify-content: center;
 }
 
 .auth-card__legal a {
   color: var(--mc-link);
 }
 
-/* 窄屏：品牌侧折叠为顶部条 */
-@media (max-width: 900px) {
+/* ===== 页脚 ===== */
+/* 页脚压在场景层上：用半透明深色胶囊保证任意背景图下的对比度 */
+.auth-foot {
+  position: relative;
+  z-index: 1;
+  margin: 20px 0 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(8, 19, 31, 0.5);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ===== 窄屏：卡片贴边，弱化阴影 ===== */
+@media (max-width: 520px) {
   .auth-page {
-    flex-direction: column;
-  }
-
-  .auth-brand {
-    flex: none;
-    padding: 24px;
-  }
-
-  .auth-brand__points,
-  .auth-brand__foot {
-    display: none;
-  }
-
-  .auth-panel__foot {
-    display: none;
-  }
-
-  .auth-brand__mark {
-    display: none;
-  }
-
-  .auth-brand__title {
-    margin: 0 0 4px;
-    font-size: 22px;
-  }
-
-  .auth-brand__lead {
-    margin: 0;
-    font-size: 13px;
-  }
-
-  .auth-panel {
-    flex: 1;
+    padding: 16px 12px 32px;
+    justify-content: flex-start;
+    padding-top: 64px;
   }
 
   .auth-card {
-    border: none;
-    padding: 8px 0;
-    background: transparent;
+    padding: 24px 20px 16px;
+    box-shadow: none;
   }
 
-  .auth-card__brand {
-    display: flex;
+  .auth-card__title {
+    font-size: 22px;
+  }
+
+  .auth-foot {
+    margin-top: 16px;
   }
 }
 </style>
