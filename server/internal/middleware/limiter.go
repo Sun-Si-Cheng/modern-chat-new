@@ -11,6 +11,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// Limiter 限流后端：内存（单实例）或 Redis（多实例共享配额）。
+type Limiter interface {
+	// Allow 是否放行；实现应在自身故障时放行（fail-open），避免限流组件拖垮服务。
+	Allow(key string) bool
+}
+
 // LimiterStore 内存令牌桶集合（按 key 分桶），周期性整体清理。
 type LimiterStore struct {
 	mu     sync.Mutex
@@ -52,7 +58,7 @@ func (l *LimiterStore) Allow(key string) bool {
 }
 
 // RateLimit REST 限流中间件；keyFn 决定按 IP 还是按用户。
-func RateLimit(l *LimiterStore, keyFn func(c *gin.Context) string) gin.HandlerFunc {
+func RateLimit(l Limiter, keyFn func(c *gin.Context) string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !l.Allow(keyFn(c)) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "操作过于频繁，请稍后再试"})

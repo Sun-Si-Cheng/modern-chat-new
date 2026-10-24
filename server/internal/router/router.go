@@ -21,8 +21,8 @@ type Deps struct {
 	Mailer        *service.Mailer
 	Notifier      handler.Notifier
 	WS            *ws.Hub
-	AuthLimiter   *middleware.LimiterStore // 认证类接口按 IP 限流
-	PluginLimiter *middleware.LimiterStore // 插件安装按用户限流
+	AuthLimiter   middleware.Limiter // 认证类接口按 IP 限流
+	PluginLimiter middleware.Limiter // 插件安装按用户限流
 }
 
 // New 装配引擎。

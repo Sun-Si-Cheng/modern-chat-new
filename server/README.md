@@ -42,7 +42,11 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `FRONTEND_URL` | 前端来源，逗号分隔；用于 WS Origin 白名单与找回密码链接 |
 | `MIGRATE` | `true` 走 `migrations/` 版本化 SQL（生产）；`false` 用 AutoMigrate（开发） |
 | `PLUGIN_MAX_SIZE` | 插件文件上限，默认 1MB |
+| `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` | 可选。配置后限流走 Redis 共享配额（支持多实例）；**连接失败自动降级为内存限流并打 WARN 日志**，不影响启动 |
 | `SMTP_*` | 可选；留空时找回密码链接打印到日志 |
+
+启动时会读取同目录的 `.env`（已被 gitignore）；同名环境变量优先于 `.env`。
+启动日志会明确输出当前限流后端：`rate limiting backed by redis` 或 `redis unavailable, falling back to in-memory limiter`。
 
 ## 生产部署
 

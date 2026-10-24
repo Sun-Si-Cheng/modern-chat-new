@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
@@ -22,6 +23,9 @@ import (
 )
 
 func main() {
+	// 本地开发便利：存在 .env 时加载（已 gitignore）；环境变量优先于 .env
+	_ = godotenv.Load()
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config", "err", err)
@@ -49,10 +53,29 @@ func main() {
 		}
 	}
 
-	// 限流器：认证按 IP 10/min；发消息按用户 20/min（WS 侧）；插件安装按用户 5/min
-	authLimiter := middleware.NewLimiterStore(10, 10)
-	msgLimiter := middleware.NewLimiterStore(20, 20)
-	pluginLimiter := middleware.NewLimiterStore(5, 5)
+	// 限流后端：优先 Redis（多实例共享配额），不可用时降级为内存
+	var (
+		authLimiter   middleware.Limiter
+		msgLimiter    middleware.Limiter
+		pluginLimiter middleware.Limiter
+	)
+	rdb, redisErr := store.OpenRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	if rdb != nil {
+		slog.Info("rate limiting backed by redis", "addr", cfg.Redis.Addr, "db", cfg.Redis.DB)
+		authLimiter = middleware.NewRedisLimiter(rdb, 10)
+		msgLimiter = middleware.NewRedisLimiter(rdb, 20)
+		pluginLimiter = middleware.NewRedisLimiter(rdb, 5)
+	} else {
+		if cfg.Redis.Enabled() {
+			slog.Warn("redis unavailable, falling back to in-memory limiter",
+				"addr", cfg.Redis.Addr, "err", redisErr)
+		} else {
+			slog.Info("redis not configured (REDIS_ADDR empty), using in-memory limiter")
+		}
+		authLimiter = middleware.NewLimiterStore(10, 10)
+		msgLimiter = middleware.NewLimiterStore(20, 20)
+		pluginLimiter = middleware.NewLimiterStore(5, 5)
+	}
 
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
@@ -93,6 +116,9 @@ func main() {
 		slog.Error("shutdown", "err", err)
 	}
 	hub.Close()
+	if rdb != nil {
+		_ = rdb.Close()
+	}
 	store.Close(db)
 	slog.Info("bye")
 }
