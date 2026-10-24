@@ -74,9 +74,9 @@ func (p *Plugin) View() PluginView {
 	v := PluginView{
 		ID: p.ID, Name: p.Name, Version: p.Version, Description: p.Description,
 		Enabled: p.Enabled, GlobalDisabled: p.GlobalDisabled, InstalledBy: p.InstalledBy,
-		CreatedAt: p.CreatedAt,
-		Permissions:   []string{},
-		AllowedHosts:  []string{},
+		CreatedAt:    p.CreatedAt,
+		Permissions:  []string{},
+		AllowedHosts: []string{},
 	}
 	_ = json.Unmarshal([]byte(p.Permissions), &v.Permissions)
 	_ = json.Unmarshal([]byte(p.AllowedHosts), &v.AllowedHosts)

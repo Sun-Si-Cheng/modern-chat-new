@@ -13,9 +13,9 @@ import (
 
 // FriendHandler 好友关系。
 type FriendHandler struct {
-	users  *store.UserStore
+	users   *store.UserStore
 	friends *store.FriendStore
-	convs  *store.ConversationStore
+	convs   *store.ConversationStore
 }
 
 func NewFriendHandler(users *store.UserStore, friends *store.FriendStore, convs *store.ConversationStore) *FriendHandler {
