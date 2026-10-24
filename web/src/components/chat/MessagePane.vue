@@ -188,6 +188,18 @@ async function loadMemberProfiles() {
   }
 }
 
+// 群成员资料实时更新：成员在任意端改头像/昵称后同步到消息头像
+const offUserChange = ws.onFrame((frame) => {
+  if (frame.type !== 'user_change') return
+  const hit = memberCache[frame.userId]
+  if (!hit) return
+  hit.name = frame.nickname
+  hit.avatar = frame.avatar
+  hit.color = frame.avatarColor
+})
+
+onBeforeUnmount(offUserChange)
+
 // 切换会话时清空昵称缓存，避免把上一个群的成员名带过来
 watch(
   () => conv.value?.id,

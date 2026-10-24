@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useConversationsStore } from './conversations'
+import { useFriendsStore } from './friends'
 
 const HEARTBEAT_INTERVAL = 25_000
 const MAX_RECONNECT_DELAY = 30_000
@@ -12,6 +13,7 @@ const MAX_RECONNECT_DELAY = 30_000
 export const useWsStore = defineStore('ws', () => {
   const auth = useAuthStore()
   const conversations = useConversationsStore()
+  const friends = useFriendsStore()
 
   const connected = ref(false)
   /** 在线用户 id 集合（含自己） */
@@ -91,6 +93,18 @@ export const useWsStore = defineStore('ws', () => {
         if (frame.online) onlineUsers.value.add(frame.userId)
         else onlineUsers.value.delete(frame.userId)
         break
+      case 'user_change': {
+        // 昵称/头像变更：本机、会话 peer、好友与申请列表就地更新
+        const patch = {
+          nickname: frame.nickname,
+          avatar: frame.avatar,
+          avatarColor: frame.avatarColor,
+        }
+        if (auth.user?.id === frame.userId) auth.patchProfile(patch)
+        conversations.applyUserProfile({ userId: frame.userId, ...patch })
+        friends.applyUserProfile({ userId: frame.userId, ...patch })
+        break
+      }
       case 'kicked': {
         // 封禁/失效强制下线
         closedByUser = true

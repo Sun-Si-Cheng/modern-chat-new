@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Dialog as TDialog, DialogPlugin, Input as TInput, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -67,6 +67,22 @@ async function acceptPeerRequest() {
 }
 
 const members = ref<ConversationMember[]>([])
+
+// 群成员在任意端改头像/昵称后，成员列表就地更新
+const offUserChange = ws.onFrame((frame) => {
+  if (frame.type !== 'user_change') return
+  for (const m of members.value) {
+    if (m.userId !== frame.userId) continue
+    m.user = {
+      ...m.user,
+      nickname: frame.nickname,
+      avatar: frame.avatar,
+      avatarColor: frame.avatarColor,
+    }
+  }
+})
+
+onBeforeUnmount(offUserChange)
 
 watch(
   () => conv.value?.id,
