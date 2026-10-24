@@ -16,6 +16,10 @@ npm run type-check # 仅 vue-tsc 类型检查
 npm run lint       # oxlint + eslint
 ```
 
+> ⚠️ `lint` 的两个子脚本（`lint:oxlint` / `lint:eslint`）都带 `--fix`，会**直接改写源码**。
+> 只想检查不想改文件时，请用 `npx oxlint .` / `npx eslint .`（不带 `--fix`）。
+> 改完代码如需格式化，用 `npm run format`（prettier），它同样会写文件。
+
 ## 结构速览
 
 ```
@@ -31,7 +35,7 @@ src/
 ├── composables/
 │   ├── useWebSocket.ts      # 挂载连接、卸载断开、上行出口绑定
 │   ├── useAppI18n.ts        # t（文案）+ te（错误翻译）
-│   └── usePluginHost.ts     # 插件沙箱宿主：srcdoc 注入、postMessage 桥、权限白名单、UI 描述校验
+│   └── usePluginHost.ts     # 插件沙箱宿主：document.write 注入引导页、postMessage 桥、权限白名单、UI 描述校验
 ├── components/
 │   ├── common/
 │   │   └── QuickPrefs.vue       # 认证页快捷切换：语言 + 明暗 + 登录页背景(颜色/特效)
@@ -45,21 +49,36 @@ src/
 │   │   ├── DetailPanel.vue      # 群名/人数与群管理、单聊资料 + 插件侧栏
 │   │   ├── PluginDrawer.vue     # 上传/URL 安装、权限确认、启停、卸载、升级重载
 │   │   ├── ProfileCard.vue      # 个人资料卡：头像上传(hover 相机)、设置/退出/后台
-│   │   └── AvatarBadge.vue      # 头像(自定义图/默认卡通图/首字母兜底) + 在线小圆点
+│   │   └── AvatarBadge.vue      # 头像(自定义图 / 默认卡通图 public/default-avatar.svg / 首字母兜底) + 在线小圆点
 │   └── declarative/
-│       ├── index.ts             # 8 个白名单组件的渲染函数（仅原始值 props）
+│       ├── index.ts             # 8 个白名单组件的渲染函数（props 仅原始值；text/image/card/list/link 走原生标签，button/input/divider 用 TDesign）
 │       └── PluginPanel.vue      # 插件面板 + 动作回传
 ├── types/proto.ts           # WS 帧 / 业务实体 / UI 描述契约（与后端共用口径）
 ├── views/
 │   ├── AuthView.vue         # 登录/注册（沉浸背景 + 居中卡片）
 │   ├── ForgotView.vue       # 找回密码（两步 + 进度指示）
-│   ├── SettingsView.vue     # 设置：外观（语言/主题/背景）/ 账号 / 关于
+│   ├── SettingsView.vue     # 设置：外观（语言/主题）/ 账号 / 关于（背景只在认证页）
 │   ├── LegalView.vue        # 用户协议 / 隐私协议
 │   ├── ChatLayout.vue       # 飞书式四栏布局 + 响应式（平板收详情、手机单面板）
 │   └── admin/AdminView.vue  # 站长后台：用户管理 / 插件聚合下架 / 构建版本
-├── router/index.ts          # 路由 + 登录态/站长守卫
-└── assets/main.css          # 辅助令牌（--mc-*）+ 全局工具类
+├── router/index.ts          # 路由 + 登录态/站长守卫（刷新时先 fetchMe 再判角色）
+└── assets/main.css          # 辅助令牌（--mc-*）+ 全局工具类 + 动效关键帧
 ```
+
+`assets/main.css` 暴露的辅助令牌（其余颜色一律用 TDesign 的 `--td-*`）：
+
+| 令牌 | 用途 | 亮色 | 暗色 |
+| --- | --- | --- | --- |
+| `--mc-text-faint` | 最浅层级文字（占位/提示，两套主题均 ≥4.5:1） | `#6b6b6b` | `#a8a8a8` |
+| `--mc-link` | 链接 | `#0052d9` | `#7cb8ff` |
+| `--mc-selection` | 选中文本背景 | 品牌蓝 16% | 亮蓝 28% |
+| `--mc-hairline` | 卡片/分组细描边（比 `--td-component-border` 更淡） | 黑 8% | 白 8% |
+| `--mc-dur-fast` / `--mc-dur-base` / `--mc-dur-slow` | 动效时长 | 120ms / 200ms / 320ms | 同 |
+| `--mc-ease-out` / `--mc-ease-spring` | 缓动曲线 | `cubic-bezier` | 同 |
+| `--mc-scene-color` | 认证页背景基色（由 `stores/prefs.ts` 运行时写入） | 默认 `#123a5c` | 同（可自选） |
+
+动效关键帧（`mc-fade-in` / `mc-fade-up` / `mc-pop-in` / `mc-bubble-in` / `mc-dot-bounce` / `mc-online-pulse` 等）
+与路由/会话切换过渡类（`mc-route-*` / `mc-swap-*` / `mc-fade-scale-*`）都在 `main.css` 里统一维护。
 
 ## 聊天界面
 
@@ -77,7 +96,7 @@ src/
 
 **主题**：`src/stores/prefs.ts` 以 `:root[theme-mode="dark"|"light"]` 驱动 TDesign 令牌，支持「跟随系统 / 亮 / 暗」三态，持久化在 `localStorage.mc_theme`。
 `index.html` 内联脚本在样式生效前预置主题，避免暗色首屏闪白。
-自定义颜色一律走令牌：`--td-*`（TDesign）或 `--mc-text-faint` / `--mc-link` / `--mc-selection`（本项目辅助），不要写死色值。
+自定义颜色一律走令牌：`--td-*`（TDesign）或 `assets/main.css` 里的辅助令牌 `--mc-text-faint` / `--mc-link` / `--mc-selection` / `--mc-hairline` / `--mc-dur-*` / `--mc-ease-*`（完整清单见上方「结构速览」），不要写死色值。
 
 ## 设置页
 
@@ -87,13 +106,16 @@ src/
 - **账号**（需登录）：昵称、邮箱、退出登录
 - **关于**：当前构建版本
 
-> 登录 / 注册 / 找回密码 / 协议页右上角有三个快捷按钮：语言、明暗、背景（颜色 + 特效）。它们与设置页共享同一份偏好（`localStorage`），背景只作用于认证页（`AuthScene.vue`），聊天界面不受影响。
+> 登录 / 注册 / 找回密码 / 协议页右上角有三个快捷按钮：语言、明暗、背景（颜色 + 特效）。
+> 语言与明暗与设置页共享同一份偏好（`localStorage.mc_lang` / `mc_theme`）；
+> **背景只属于认证页**（`/settings` 不提供背景项），且只作用于挂载了 `AuthScene.vue` 的登录/找回密码页，
+> 聊天界面与协议页（只挂 `QuickPrefs`、无背景层）不受影响。
 
 偏好存 `localStorage`（`mc_lang` / `mc_theme` / `mc_scene_color` / `mc_scene_effect`），仅作用于当前浏览器。
 
 ## 登录页背景（颜色与特效）
 
-登录 / 找回密码页共用 `components/common/AuthScene.vue`：
+登录 / 找回密码页共用 `components/common/AuthScene.vue`（`AuthView` / `ForgotView` 挂载；协议页只有 `QuickPrefs`，没有背景层）：
 
 - **基色**：默认 `#123a5c`（深蓝），由 CSS 变量 `--mc-scene-color` 驱动
 - **特效**（三种，纯 CSS，无图片、无外部依赖）：

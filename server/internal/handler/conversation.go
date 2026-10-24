@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,7 +14,8 @@ import (
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
-const maxGroupMembers = 200
+// maxGroupMembers 群成员上限（§3.2）。
+const maxGroupMembers int64 = 200
 
 // ConversationHandler 会话与消息 REST。
 type ConversationHandler struct {
@@ -217,18 +219,13 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 		fail(c, http.StatusConflict, "你已在群中")
 		return
 	}
-	n, err := h.convs.CountMembers(convID)
-	if err != nil {
-		internal(c, err)
-		return
-	}
-	if int(n) >= maxGroupMembers {
-		fail(c, http.StatusUnprocessableEntity, "群成员已满（200 人上限）")
-		return
-	}
-	if err := h.convs.AddMembers([]model.ConversationMember{
-		{ConversationID: convID, UserID: me.ID, Role: "member"},
-	}); err != nil {
+	// 原子入群：容量判断与插入在同一事务内（SELECT ... FOR UPDATE 锁会话行），
+	// 修复并发入群可突破 200 人上限的缺陷。
+	if err := h.convs.JoinGroup(convID, me.ID, maxGroupMembers); err != nil {
+		if errors.Is(err, store.ErrGroupFull) {
+			fail(c, http.StatusUnprocessableEntity, "群成员已满（200 人上限）")
+			return
+		}
 		internal(c, err)
 		return
 	}
@@ -295,6 +292,17 @@ func (h *ConversationHandler) Read(c *gin.Context) {
 	}
 	me := middleware.UserFrom(c)
 	if !h.requireMember(c, convID) {
+		return
+	}
+	// 修复缺陷：原实现不校验 upToId 归属，可把别的会话的消息 id 当作本会话已读游标，
+	// 造成 last_read_message_id 被写成越界值（未读计数错乱）。要求该消息存在且属于本会话。
+	msg, err := h.msgs.ByID(uint(req.UpToID))
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if msg == nil || msg.ConversationID != convID {
+		fail(c, http.StatusBadRequest, "upToId 不合法")
 		return
 	}
 	affected, err := h.msgs.MarkRead(me.ID, convID, req.UpToID)
@@ -373,6 +381,11 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 		return
 	} else if m == nil {
 		fail(c, http.StatusUnprocessableEntity, "该用户不在群中")
+		return
+	} else if m.Role == "owner" {
+		// 修复缺陷：规格 §3.2 要求群主不可被移除；原实现只挡了「移除自己」，
+		// 若数据里出现第二个 owner 角色行（转让竞态等），群主仍可能被踢掉。
+		fail(c, http.StatusUnprocessableEntity, "不能移除群主")
 		return
 	}
 	if err := h.leaveCleanup(convID, req.UserID); err != nil {

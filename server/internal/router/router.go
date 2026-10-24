@@ -2,6 +2,8 @@
 package router
 
 import (
+	"log/slog"
+
 	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +30,15 @@ type Deps struct {
 // New 装配引擎。
 func New(d Deps) *gin.Engine {
 	r := gin.New()
+	// 修复缺陷：gin 默认 trustedProxies 为 0.0.0.0/0 + ::/0（信任所有代理），
+	// 客户端可伪造 X-Forwarded-For 冒充任意 IP，从而绕过按 IP 的认证接口限流。
+	// 这里显式限定为配置的可信代理（默认仅回环）；配置非法时告警并退化为
+	// 不信任任何代理 —— 传 nil 的语义是「不使用任何转发头」，ClientIP() 只取 RemoteAddr。
+	if err := r.SetTrustedProxies(d.Cfg.TrustedProxies); err != nil {
+		slog.Warn("invalid TRUSTED_PROXIES, falling back to distrusting all proxies",
+			"value", d.Cfg.TrustedProxies, "err", err.Error())
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(gin.Recovery(), middleware.Logger())
 	if d.Notifier != nil {
 		r.Use(func(c *gin.Context) {

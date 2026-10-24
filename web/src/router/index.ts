@@ -38,10 +38,19 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.token) {
     return { name: 'login', query: to.fullPath === '/chat' ? {} : { redirect: to.fullPath } }
+  }
+  // 刷新页面时 token 从 localStorage 恢复、但 user 还未拉取：先补拉再判权限，
+  // 否则刷新 /admin 会因 user 为 null 被误判成非站长而踢回 /chat
+  if (to.meta.requiresAuth && auth.token && !auth.user) {
+    await auth.fetchMe()
+    // token 失效时 fetchMe 内部已 logout
+    if (!auth.token || !auth.user) {
+      return { name: 'login', query: to.fullPath === '/chat' ? {} : { redirect: to.fullPath } }
+    }
   }
   if (to.meta.guest && auth.token) return { name: 'chat' }
   if (to.meta.requiresAdmin && auth.user?.role !== 'admin') return { name: 'chat' }

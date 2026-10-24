@@ -88,6 +88,7 @@ func main() {
 		Convs:      store.NewConversationStore(db),
 		Messages:   store.NewMessageStore(db),
 		Friends:    store.NewFriendStore(db),
+		Users:      store.NewUserStore(db), // 连接级封禁 / tv 复核（task-4 修复点）
 		MsgLimiter: msgLimiter,
 	})
 	go hub.Run()

@@ -64,12 +64,15 @@ func setup(t *testing.T) *env {
 
 	gin.SetMode(gin.TestMode)
 	r := router.New(router.Deps{
-		Cfg:         config.Config{JWTSecret: strings.Repeat("t", 32), PluginMaxSize: 1 << 20},
-		DB:          db,
-		Mailer:      service.NewMailer(config.SMTPConfig{}),
-		Notifier:    hub,
-		WS:          hub,
-		AuthLimiter: middleware.NewLimiterStore(1000, 1000),
+		Cfg:      config.Config{JWTSecret: strings.Repeat("t", 32), PluginMaxSize: 1 << 20},
+		DB:       db,
+		Mailer:   service.NewMailer(config.SMTPConfig{}),
+		Notifier: hub,
+		WS:       hub,
+		// 两个限流器都必需：Deps.PluginLimiter 为零值时，RateLimit 会在请求路径上
+		// 调用 nil 接口方法直接 panic（gin.Recovery 兜成 500），插件用例永远过不了。
+		AuthLimiter:   middleware.NewLimiterStore(1000, 1000),
+		PluginLimiter: middleware.NewLimiterStore(1000, 1000),
 	})
 	ts := httptest.NewServer(r)
 	t.Cleanup(func() {
@@ -464,6 +467,8 @@ func TestFullChatFlow(t *testing.T) {
 
 func TestPluginInstallAndFetch(t *testing.T) {
 	e := setup(t)
+	// 首个注册者才是站长：必须先注册后台账号，再用它跑 /api/admin/* 断言。
+	adminTok, _ := register(t, e, "plugadmin")
 	token, _ := register(t, e, "pluginer")
 
 	// 合法插件（manifest 在首个块注释）
@@ -524,7 +529,7 @@ function __mcActivate(api) { /* v1.1.0 */ }`
 	}
 
 	// 站长全局下架：按 name 聚合 + 下架后代码下发 403
-	adminTok, _ := register(t, e, "plugadmin") // 首个注册者为 admin（本用例 setup 已清库）
+	// （adminTok 在用例开头已注册：首个注册者才是站长）
 	code, listAny := apiAny(t, e, "GET", "/api/admin/plugins", adminTok, "")
 	if code != 200 {
 		t.Fatalf("admin 插件列表应 200，got %d", code)

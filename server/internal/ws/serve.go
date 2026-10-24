@@ -77,8 +77,10 @@ func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *
 	}
 	client := &Client{
 		UserID: u.ID,
+		tv:     cl.TV, // 缓存握手时的 token_version，供 handleChat 连接级复核
 		Conn:   conn,
 		send:   make(chan []byte, sendBuffer),
+		kickCh: make(chan struct{}),
 		hub:    hub,
 	}
 	hub.Register(client)
@@ -91,7 +93,11 @@ func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *
 	readPump(client)
 }
 
-// writePump 单连接写循环：send channel + 协议层 ping；写满即踢（慢消费者）。
+// writePump 单连接写循环：send channel + 协议层 ping + 踢线信号；写满即踢（慢消费者）。
+//
+// 修复缺陷：收到 kickCh 信号（KickUser 下发 kicked 帧后触发）时，先把
+// send 队列里残留的帧冲刷掉（保证 kicked 帧送达），再发 WS CloseMessage
+// 并退出；c.send 的关闭仍由 readPump defer 里的 Unregister 独占。
 func writePump(c *Client) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -116,6 +122,26 @@ func writePump(c *Client) {
 			if err := w.Close(); err != nil {
 				return
 			}
+		case <-c.kickCh:
+			// KickUser 场景（kickFlush=true）先冲刷队列，保证 kicked 帧送达；
+			// 慢消费者场景（kickFlush=false）直接退出，避免为已判定超载的连接
+			// 继续占用写带宽。
+			if c.kickFlush.Load() {
+				for i := len(c.send); i > 0; i-- {
+					data, ok := <-c.send
+					if !ok {
+						break
+					}
+					_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+					if err := c.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						break
+					}
+				}
+			}
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.Conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "kicked"))
+			return
 		case <-ticker.C:
 			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -128,8 +154,16 @@ func writePump(c *Client) {
 // readPump 单连接读循环：每帧刷新读超时，帧交给 Hub 分发。
 func readPump(c *Client) {
 	defer func() {
+		// 修复缺陷：先把连接从注册表摘除，再判断是否还有其它连接在线。
+		// 原实现无条件广播 offline，导致「手机 + 网页」多端登录时，任一端
+		// 断开就让好友看到该用户离线（误报）；现在仅当该用户已无任何在线
+		// 连接时才广播 offline，单端在线期间保持 online 状态。
 		c.hub.Unregister(c)
-		go c.hub.notifyPresence(&model.User{ID: c.UserID}, false)
+		if !c.hub.Online(c.UserID) {
+			go c.hub.notifyPresence(&model.User{ID: c.UserID}, false)
+		} else {
+			slog.Debug("ws conn closed, user still online", "uid", c.UserID)
+		}
 		_ = c.Conn.Close()
 		slog.Info("ws disconnected", "uid", c.UserID)
 	}()

@@ -100,7 +100,9 @@ func (h *AdminHandler) Ban(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers([]uint{u.ID}, gin.H{"type": "kicked", "reason": "账号已被封禁"})
+	// 修复缺陷：此前只推 kicked 帧，客户端忽略该帧即可继续使用既有连接；
+	// 改为 KickUser —— 先入帧再强制断开，封禁立即生效且不可 bypass。
+	notifyFor(c).KickUser(u.ID, "账号已被封禁")
 	slog.Warn("user banned",
 		"target", u.ID, "username", u.Username,
 		"days", req.Days, "until", until.Format(time.RFC3339), "reason", req.Reason,
@@ -160,7 +162,8 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers([]uint{u.ID}, gin.H{"type": "kicked", "reason": "密码已被站长重置"})
+	// 修复缺陷：重置密码使 tv+1，但旧连接不会自动失效；改用 KickUser 强制断开。
+	notifyFor(c).KickUser(u.ID, "密码已被站长重置")
 	slog.Warn("user password reset by admin",
 		"target", u.ID, "username", u.Username, "by", middleware.UserFrom(c).ID)
 	c.JSON(http.StatusOK, gin.H{"newPassword": pwd})

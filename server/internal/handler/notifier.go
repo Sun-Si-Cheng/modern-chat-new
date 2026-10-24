@@ -8,6 +8,9 @@ type Notifier interface {
 	ToUsers(userIDs []uint, frame any)
 	// NotifyUserChange 资料变更广播给好友与同会话成员（含本人多端）。
 	NotifyUserChange(userID uint, nickname, avatar, avatarColor string)
+	// KickUser 强制断开该用户的全部既有连接（封禁 / 重置密码后使用）。
+	// 修复缺陷：仅推 kicked 帧不会断开连接，客户端忽略该帧即可继续收发。
+	KickUser(userID uint, reason string)
 }
 
 // NoopNotifier 空实现（测试 / Hub 未就绪）。
@@ -16,6 +19,8 @@ type NoopNotifier struct{}
 func (NoopNotifier) ToUsers([]uint, any) {}
 
 func (NoopNotifier) NotifyUserChange(uint, string, string, string) {}
+
+func (NoopNotifier) KickUser(uint, string) {}
 
 // notifyFor 从 gin 上下文取 Notifier。
 func notifyFor(c *gin.Context) Notifier {

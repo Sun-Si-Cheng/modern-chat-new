@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import {
   Button as TButton,
   DialogPlugin,
@@ -23,6 +23,21 @@ const { t, te } = useAppI18n()
 
 const urlInput = ref('')
 const installing = ref(false)
+
+/**
+ * 抽屉打开时拉全量清单（含已停用）：宿主的 active 列表只有启用项，
+ * 若沿用它，停用后的插件将从抽屉里消失、再也无法重新启用。
+ */
+watch(
+  visible,
+  (v) => {
+    if (!v) return
+    pluginsStore.load().catch((e) => {
+      void MessagePlugin.error(te(e))
+    })
+  },
+  { immediate: true },
+)
 
 // ===== 安装 / 升级 =====
 

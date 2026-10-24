@@ -76,6 +76,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         loadingMessages.value = false
       }
     }
+    // 等消息真正落地后再上报已读：此前 upToId 只能算到 0，本地清未读而服务端仍记未读
     markRead(convId)
   }
 
@@ -101,15 +102,30 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   // ===== 已读 =====
 
-  let lastReportedReadId = 0
+  /**
+   * convId -> 已上报过的最大已读消息 id。
+   * 必须按会话隔离：全局单值会导致在 A 会话上报后，B 会话的同 id 被误判为「已上报」而漏发。
+   */
+  const lastReportedReadByConv = new Map<number, number>()
+
+  /** 求最大消息 id：循环而非 Math.max(...arr)，避免大数组展开导致 RangeError */
+  function maxMessageId(list: Message[] | undefined): number {
+    if (!list?.length) return 0
+    let max = 0
+    for (const m of list) if (m.id > max) max = m.id
+    return max
+  }
 
   function markRead(convId: number) {
     const list = messagesByConv[convId]
-    const maxId = list?.length ? Math.max(...list.map((m) => m.id).filter((i) => i > 0)) : 0
+    // 消息还没加载完（或加载失败）：此时算不出 upToId，先不清本地未读，
+    // 否则本地红点消失、服务端仍记未读，刷新后红点复活
+    if (!list) return
+    const maxId = maxMessageId(list)
     const conv = conversations.value.find((c) => c.id === convId)
     if (conv) conv.unreadCount = 0
-    if (maxId > 0 && maxId !== lastReportedReadId) {
-      lastReportedReadId = maxId
+    if (maxId > 0 && maxId !== lastReportedReadByConv.get(convId)) {
+      lastReportedReadByConv.set(convId, maxId)
       sendFrame({ type: 'read', convId, upToId: maxId })
       readByConv[convId] = { ...readByConv[convId], [auth.user?.id ?? 0]: maxId }
     }
@@ -274,7 +290,8 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
       if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
       else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
-      lastReportedReadId = frame.id
+      // 自己发出的消息本身就是已读位置：记住该会话的上报水位，避免重复上报
+      lastReportedReadByConv.set(convId, frame.id)
       return
     }
 
@@ -305,10 +322,11 @@ export const useConversationsStore = defineStore('conversations', () => {
   function reset() {
     conversations.value = []
     currentConvId.value = null
+    filter.value = 'all'
     for (const k of Object.keys(messagesByConv)) delete messagesByConv[Number(k)]
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
     for (const k of Object.keys(readByConv)) delete readByConv[Number(k)]
-    lastReportedReadId = 0
+    lastReportedReadByConv.clear()
   }
 
   return {

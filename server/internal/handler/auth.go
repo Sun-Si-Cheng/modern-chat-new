@@ -76,34 +76,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	count, err := h.users.Count()
-	if err != nil {
-		internal(c, err)
-		return
-	}
-	role := "user"
-	if count == 0 {
-		role = "admin"
-	}
-
 	u := &model.User{
 		Username:     req.Username,
 		PasswordHash: string(hash),
 		Nickname:     nickname,
-		Role:         role,
 	}
-	if err := h.users.Create(u); err != nil {
+	// 插入与站长选举在同一事务内完成：并发注册不会产生多个站长，
+	// 头像取色也在同一事务内按自增 id 回填。
+	if err := h.users.CreateWithAdminElection(u); err != nil {
 		// 并发同名注册落到唯一索引
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			fail(c, http.StatusConflict, "用户名已被占用")
 			return
 		}
-		internal(c, err)
-		return
-	}
-	// 头像取色依赖自增 id，创建后回填
-	u.AvatarColor = model.PickColor(u.ID)
-	if err := h.users.Save(u); err != nil {
 		internal(c, err)
 		return
 	}
@@ -190,8 +175,16 @@ func (h *AuthHandler) Forgot(c *gin.Context) {
 			internal(c, err)
 			return
 		}
-		link := h.cfg.FrontendURLs[0] + "/forgot?token=" + token
-		h.mailer.SendResetLink(req.Email, link)
+		// FRONTEND_URL 可能被配置成空串（切分后 FrontendURLs 为空），
+		// 原实现直接取 [0] 会索引越界 panic；此处判空后跳过发信并告警。
+		if len(h.cfg.FrontendURLs) == 0 {
+			slog.Warn("password reset link skipped: FRONTEND_URL not configured", "uid", u.ID)
+		} else {
+			link := h.cfg.FrontendURLs[0] + "/forgot?token=" + token
+			// 异步发送：SMTP 建连最长可达 10s，同步发送会让「邮箱存在」的请求显著变慢，
+			// 从而通过耗时差异枚举出已注册邮箱；异步后响应耗时恒定。
+			go h.mailer.SendResetLink(req.Email, link)
+		}
 	} else {
 		// 均衡耗时：执行一次等价的 bcrypt 比对
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Email))

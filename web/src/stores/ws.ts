@@ -52,8 +52,14 @@ export const useWsStore = defineStore('ws', () => {
       connected.value = true
       reconnectDelay = 1000
       startHeartbeat()
-      // 重连：断线期间的消息不会补发帧，必须重新对齐服务端状态
-      if (hasConnected) void conversations.resync()
+      // 重连：断线期间的消息/好友变动都不会补发帧，必须重新对齐服务端状态
+      if (hasConnected) {
+        // 服务端在连接建立后不补发完整在线集合，只能先清空、等后续 presence 帧重建；
+        // TODO: 服务端补发一次 presence 快照后，这里可以不清空，避免重连后短暂全员离线
+        onlineUsers.value = new Set()
+        void conversations.resync()
+        void friends.loadAll().catch((e) => console.warn('[ws] reload friends failed:', e))
+      }
       hasConnected = true
     }
 

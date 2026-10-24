@@ -53,6 +53,33 @@ export function validateUIDesc(node: unknown, depth = 0): UIDescNode | null {
   return { component: n.component as UIDescNode['component'], props, action: typeof n.action === 'string' ? n.action : undefined, children }
 }
 
+/**
+ * 校验面板描述：{ title?, body: UIDescNode[] }。
+ * 面板对象本身没有 component 字段，不能直接交给 validateUIDesc（会被判 null）；
+ * 这里校验外层形状后逐节点校验，任一节点非法则整体拒绝（保持严格的安全边界）。
+ */
+export function validatePanel(desc: unknown): PanelDesc | null {
+  if (!desc || typeof desc !== 'object') return null
+  const d = desc as Record<string, unknown>
+  if (d.title !== undefined && typeof d.title !== 'string') return null
+  if (!Array.isArray(d.body)) return null
+  const body: UIDescNode[] = []
+  for (const node of d.body) {
+    const v = validateUIDesc(node)
+    if (!v) return null
+    body.push(v)
+  }
+  return { kind: 'panel', title: typeof d.title === 'string' ? d.title : '', body }
+}
+
+/** 渲染结果：面板形状（有 body 数组）走 validatePanel，单节点则包成只含一个节点的面板 */
+function validateRenderDesc(desc: unknown): PanelDesc | null {
+  if (!desc || typeof desc !== 'object') return null
+  if (Array.isArray((desc as Record<string, unknown>).body)) return validatePanel(desc)
+  const node = validateUIDesc(desc)
+  return node ? { kind: 'panel', title: '', body: [node] } : null
+}
+
 // ===== allowed_hosts 匹配 =====
 
 function hostAllowed(hostname: string, patterns: string[]): boolean {
@@ -147,6 +174,9 @@ interface Runtime {
   rendererTypes: Set<string>
   renderSeq: number
   pendingRenders: Map<number, { resolve: (d: PanelDesc) => void; reject: (e: Error) => void }>
+  /** window message 监听器与 iframe load 监听器：卸载运行时必须解绑，否则泄漏 */
+  onMessage: (ev: MessageEvent) => void
+  onLoad: () => void
 }
 
 interface PluginHostState {
@@ -178,12 +208,9 @@ function createHost() {
       runtime.pendingRenders.delete(m.callId as number)
       if (m.error) p.reject(new Error(String(m.error)))
       else {
-        const desc = validateUIDesc(m.desc)
-        if (desc && (desc.component === 'card' || desc.component === 'list' || desc.component === 'text')) {
-          p.resolve({ kind: 'panel', title: '', body: [desc] } as PanelDesc)
-        } else {
-          p.reject(new Error('invalid ui desc'))
-        }
+        const panel = validateRenderDesc(m.desc)
+        if (panel) p.resolve(panel)
+        else p.reject(new Error('invalid ui desc'))
       }
     } else if (m.__mc === 'ready') {
       if (m.error) console.warn(`[plugin:${runtime.plugin.name}] boot warning:`, m.error)
@@ -224,20 +251,10 @@ function createHost() {
           break
         }
         case 'addSidePanel': {
-          const raw = args[0] as Record<string, unknown>
-          const desc = validateUIDesc({ ...raw, kind: undefined })
-          if (!desc || typeof raw?.title !== 'string' || !Array.isArray(raw?.body)) {
+          const panel = validatePanel(args[0])
+          if (!panel) {
             reply(runtime, callId, false, undefined, 'invalid panel desc')
             return
-          }
-          const panel: PanelDesc = { kind: 'panel', title: raw.title, body: [] }
-          for (const node of raw.body) {
-            const v = validateUIDesc(node)
-            if (!v) {
-              reply(runtime, callId, false, undefined, 'invalid panel node')
-              return
-            }
-            panel.body.push(v)
           }
           state.panels[runtime.plugin.id] = panel
           reply(runtime, callId, true)
@@ -363,21 +380,42 @@ function createHost() {
     const iframe = document.createElement('iframe')
     iframe.setAttribute('sandbox', 'allow-scripts')
     iframe.style.display = 'none'
-    const runtime: Runtime = {
+    // 监听器必须存进 Runtime：卸载时要按同一个引用 removeEventListener
+    // 这里必须先声明后赋值：onMessage 回调内部要引用 runtime（互相引用），无法合并为 const
+    // eslint-disable-next-line prefer-const
+    let runtime: Runtime
+    const onLoad = () => {
+      iframe.contentWindow?.document.open()
+      iframe.contentWindow?.document.write(bootHtml(pluginCodeCache.get(plugin.id) ?? ''))
+      iframe.contentWindow?.document.close()
+    }
+    const onMessage = (ev: MessageEvent) => handleSandboxMessage(runtime, ev)
+    runtime = {
       plugin,
       iframe,
       rendererTypes: new Set(),
       renderSeq: 0,
       pendingRenders: new Map(),
+      onMessage,
+      onLoad,
     }
-    iframe.addEventListener('load', () => {
-      iframe.contentWindow?.document.open()
-      iframe.contentWindow?.document.write(bootHtml(pluginCodeCache.get(plugin.id) ?? ''))
-      iframe.contentWindow?.document.close()
-    })
-    window.addEventListener('message', (ev) => handleSandboxMessage(runtime, ev))
+    iframe.addEventListener('load', onLoad)
+    window.addEventListener('message', onMessage)
     document.body.appendChild(iframe)
     runtimes.set(plugin.id, runtime)
+  }
+
+  /** 卸载单个运行时：解绑 window message / iframe load 监听器，再移除 iframe */
+  function unmountRuntime(pluginId: number) {
+    const rt = runtimes.get(pluginId)
+    if (!rt) return
+    window.removeEventListener('message', rt.onMessage)
+    rt.iframe.removeEventListener('load', rt.onLoad)
+    for (const p of rt.pendingRenders.values()) p.reject(new Error('runtime unmounted'))
+    rt.pendingRenders.clear()
+    rt.iframe.remove()
+    runtimes.delete(pluginId)
+    delete state.panels[pluginId]
   }
 
   /** srcdoc 不便直接塞大代码，用 document.write 注入；代码在加载插件清单时缓存 */
@@ -404,8 +442,9 @@ function createHost() {
   function stop() {
     offFrame?.()
     offFrame = null
-    for (const rt of runtimes.values()) rt.iframe.remove()
-    runtimes.clear()
+    // unmountRuntime 会删除当前项，Map 迭代器按序遍历时这是安全的
+    for (const id of runtimes.keys()) unmountRuntime(id)
+    pluginCodeCache.clear()
     state.panels = {}
     state.started = false
   }
@@ -413,13 +452,10 @@ function createHost() {
   /** 用户启停插件后调用：卸载对应运行时或挂载新运行时 */
   async function reloadPlugin(plugin: Plugin) {
     if (plugin.globalDisabled || !plugin.enabled) {
-      runtimes.get(plugin.id)?.iframe.remove()
-      runtimes.delete(plugin.id)
-      delete state.panels[plugin.id]
+      unmountRuntime(plugin.id)
       return
     }
-    runtimes.get(plugin.id)?.iframe.remove()
-    runtimes.delete(plugin.id)
+    unmountRuntime(plugin.id)
     pluginCodeCache.set(plugin.id, await fetchPluginCode(plugin.id))
     mountRuntime(plugin)
   }

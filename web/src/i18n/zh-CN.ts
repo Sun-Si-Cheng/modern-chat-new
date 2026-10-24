@@ -9,6 +9,7 @@ export default {
     close: '关闭',
     none: '无',
     more: '更多',
+    saveFailed: '保存失败',
   },
   auth: {
     brand: {

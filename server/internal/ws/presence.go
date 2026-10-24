@@ -7,6 +7,7 @@ func (h *Hub) notifyPresence(u *model.User, online bool) {
 	if h.deps == nil {
 		return
 	}
+	// 修复缺陷：NewHub(nil) / 未注入依赖时 deps 非 nil 但字段为 nil，直接调用会 panic。
 	h.ToUsers(h.relatedUsers(u.ID), ginH{
 		"type": "presence", "userId": u.ID, "online": online,
 	})
@@ -30,16 +31,21 @@ func (h *Hub) NotifyUserChange(userID uint, nickname, avatar, avatarColor string
 // relatedUsers 与该用户相关的在线受众：同会话成员 ∪ 好友 ∪ 自己。
 func (h *Hub) relatedUsers(uid uint) []uint {
 	set := map[uint]bool{uid: true}
-	if convIDs, err := h.deps.Convs.ConvIDsOfUser(uid); err == nil {
-		if others, err := h.deps.Convs.MemberIDsOfConvs(convIDs); err == nil {
-			for _, id := range others {
-				set[id] = true
+	// nil 判空：NewHub(&Deps{}) 等未完整注入依赖的场景（含单测）不能 panic。
+	if h.deps.Convs != nil {
+		if convIDs, err := h.deps.Convs.ConvIDsOfUser(uid); err == nil {
+			if others, err := h.deps.Convs.MemberIDsOfConvs(convIDs); err == nil {
+				for _, id := range others {
+					set[id] = true
+				}
 			}
 		}
 	}
-	if friendIDs, err := h.deps.Friends.FriendIDs(uid); err == nil {
-		for _, id := range friendIDs {
-			set[id] = true
+	if h.deps.Friends != nil {
+		if friendIDs, err := h.deps.Friends.FriendIDs(uid); err == nil {
+			for _, id := range friendIDs {
+				set[id] = true
+			}
 		}
 	}
 	out := make([]uint, 0, len(set))

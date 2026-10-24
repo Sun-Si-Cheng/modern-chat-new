@@ -19,10 +19,12 @@ import {
 import AvatarBadge from './AvatarBadge.vue'
 import ProfileCard from './ProfileCard.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
+import { usePluginHost } from '@/composables/usePluginHost'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
 
 /**
@@ -40,6 +42,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const pluginsStore = usePluginsStore()
+const pluginHost = usePluginHost()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
@@ -57,6 +61,9 @@ function confirmLogout() {
     body: t('chat.logoutBody'),
     onConfirm: () => {
       auth.logout()
+      // 登出前先停掉插件宿主：卸载 iframe 与 message 监听器，再清空插件列表
+      pluginHost.stop()
+      pluginsStore.reset()
       ws.disconnect()
       convStore.reset()
       friendsStore.reset()

@@ -10,18 +10,19 @@ import (
 
 // Config 全部运行配置，来源仅环境变量。
 type Config struct {
-	Port          string
-	GinMode       string
-	DBDSN         string
-	JWTSecret     string
-	LogLevel      string
-	Migrate       bool
-	PluginMaxSize int64
-	FrontendURLs  []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
-	LogDir        string   // 日志目录；留空则只输出 stdout
-	LogRetainDays int      // 日志保留天数（默认 15）
-	Redis         RedisConfig
-	SMTP          SMTPConfig
+	Port           string
+	GinMode        string
+	DBDSN          string
+	JWTSecret      string
+	LogLevel       string
+	Migrate        bool
+	PluginMaxSize  int64
+	FrontendURLs   []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
+	TrustedProxies []string // 可信反向代理网段；空表示不信任任何代理（不使用 XFF 判定 ClientIP）
+	LogDir         string   // 日志目录；留空则只输出 stdout
+	LogRetainDays  int      // 日志保留天数（默认 15）
+	Redis          RedisConfig
+	SMTP           SMTPConfig
 }
 
 // RedisConfig 可选：配置后限流使用 Redis 共享配额，连接失败自动降级为内存。
@@ -73,6 +74,22 @@ func Load() (Config, error) {
 		if u = strings.TrimSpace(strings.TrimSuffix(u, "/")); u != "" {
 			cfg.FrontendURLs = append(cfg.FrontendURLs, u)
 		}
+	}
+	// 可信反向代理：默认只信任本机回环（nginx 同机部署）。
+	// 修复缺陷：gin 默认信任所有代理，攻击者伪造 X-Forwarded-For 即可换 IP，
+	// 绕过按 IP 的登录/注册限流。显式设为空串（TRUSTED_PROXIES=）表示不信任任何代理。
+	if v, ok := os.LookupEnv("TRUSTED_PROXIES"); ok {
+		if v = strings.TrimSpace(v); v == "" {
+			cfg.TrustedProxies = []string{}
+		} else {
+			for _, p := range strings.Split(v, ",") {
+				if p = strings.TrimSpace(p); p != "" {
+					cfg.TrustedProxies = append(cfg.TrustedProxies, p)
+				}
+			}
+		}
+	} else {
+		cfg.TrustedProxies = []string{"127.0.0.1", "::1"}
 	}
 	if len(cfg.JWTSecret) < 32 {
 		if cfg.JWTSecret != "" {

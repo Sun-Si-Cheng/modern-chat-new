@@ -63,21 +63,32 @@ func (s *MessageStore) MarkRecalled(id uint) error {
 }
 
 // UpsertInbox 批量更新收件箱行的 last_message_*（新成员行不存在则插入，unread 保持初始值）。
+// 修复缺陷：并发/乱序消息会让较小的 last_message_id 覆盖较大的值，导致会话列表排序
+// 回退、预览显示旧消息。这里用 GREATEST 保证 last_message_id 与 last_message_at 只增不减。
 func (s *MessageStore) UpsertInbox(rows []model.UserConversation) error {
 	if len(rows) == 0 {
 		return nil
 	}
 	return s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"last_message_id", "last_message_at"}),
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			// 外层再 COALESCE 一次：新值为 NULL 时 GREATEST 会得到 NULL，
+			// 那样会把已有的历史值抹掉，因此回退到旧值。
+			"last_message_id": gorm.Expr(
+				"COALESCE(GREATEST(COALESCE(last_message_id, 0), COALESCE(VALUES(last_message_id), 0)), last_message_id)"),
+			"last_message_at": gorm.Expr(
+				"COALESCE(GREATEST(COALESCE(last_message_at, VALUES(last_message_at)), VALUES(last_message_at)), last_message_at)"),
+		}),
 	}).Create(&rows).Error
 }
 
 // BumpUnread 对除发送者外的成员未读 +1。
-// 以 last_message_id = 新消息 id 为条件，确保只对刚 upsert 的行生效。
+// 修复缺陷：原条件 last_message_id = 新消息 id 在并发 upsert 下会漏计/错计
+// （upsert 先写入了更大的 id 时该条件不成立）。改为「该用户尚未读到这条消息」
+// 的语义条件：last_read_message_id < msgID；未读只增不减，重复执行也不会回退。
 func (s *MessageStore) BumpUnread(convID, senderID uint, msgID uint64) error {
 	return s.db.Model(&model.UserConversation{}).
-		Where("conversation_id = ? AND user_id <> ? AND last_message_id = ?", convID, senderID, msgID).
+		Where("conversation_id = ? AND user_id <> ? AND last_read_message_id < ?", convID, senderID, msgID).
 		UpdateColumn("unread_count", gorm.Expr("unread_count + 1")).Error
 }
 

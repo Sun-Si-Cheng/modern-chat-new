@@ -5,14 +5,26 @@ import (
 	"log/slog"
 	"time"
 
-	gormlogger "gorm.io/gorm/logger"
-
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	gormlog "gorm.io/gorm/logger"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 )
+
+// gormLogConfig GORM 日志策略：
+//   - ParameterizedQueries=true：SQL 只打印占位符，不落参数值，避免用户名/邮箱/
+//     重置令牌等明文进日志；
+//   - IgnoreRecordNotFoundError=true：查询不到是业务常态（返回 nil,nil），不该刷日志；
+//   - SlowThreshold=200ms：慢查询告警阈值；
+//   - LogLevel=Warn：只记警告与错误。
+var gormLogConfig = gormlog.Config{
+	SlowThreshold:             200 * time.Millisecond,
+	LogLevel:                  gormlog.Warn,
+	IgnoreRecordNotFoundError: true,
+	ParameterizedQueries:      true,
+	Colorful:                  false,
+}
 
 // Open 连接 MySQL，带重试与连接池设置。
 func Open(dsn string, retries int, interval time.Duration) (*gorm.DB, error) {
@@ -22,8 +34,9 @@ func Open(dsn string, retries int, interval time.Duration) (*gorm.DB, error) {
 	)
 	for attempt := 1; attempt <= retries; attempt++ {
 		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-			Logger:  gormlog.Default.LogMode(gormlogger.Warn),
-			NowFunc: time.Now,
+			Logger:         gormlog.New(slogGormWriter{}, gormLogConfig),
+			NowFunc:        time.Now,
+			TranslateError: true, // 唯一键冲突等方言错误转为 gorm.ErrDuplicatedKey，handler 才能映射 409 而非 500
 		})
 		if err == nil {
 			sqlDB, e := db.DB()
