@@ -12,12 +12,9 @@ import {
   MessagePlugin,
   Tabs as TTabss,
   TabPanel as TTabPanel,
-  Tooltip as TTooltip,
 } from 'tdesign-vue-next'
-import { DashboardIcon, ExtensionIcon, PoweroffIcon, SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
-import PluginDrawer from './PluginDrawer.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -34,7 +31,6 @@ const ws = useWsStore()
 const { t, te } = useAppI18n()
 
 const tab = ref<'chats' | 'contacts'>('chats')
-const pluginDrawerVisible = ref(false)
 
 // ===== 搜索（人 + 群） =====
 
@@ -190,43 +186,12 @@ const sortedConvs = computed(() =>
   [...convStore.conversations].sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '')),
 )
 
-// ===== 个人操作 =====
-
-function confirmLogout() {
-  const dialog = DialogPlugin.confirm({
-    header: t('chat.logoutTitle'),
-    body: t('chat.logoutBody'),
-    onConfirm: () => {
-      auth.logout()
-      ws.disconnect()
-      convStore.reset()
-      friendsStore.reset()
-      void router.push('/login')
-      dialog.destroy()
-    },
-  })
-}
 </script>
 
 <template>
   <aside class="mc-sidebar">
     <!-- 顶部：产品名 + 当前用户 -->
     <header class="mc-sidebar__me">
-      <div class="mc-sidebar__wordmark">
-        <span class="mc-sidebar__mark">M</span>
-        <span class="mc-sidebar__product">{{ t('app.name') }}</span>
-        <TTooltip :content="t('settings.title')">
-          <TButton
-            class="mc-sidebar__prefs"
-            variant="text"
-            shape="square"
-            :aria-label="t('settings.title')"
-            @click="router.push('/settings')"
-          >
-            <template #icon><SettingIcon /></template>
-          </TButton>
-        </TTooltip>
-      </div>
       <div class="mc-sidebar__userrow">
         <button class="mc-sidebar__profile" :aria-label="t('settings.account')" @click="router.push('/settings')">
           <AvatarBadge
@@ -241,23 +206,6 @@ function confirmLogout() {
             </div>
           </div>
         </button>
-        <div class="mc-sidebar__me-actions">
-          <TTooltip :content="t('plugin.title')">
-            <TButton variant="text" shape="square" :aria-label="t('plugin.title')" @click="pluginDrawerVisible = true">
-              <template #icon><ExtensionIcon /></template>
-            </TButton>
-          </TTooltip>
-          <TTooltip v-if="auth.isAdmin" :content="t('admin.title')">
-            <TButton variant="text" shape="square" :aria-label="t('admin.title')" @click="router.push('/admin')">
-              <template #icon><DashboardIcon /></template>
-            </TButton>
-          </TTooltip>
-          <TTooltip :content="t('chat.logoutTitle')">
-            <TButton variant="text" shape="square" :aria-label="t('chat.logoutAria')" @click="confirmLogout">
-              <template #icon><PoweroffIcon /></template>
-            </TButton>
-          </TTooltip>
-        </div>
       </div>
     </header>
 
@@ -368,8 +316,7 @@ function confirmLogout() {
       <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">{{ t('friends.empty') }}</div>
     </div>
 
-    <!-- 插件管理 -->
-    <PluginDrawer v-model="pluginDrawerVisible" />
+
 
     <!-- 建群弹窗 -->
     <TDialog
@@ -399,37 +346,6 @@ function confirmLogout() {
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px 10px;
-}
-
-.mc-sidebar__wordmark {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 2px 0;
-}
-
-.mc-sidebar__prefs {
-  margin-left: auto;
-}
-
-.mc-sidebar__mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--td-brand-color);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.mc-sidebar__product {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
 }
 
 .mc-sidebar__userrow {
@@ -487,11 +403,6 @@ function confirmLogout() {
 
 .mc-sidebar__me-status.off {
   color: var(--td-text-color-placeholder);
-}
-
-.mc-sidebar__me-actions {
-  display: flex;
-  gap: 2px;
 }
 
 .mc-sidebar__search {
