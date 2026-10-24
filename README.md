@@ -2,9 +2,19 @@
 
 一个**前后端分离、插件优先**的网页聊天平台。开箱只有最朴素的账号 + 纯文本聊天；用户可以自己写 JS 插件并安装，给网站加图片、表情、主题、机器人、小游戏等任意能力。
 
-> 状态：前端（`web/`）与后端（`server/`）均已完成，接口契约见 [docs/后端需求规格.md](docs/后端需求规格.md)，设计见 [docs/设计文档.md](docs/设计文档.md)。
+> 状态：前端（`web/`）与后端（`server/`）均已实现并通过测试，可直接运行。
 
 ---
+
+## 文档索引
+
+| 文档 | 内容 | 什么时候看 |
+|---|---|---|
+| [README.md](README.md) | 定位、快速开始、插件开发、升级部署 | 第一次接触项目 |
+| [docs/设计文档.md](docs/设计文档.md) | 产品定位、架构、数据库、协议、插件系统、性能边界 | 想理解设计取舍 |
+| [docs/后端需求规格.md](docs/后端需求规格.md) | 接口契约（请求/响应字段）、校验规则、错误码、验收标准 | 改接口 / 做联调 / 验收 |
+| [server/README.md](server/README.md) | 后端运行手册（配置、迁移、测试、结构） | 部署与运维后端 |
+| [web/README.md](web/README.md) | 前端结构速览与命令 | 改前端 |
 
 ## 核心理念：内核 vs 插件
 
@@ -12,10 +22,24 @@
 - 账号：注册 / 登录 / 找回密码、JWT（含 `token_version` 主动失效）、封禁
 - 好友、会话（单聊 / 群聊同构）、纯文本消息收发、消息漫游、WebSocket 管道
 - 插件运行时：沙箱加载器、权限模型、事件总线、描述式 UI 渲染器
-- 站长后台、插件启停
+- 站长后台、插件启停 / 全局下架
 
 **插件（可装可卸，卸掉即回到纯文本）**
 - 图片消息、表情、Markdown 渲染、暗色主题、提醒音效、自动回复机器人、天气面板、小游戏……全部由插件实现
+
+## 已实现功能
+
+| 模块 | 能力 |
+|---|---|
+| 账号 | 注册（首注册者=站长）、登录、找回/重置密码（`token_version` 全端失效）、改昵称/邮箱、封禁强制下线 |
+| 好友 | 搜索、申请/同意/拒绝/删除（拒绝后可重新申请） |
+| 会话 | 单聊幂等复用、群聊（建/搜/加/退，200 人上限）、会话列表（最后消息 + 未读红点） |
+| 消息 | 纯文本收发、游标分页、2 分钟撤回、"对方正在输入"、已读回执、在线状态、`client_msg_id` 幂等 |
+| 群管理 | 改群名、踢人、转让群主（群主须先转让才能退群） |
+| 插件 | 上传 / URL 安装（SSRF 防护）、权限清单确认、启停、卸载、同名上传即升级、自定义消息类型渲染、站长全局下架 |
+| 运维 | 结构化日志、健康检查 `/api/health`、版本 `/api/version`、三级限流、WS Origin 白名单、一键从 Gitee 升级 |
+
+**本期不做（二期）**：语音/视频、表情回复、@人、消息转发/搜索/编辑、群管理员与禁言、插件市场、多端已读同步、水平扩展（Redis）。
 
 ## 技术栈
 
@@ -25,25 +49,43 @@
 | UI | tdesign-vue-next（TDesign 设计令牌即 CSS 变量，插件可直接换肤） |
 | 大列表 | vue-virtual-scroller（消息流虚拟滚动） |
 | 实时 | 原生 WebSocket 封装（心跳 25s + 指数退避重连） |
-| 后端（实现中） | Go 1.22+ / Gin / gorilla/websocket |
-| 数据库（规划） | MySQL 8.0 / GORM，utf8mb4 |
+| 后端 | Go（版本以 `server/go.mod` 为准，依赖链要求 1.26+）/ Gin / gorilla/websocket |
+| 数据库 | MySQL 8.0 / GORM，utf8mb4；生产走 `migrations/` 版本化 SQL |
 
 ## 目录结构
 
 ```
 modernchat-new/
-├── docs/设计文档.md        # 全量设计（协议、数据库、安全、部署）
-├── web/                    # 前端（已完成）
+├── docs/                       # 设计文档 + 后端需求规格
+├── deploy/                     # nginx 配置示例（裸机 / compose 两版）
+├── plugins/examples/           # 示例插件（可直接上传试用）
+├── scripts/                    # update.sh / update.ps1 —— 从 Gitee 拉取升级
+├── server/                     # Go 后端
+│   ├── cmd/server/main.go      # 入口：config → db → hub → router → 优雅停机
+│   ├── internal/
+│   │   ├── config/             # 环境变量解析与默认值
+│   │   ├── version/            # 构建版本（ldflags 注入）
+│   │   ├── model/              # GORM 模型 + 响应视图
+│   │   ├── store/              # 数据访问（含 migrations 执行器）
+│   │   ├── handler/            # auth / user / friend / conversation / plugin / admin
+│   │   ├── middleware/         # logger / jwt / ban / admin / limiter
+│   │   ├── ws/                 # hub(64 分片) / serve(读写 pump) / dispatch / presence
+│   │   ├── plugin/             # manifest 校验 + URL 拉取（SSRF 防护）
+│   │   └── service/            # mailer（SMTP 可选）
+│   ├── migrations/             # 0001_init.up/down.sql
+│   ├── test/                   # 集成测试（-tags integration）
+│   └── Dockerfile
+├── web/                        # Vue 前端
 │   └── src/
-│       ├── api/            # REST 客户端（/api 前缀，401 统一处理）
-│       ├── stores/         # Pinia：auth / ws / conversations / friends / plugins
-│       ├── composables/    # useWebSocket、usePluginHost（沙箱宿主）
+│       ├── api/                # REST 客户端（401 统一处理）
+│       ├── stores/             # auth / ws / conversations / friends / plugins
+│       ├── composables/        # useWebSocket、usePluginHost（沙箱宿主）
 │       ├── components/
-│       │   ├── chat/       # 会话列表 / 消息流 / 输入区 / 详情面板
-│       │   └── declarative/# 描述式 UI 白名单渲染器（8 组件）
-│       ├── types/proto.ts  # WS 帧与业务契约（前后端共用口径）
-│       └── views/          # 登录注册 / 找回密码 / 聊天主界面 / 站长后台
-└── server/                 # Go 后端（按设计文档 §4–§10 实现中）
+│       │   ├── chat/           # 会话列表 / 消息流 / 输入区 / 详情面板 / 插件抽屉 / 资料弹窗
+│       │   └── declarative/    # 描述式 UI 白名单渲染器（8 组件）+ 插件面板
+│       ├── types/proto.ts      # WS 帧与业务契约（前后端共用口径）
+│       └── views/              # 登录注册 / 找回密码 / 聊天主界面 / 站长后台
+└── docker-compose.yml          # MySQL + 后端一键环境
 ```
 
 ## 快速开始
@@ -51,7 +93,7 @@ modernchat-new/
 ### 方式一：Docker 一键起后端（推荐）
 
 ```bash
-docker compose up -d --build    # MySQL 8 + 后端（:8080），首次启动自动建表
+docker compose up -d --build           # MySQL 8 + 后端（:8080），首次启动自动建表
 cd web && npm install && npm run dev   # 前端 :5173
 ```
 
@@ -60,7 +102,7 @@ cd web && npm install && npm run dev   # 前端 :5173
 ### 方式二：手动运行
 
 ```bash
-# 后端（需自备 MySQL 8.0，MIGRATE=false 时用 AutoMigrate 自动建表）
+# 后端（需自备 MySQL 8.0；MIGRATE=false 时用 AutoMigrate 自动建表）
 cd server
 cp .env.example .env       # DB_DSN + JWT_SECRET（GIN_MODE=release 时必须设置）
 go run ./cmd/server        # :8080
@@ -73,12 +115,15 @@ npm run dev                # http://localhost:5173，已代理 /api 与 /ws 到 
 
 首个注册的用户自动成为站长（可访问 `/admin`：用户封禁 / 重置密码 / 插件全局下架）。
 
-### 前端检查命令
+### 检查命令
 
 ```bash
-npm run type-check # vue-tsc
-npm run lint       # oxlint + eslint
-npm run build      # 产物在 dist/
+# 前端
+cd web && npm run type-check && npm run lint && npm run build
+
+# 后端
+cd server && go build ./... && go vet ./... && go test ./...
+cd server && go test -tags integration ./test/   # 需要本机 MySQL
 ```
 
 ---
@@ -107,7 +152,7 @@ function __mcActivate(api) {
       { component: 'button', props: { text: '刷新' }, action: 'refresh' },
     ],
   });
-  api.on('ui:action', ({ action, value }) => {
+  api.on('ui:action', ({ action }) => {
     if (action === 'refresh') {
       // api.request(...) 拉数据后重新 addSidePanel
     }
@@ -130,21 +175,34 @@ function __mcActivate(api) {
 | `api.registerMessageRenderer(type, fn)` | 自定义消息类型 → UI 描述，主站在气泡内渲染 | `message:render` |
 | `api.addSidePanel(desc)` | 提交侧边栏面板 UI 描述 | `ui:panel` |
 | `api.storage.get(key)` / `set(key, value)` | 每插件独立命名空间存储（单值 ≤64KB） | `storage` |
-| `api.request(url, opts?)` | 主站代为 fetch，仅放行 `allowed_hosts` 匹配域名（受浏览器 CORS 约束） | `net` |
+| `api.request(url, opts?)` | 主站代为 fetch，仅放行 `allowedHosts` 匹配域名（受浏览器 CORS 约束） | `net` |
 | `api.theme.apply(cssVars)` | 修改 `--td-*` 主题令牌，全站即时换肤 | `ui:theme` |
+
+### Manifest
+
+写在代码**首个块注释**里，服务端解析校验（名称/版本/权限/白名单不合法则拒绝安装）：
+
+```js
+/* {
+  "name": "weather-demo",
+  "version": "1.0.0",
+  "description": "示例插件：侧边栏天气面板",
+  "permissions": ["message:read", "message:send", "message:render", "ui:panel", "storage"],
+  "allowedHosts": ["api.example.com", "*.openweathermap.org"]
+} */
+```
 
 ### 白名单组件
 
 UI 描述仅接受 8 个组件：`text / image / button / input / card / list / divider / link`。props 只接受原始值；`link`/`image` 仅放行 `http(s)`；白名单外组件、`javascript:` 链接一律拒绝渲染。
 
-### 安装方式
+### 安装 / 升级
 
 - **上传文件**：聊天页 → 插件管理 → 上传 JS
 - **URL 安装**：服务端拉取前做 SSRF 防护（拒绝私网 / 回环 / 非 http(s)，限大小与超时）
-
-安装后会弹出权限清单，**确认后才启用**；站长可在后台「插件」分区按插件名全局下架（对所有用户立即生效）。
-
-**升级**：再次上传同名插件即为版本升级——复用同一条安装记录（id 不变、启停状态保留）、更新代码与权限，已启用的插件确认后立即重载新代码。
+- 安装后弹出权限清单，**确认后才启用**
+- **升级**：再次上传同名插件即版本升级——复用同一条记录（id 不变、启停状态保留），已启用的插件确认后立即重载新代码
+- 站长可在 `/admin` → 「插件」按插件名**全局下架**（对所有用户立即生效）
 
 ### 试一试示例插件
 
@@ -155,14 +213,15 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 3. 消息气泡中该消息由插件自定义渲染（白名单组件卡片），而不是裸 JSON
 4. 站长账号在 `/admin` → 「插件」分区可看到按名称聚合的安装记录，并执行全局下架
 
-示例刻意不发起网络请求，「接入真实 API」的写法（`net` 权限 + `allowedHosts` + `api.request`）见文件头注释。
+示例刻意不发起网络请求；接入真实 API 的写法（`net` 权限 + `allowedHosts` + `api.request`）见文件头注释。
 
 ---
 
 ## 协议概览
 
-- **REST**：前缀 `/api`，除注册 / 登录 / 找回外均需 `Authorization: Bearer <token>`；错误统一 `{ "error": "msg" }`。全量接口见设计文档 §6。
-- **WebSocket**：`GET /ws?token=<JWT>`。上行帧 `chat / typing / read / recall / ping`，下行帧 `message / recall / read / typing / presence / conv_change / kicked / pong / error`。消息以 `client_msg_id`（UUID）幂等去重，重连不重复收发。详见设计文档 §7。
+- **REST**：前缀 `/api`，除注册/登录/找回/重置/健康检查/版本外均需 `Authorization: Bearer <token>`；错误统一 `{ "error": "msg" }`。全量接口与字段见 [后端需求规格 §3](docs/后端需求规格.md)。
+- **WebSocket**：`GET /ws?token=<JWT>`（Origin 白名单校验）。上行帧 `chat / typing / read / recall / ping`，下行帧 `message / recall / read / typing / presence / conv_change / kicked / pong / error`。消息以 `clientMsgId` 幂等去重。详见 [设计文档 §7](docs/设计文档.md)。
+- **版本**：`GET /api/version` → `{version, commit, buildTime}`，用于核对升级是否生效。
 
 ## 更新与升级
 
@@ -175,7 +234,7 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
 ```
 
-Windows 本地：`.\scripts\update.ps1`（同样支持 `-Branch` / `-NoRestart`）。
+Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
 
 脚本做的事：`git pull --ff-only`（本地有分叉会直接报错，不自动合并）→ `go build`（注入版本号）→ `npm ci && npm run build` → 按 `RESTART_CMD` / docker compose / systemd 依次尝试重启。
 
@@ -185,7 +244,7 @@ Windows 本地：`.\scripts\update.ps1`（同样支持 `-Branch` / `-NoRestart`�
 
 ## 部署
 
-- **Docker**：`docker compose up -d --build` 起 MySQL + 后端；前端可构建后由 `deploy/nginx.compose.conf` 的 nginx 容器托管（配置见 `docker-compose.yml` 末尾注释）
+- **Docker**：`docker compose up -d --build` 起 MySQL + 后端；前端构建后可由 `deploy/nginx.compose.conf` 的 nginx 容器托管（用法见 `docker-compose.yml` 末尾注释）
 - **裸机**：`go build -o modernchat-server ./cmd/server`；前端 `npm run build` 产物交 Nginx，`/api` 反代 `:8080`，`/ws` 加 `Upgrade` / `Connection` 头（`deploy/nginx.conf.example`）
 - 生产必须设置：`GIN_MODE=release`、`JWT_SECRET`（≥32 字节，缺省拒绝启动）、`FRONTEND_URL`（WS Origin 白名单 + 找回密码链接）、`MIGRATE=true`
 - 配置（DB DSN、JWT_SECRET、SMTP）走环境变量，不进仓库
@@ -194,4 +253,4 @@ Windows 本地：`.\scripts\update.ps1`（同样支持 `-Branch` / `-NoRestart`�
 ## 仓库
 
 - 远端：<https://gitee.com/Sun-Si-Cheng/modern-chat-new>（分支 `master`）
-- 设计与评审记录：[docs/设计文档.md](docs/设计文档.md)
+- 提交约定：每完成一个模块 `git add -A` → commit → push
