@@ -44,7 +44,7 @@ function onKeydown(e: KeyboardEvent) {
       @input="onInput"
     />
     <div class="mc-composer__footer">
-      <span class="text-placeholder">{{ text.length }}/1000</span>
+      <span class="text-placeholder num">{{ text.length }}/1000</span>
       <TButton theme="primary" size="small" :disabled="!text.trim()" @click="send">发送</TButton>
     </div>
   </footer>
@@ -56,6 +56,12 @@ function onKeydown(e: KeyboardEvent) {
   border-top: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
   padding: 10px 14px;
+  transition: border-color 0.15s ease-out;
+}
+
+/* 输入焦点以一条品牌线表达，不圈占整个区域 */
+.mc-composer:focus-within {
+  border-top-color: var(--td-brand-color);
 }
 
 .mc-composer__input {
@@ -65,6 +71,7 @@ function onKeydown(e: KeyboardEvent) {
   resize: none;
   background: transparent;
   color: var(--td-text-color-primary);
+  caret-color: var(--td-brand-color);
   font-family: inherit;
   font-size: 14px;
   line-height: 1.5;

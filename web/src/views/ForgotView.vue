@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MessagePlugin, Form as TForm, FormItem as TFormItem, Input as TInput, Button as TButton } from 'tdesign-vue-next'
+import {
+  Form as TForm,
+  FormItem as TFormItem,
+  Input as TInput,
+  Button as TButton,
+  MessagePlugin,
+} from 'tdesign-vue-next'
 import type { FormInstanceFunctions } from 'tdesign-vue-next'
 
 import { authApi } from '@/api'
@@ -48,17 +54,21 @@ async function submitReset() {
 </script>
 
 <template>
-  <div class="auth-page">
-    <div class="auth-card">
-      <h1 class="auth-title">找回密码</h1>
-      <p class="auth-sub text-secondary">通过注册邮箱重置密码</p>
+  <div class="forgot-page">
+    <div class="forgot-card">
+      <div class="forgot-brand">
+        <span class="forgot-brand__mark">M</span>
+        <span class="forgot-brand__name">ModernChat</span>
+      </div>
+      <h1 class="forgot-title">找回密码</h1>
+      <p class="forgot-sub">通过注册邮箱重置。重置后所有已登录设备将被强制下线。</p>
 
       <template v-if="step === 1">
         <TForm ref="form" :data="forgotForm" label-width="0" @submit.prevent>
           <TFormItem name="email" :rules="[{ required: true, message: '请输入邮箱', trigger: 'blur' }]">
             <TInput v-model="forgotForm.email" placeholder="注册邮箱" clearable />
           </TFormItem>
-          <TButton theme="primary" block :loading="loading" @click="submitEmail">发送重置链接</TButton>
+          <TButton theme="primary" block size="large" :loading="loading" @click="submitEmail">发送重置链接</TButton>
         </TForm>
       </template>
 
@@ -74,7 +84,7 @@ async function submitReset() {
               { min: 6, message: '密码至少 6 位', trigger: 'blur' },
             ]"
           >
-            <TInput v-model="resetForm.newPassword" type="password" placeholder="新密码（至少 6 位）" />
+            <TInput v-model="resetForm.newPassword" type="password" placeholder="新密码" />
           </TFormItem>
           <TFormItem
             name="confirm"
@@ -88,11 +98,11 @@ async function submitReset() {
           >
             <TInput v-model="resetForm.confirm" type="password" placeholder="确认新密码" />
           </TFormItem>
-          <TButton theme="primary" block :loading="loading" @click="submitReset">重置密码</TButton>
+          <TButton theme="primary" block size="large" :loading="loading" @click="submitReset">重置密码</TButton>
         </TForm>
       </template>
 
-      <div class="auth-footer">
+      <div class="forgot-footer">
         <RouterLink to="/login">返回登录</RouterLink>
       </div>
     </div>
@@ -100,35 +110,60 @@ async function submitReset() {
 </template>
 
 <style scoped>
-.auth-page {
+.forgot-page {
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--td-bg-color-page);
+  padding: 24px;
 }
 
-.auth-card {
-  width: 380px;
+.forgot-card {
+  width: 420px;
+  max-width: 100%;
   padding: 32px;
   background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
   border-radius: 12px;
-  box-shadow: var(--td-shadow-1);
 }
 
-.auth-title {
-  margin: 0 0 4px;
-  font-size: 24px;
-  text-align: center;
+.forgot-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
 }
 
-.auth-sub {
-  text-align: center;
-  margin: 0 0 16px;
+.forgot-brand__mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--td-brand-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.forgot-brand__name {
+  font-weight: 600;
+}
+
+.forgot-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.forgot-sub {
+  margin: 0 0 18px;
   font-size: 13px;
+  line-height: 1.6;
 }
 
-.auth-footer {
+.forgot-footer {
   margin-top: 16px;
   font-size: 13px;
   text-align: center;

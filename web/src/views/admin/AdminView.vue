@@ -205,4 +205,16 @@ const columns: TableProps['columns'] = [
   flex-direction: column;
   gap: 10px;
 }
+
+/* 表头回归数据本身：无色带、12px 常规灰字 */
+.mc-admin :deep(.t-table__header th) {
+  background: transparent;
+  color: #6b6b6b;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.mc-admin :deep(.t-table td) {
+  font-variant-numeric: tabular-nums;
+}
 </style>

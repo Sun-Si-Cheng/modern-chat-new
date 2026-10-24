@@ -199,6 +199,7 @@ async function leave() {
 
 .mc-detail__title {
   font-weight: 600;
+  font-size: 15px;
   margin-bottom: 10px;
   display: flex;
   justify-content: space-between;

@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MessagePlugin, Form as TForm, FormItem as TFormItem, Input as TInput, Button as TButton, Tabs as TTabss, TabPanel as TTabPanel } from 'tdesign-vue-next'
+import {
+  Form as TForm,
+  FormItem as TFormItem,
+  Input as TInput,
+  Button as TButton,
+  Tabs as TTabss,
+  TabPanel as TTabPanel,
+  MessagePlugin,
+} from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 
 import { useAuthStore } from '@/stores/auth'
@@ -60,49 +68,83 @@ function switchMode(m: 'login' | 'register') {
 
 <template>
   <div class="auth-page">
-    <div class="auth-card">
-      <h1 class="auth-title">ModernChat</h1>
-      <p class="auth-sub text-secondary">插件化网页聊天平台</p>
+    <!-- 品牌侧：产品真实能力，非装饰 -->
+    <aside class="auth-brand">
+      <div class="auth-brand__mark">M</div>
+      <h1 class="auth-brand__title">ModernChat</h1>
+      <p class="auth-brand__lead">
+        开箱即用的纯文本聊天内核，装上插件，它就是你要的样子。
+      </p>
+      <ul class="auth-brand__points">
+        <li>
+          <strong>聊天内核</strong>
+          <span>好友、单聊群聊、已读回执、撤回，全部开箱即用</span>
+        </li>
+        <li>
+          <strong>插件扩展</strong>
+          <span>自己写 JS 插件：图片、机器人、主题，装上即生效</span>
+        </li>
+        <li>
+          <strong>安全边界</strong>
+          <span>沙箱运行 + 权限白名单，插件碰不到你的登录态</span>
+        </li>
+      </ul>
+      <p class="auth-brand__foot text-secondary">前后端分离 · 自托管</p>
+    </aside>
 
-      <TTabss v-model="mode" @change="(v: unknown) => switchMode(v as 'login' | 'register')">
-        <TTabPanel value="login" label="登录" />
-        <TTabPanel value="register" label="注册" />
-      </TTabss>
-
-      <TForm
-        ref="form"
-        :data="mode === 'login' ? loginForm : registerForm"
-        :rules="rules"
-        label-width="0"
-        @submit.prevent
-      >
-        <TFormItem name="username">
-          <TInput v-model="(mode === 'login' ? loginForm : registerForm).username" placeholder="用户名" clearable />
-        </TFormItem>
-        <TFormItem v-if="mode === 'register'" name="nickname">
-          <TInput v-model="registerForm.nickname" placeholder="昵称" clearable />
-        </TFormItem>
-        <TFormItem name="password">
-          <TInput
-            v-model="(mode === 'login' ? loginForm : registerForm).password"
-            type="password"
-            placeholder="密码（至少 6 位）"
-          />
-        </TFormItem>
-        <TFormItem v-if="mode === 'register'" name="confirm">
-          <TInput v-model="registerForm.confirm" type="password" placeholder="确认密码" />
-        </TFormItem>
-
-        <TButton theme="primary" type="submit" block :loading="loading" @click="submit">
-          {{ mode === 'login' ? '登录' : '注册' }}
-        </TButton>
-      </TForm>
-
-      <div class="auth-footer">
-        <RouterLink to="/forgot">忘记密码？</RouterLink>
-        <span v-if="mode === 'login'" class="text-placeholder">首个注册的用户将成为站长</span>
+    <!-- 表单侧 -->
+    <main class="auth-panel">
+      <div class="auth-panel__foot">
+        <span class="text-placeholder">数据存储在您自己的 MySQL</span>
+        <span class="text-placeholder">单实例自托管</span>
       </div>
-    </div>
+      <div class="auth-card">
+        <div class="auth-card__brand">
+          <span class="auth-card__mark">M</span>
+          <span class="auth-card__name">ModernChat</span>
+        </div>
+        <h2 class="auth-card__title">{{ mode === 'login' ? '登录账号' : '创建账号' }}</h2>
+
+        <TTabss v-model="mode" @change="(v: unknown) => switchMode(v as 'login' | 'register')">
+          <TTabPanel value="login" label="登录" />
+          <TTabPanel value="register" label="注册" />
+        </TTabss>
+
+        <TForm
+          ref="form"
+          :data="mode === 'login' ? loginForm : registerForm"
+          :rules="rules"
+          label-width="0"
+          @submit.prevent
+        >
+          <TFormItem name="username">
+            <TInput v-model="(mode === 'login' ? loginForm : registerForm).username" placeholder="用户名" clearable />
+          </TFormItem>
+          <TFormItem v-if="mode === 'register'" name="nickname">
+            <TInput v-model="registerForm.nickname" placeholder="昵称" clearable />
+          </TFormItem>
+          <TFormItem name="password">
+            <TInput
+              v-model="(mode === 'login' ? loginForm : registerForm).password"
+              type="password"
+              placeholder="密码"
+            />
+          </TFormItem>
+          <TFormItem v-if="mode === 'register'" name="confirm">
+            <TInput v-model="registerForm.confirm" type="password" placeholder="确认密码" />
+          </TFormItem>
+
+          <TButton theme="primary" type="submit" block size="large" :loading="loading" @click="submit">
+            {{ mode === 'login' ? '登录' : '注册' }}
+          </TButton>
+        </TForm>
+
+        <div class="auth-card__footer">
+          <RouterLink to="/forgot">忘记密码？</RouterLink>
+          <span v-if="mode === 'login'" class="text-placeholder">首个注册的用户将成为站长</span>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -110,35 +152,191 @@ function switchMode(m: 'login' | 'register') {
 .auth-page {
   height: 100%;
   display: flex;
+  background: var(--td-bg-color-container);
+}
+
+/* 品牌侧：近黑 ink 面板，品牌蓝只做点缀（mark 与关键词） */
+.auth-brand {
+  flex: 1 1 46%;
+  background: #17191c;
+  color: #fff;
+  padding: 56px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  position: relative;
+}
+
+.auth-brand__mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--td-brand-color);
+  color: #fff;
+  display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--td-bg-color-page);
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.auth-brand__title {
+  margin: 0 0 10px;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+.auth-brand__lead {
+  margin: 0 0 32px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 34em;
+}
+
+.auth-brand__points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 26em;
+}
+
+.auth-brand__points strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 2px;
+  color: #7cb8ff;
+}
+
+.auth-brand__points span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.55;
+}
+
+.auth-brand__foot {
+  margin-top: 40px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 表单侧：与卡片同色，靠 1px 边框与留白区分 */
+.auth-panel {
+  flex: 1 1 54%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px 64px;
+  background: var(--td-bg-color-container);
+  position: relative;
 }
 
 .auth-card {
-  width: 380px;
+  width: 440px;
+  max-width: 100%;
   padding: 32px;
   background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
   border-radius: 12px;
-  box-shadow: var(--td-shadow-1);
 }
 
-.auth-title {
-  margin: 0 0 4px;
-  font-size: 24px;
-  text-align: center;
+.auth-panel__foot {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
 }
 
-.auth-sub {
-  text-align: center;
-  margin: 0 0 16px;
-  font-size: 13px;
+.auth-card__brand {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
 }
 
-.auth-footer {
+.auth-card__mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--td-brand-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-card__name {
+  font-weight: 600;
+}
+
+.auth-card__title {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.auth-card__footer {
   margin-top: 16px;
   display: flex;
   justify-content: space-between;
   font-size: 13px;
+}
+
+/* 窄屏：品牌侧折叠为顶部条 */
+@media (max-width: 900px) {
+  .auth-page {
+    flex-direction: column;
+  }
+
+  .auth-brand {
+    flex: none;
+    padding: 24px;
+  }
+
+  .auth-brand__points,
+  .auth-brand__foot {
+    display: none;
+  }
+
+  .auth-panel__foot {
+    display: none;
+  }
+
+  .auth-brand__mark {
+    display: none;
+  }
+
+  .auth-brand__title {
+    margin: 0 0 4px;
+    font-size: 22px;
+  }
+
+  .auth-brand__lead {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .auth-panel {
+    flex: 1;
+  }
+
+  .auth-card {
+    border: none;
+    padding: 8px 0;
+    background: transparent;
+  }
+
+  .auth-card__brand {
+    display: flex;
+  }
 }
 </style>

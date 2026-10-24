@@ -41,7 +41,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mc-layout">
+  <div class="mc-layout" :class="{ 'has-conv': !!convStore.currentConv }">
     <ConvSidebar />
     <MessagePane v-if="convStore.currentConv" :key="convStore.currentConv.id" />
     <div v-else class="mc-layout__empty">
@@ -64,5 +64,24 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   background: var(--td-bg-color-page);
+}
+
+/* 平板：收起详情面板 */
+@media (max-width: 1024px) {
+  .mc-layout :deep(.mc-detail) {
+    display: none;
+  }
+}
+
+/* 手机：侧栏与消息区互斥显示，由返回键切换 */
+@media (max-width: 768px) {
+  .mc-layout.has-conv .mc-sidebar {
+    display: none;
+  }
+
+  .mc-layout:not(.has-conv) :deep(.mc-msgpane),
+  .mc-layout:not(.has-conv) .mc-layout__empty {
+    display: none;
+  }
 }
 </style>
