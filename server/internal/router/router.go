@@ -52,6 +52,7 @@ func New(d Deps) *gin.Engine {
 
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
+	api.GET("/version", handler.Version)
 
 	// 认证（免鉴权，按 IP 限流 10/min）
 	authLimit := middleware.RateLimit(d.AuthLimiter, middleware.KeyByIP)

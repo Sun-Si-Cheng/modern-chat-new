@@ -15,7 +15,7 @@ import {
 import type { TableRowData, TableProps } from 'tdesign-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
-import { adminApi, type AdminPluginRow, type AdminUserRow } from '@/api'
+import { adminApi, systemApi, type AdminPluginRow, type AdminUserRow, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -33,6 +33,9 @@ const pluginsLoading = ref(false)
 const plugins = ref<AdminPluginRow[]>([])
 const pluginPagination = ref({ current: 1, pageSize: 20, total: 0 })
 
+// 当前构建版本（升级后刷新本页即可确认是否生效）
+const buildInfo = ref<VersionInfo | null>(null)
+
 onMounted(() => {
   if (auth.user?.role !== 'admin') {
     void router.replace('/chat')
@@ -40,6 +43,12 @@ onMounted(() => {
   }
   void fetchUsers()
   void fetchPlugins()
+  systemApi
+    .version()
+    .then((v) => {
+      buildInfo.value = v
+    })
+    .catch(() => undefined)
 })
 
 async function fetchPlugins() {
@@ -180,7 +189,12 @@ const pluginColumns: TableProps['columns'] = [
   <div class="mc-admin">
     <header class="mc-admin__header">
       <h2>站长后台</h2>
-      <TButton variant="text" @click="router.push('/chat')">返回聊天</TButton>
+      <div class="mc-admin__header-right">
+        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" title="升级：在服务器运行 scripts/update.sh 从 Gitee 拉取">
+          {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
+        </span>
+        <TButton variant="text" @click="router.push('/chat')">返回聊天</TButton>
+      </div>
     </header>
 
     <TTabss v-model="tab" class="mc-admin__tabs">
@@ -278,6 +292,16 @@ const pluginColumns: TableProps['columns'] = [
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.mc-admin__header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mc-admin__build {
+  font-size: 12px;
 }
 
 .mc-admin__user {
