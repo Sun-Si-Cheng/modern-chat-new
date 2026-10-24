@@ -121,7 +121,8 @@ go tool cover -html=cover.out -o coverage.html
 要点：
 - 集成测试库需提前创建：`CREATE DATABASE modernchat_test CHARACTER SET utf8mb4;`
 - 覆盖率必须用 `-coverpkg=./internal/...` 指定被统计的包，否则 `go test ./...` 只报"各包自己单测"的数字（store/handler 会假性显示 0%）
-- 当前基线：**总计 50.7%**（handler 44%、store 62%、ws 70%、plugin 67%、middleware 67%、router 97%、model 100%；config / version 尚无覆盖、service 20%）
+- 当前基线：**总计 53.8%**（config 96%、version 100%、router 97%、service 82%、model 100%、ws 70%、plugin 67%、middleware 67%、store 62%、handler 44%、logx 47%）
+- 覆盖较薄弱的是 `handler`（主要靠集成测试覆盖）与 `logx`（日志轮转，依赖文件系统）
 
 ## 结构
 

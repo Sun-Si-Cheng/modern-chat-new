@@ -69,9 +69,12 @@ func Load() (Config, error) {
 			From: getv("SMTP_FROM", "modernchat@localhost"),
 		},
 	}
-	// 前端来源：逗号分隔，用于 WS Origin 白名单与找回密码链接
+	// 前端来源：逗号分隔，用于 WS Origin 白名单与找回密码链接。
+	// 必须先 TrimSpace 再 TrimSuffix：配置项写成 "https://a.com/, https://b.com/ " 时，
+	// 第二个值的尾部是空格，若先 TrimSuffix 会漏掉斜杠 —— 浏览器 Origin 不带尾斜杠，
+	// 残留的斜杠会让 WS 握手被 Origin 白名单拒绝。
 	for _, u := range strings.Split(getv("FRONTEND_URL", "http://localhost:5173"), ",") {
-		if u = strings.TrimSpace(strings.TrimSuffix(u, "/")); u != "" {
+		if u = strings.TrimSuffix(strings.TrimSpace(u), "/"); u != "" {
 			cfg.FrontendURLs = append(cfg.FrontendURLs, u)
 		}
 	}
