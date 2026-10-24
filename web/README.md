@@ -48,8 +48,10 @@ src/
 │       └── PluginPanel.vue      # 插件面板 + 动作回传
 ├── types/proto.ts           # WS 帧 / 业务实体 / UI 描述契约（与后端共用口径）
 ├── views/
-│   ├── AuthView.vue         # 登录/注册（左右分栏）
-│   ├── ForgotView.vue       # 找回密码（两步）
+│   ├── AuthView.vue         # 登录/注册（沉浸背景 + 居中卡片）
+│   ├── ForgotView.vue       # 找回密码（两步 + 进度指示）
+│   ├── SettingsView.vue     # 设置：外观（语言/主题/背景）/ 账号 / 关于
+│   ├── LegalView.vue        # 用户协议 / 隐私协议
 │   ├── ChatLayout.vue       # 三栏布局 + 响应式（平板收详情、手机单面板）
 │   └── admin/AdminView.vue  # 站长后台：用户管理 / 插件聚合下架 / 构建版本
 ├── router/index.ts          # 路由 + 登录态/站长守卫
@@ -64,6 +66,16 @@ src/
 **主题**：`src/stores/prefs.ts` 以 `:root[theme-mode="dark"|"light"]` 驱动 TDesign 令牌，支持「跟随系统 / 亮 / 暗」三态，持久化在 `localStorage.mc_theme`。
 `index.html` 内联脚本在样式生效前预置主题，避免暗色首屏闪白。
 自定义颜色一律走令牌：`--td-*`（TDesign）或 `--mc-text-faint` / `--mc-link` / `--mc-selection`（本项目辅助），不要写死色值。
+
+## 设置页
+
+`/settings` 是外观与账号设置的唯一入口（登录页右上角齿轮、聊天页侧栏、后台头部都指向它）：
+
+- **外观**：语言（中/英）、主题（跟随系统/亮/暗）、登录页背景色（6 预设 + 自定义取色）、背景特效（光晕/波纹/网格/无）、恢复默认
+- **账号**（需登录）：昵称、邮箱、退出登录
+- **关于**：当前构建版本、用户协议 / 隐私协议入口
+
+偏好存 `localStorage`（`mc_lang` / `mc_theme` / `mc_scene_color` / `mc_scene_effect`），仅作用于当前浏览器。
 
 ## 登录页背景（颜色与特效）
 

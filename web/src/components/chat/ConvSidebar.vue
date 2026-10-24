@@ -14,12 +14,10 @@ import {
   TabPanel as TTabPanel,
   Tooltip as TTooltip,
 } from 'tdesign-vue-next'
-import { DashboardIcon, ExtensionIcon, PoweroffIcon } from 'tdesign-icons-vue-next'
+import { DashboardIcon, ExtensionIcon, PoweroffIcon, SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import PluginDrawer from './PluginDrawer.vue'
-import ProfileDialog from './ProfileDialog.vue'
-import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -37,7 +35,6 @@ const { t, te } = useAppI18n()
 
 const tab = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
-const profileVisible = ref(false)
 
 // ===== 搜索（人 + 群） =====
 
@@ -218,10 +215,20 @@ function confirmLogout() {
       <div class="mc-sidebar__wordmark">
         <span class="mc-sidebar__mark">M</span>
         <span class="mc-sidebar__product">{{ t('app.name') }}</span>
-        <PreferencesMenu class="mc-sidebar__prefs" />
+        <TTooltip :content="t('settings.title')">
+          <TButton
+            class="mc-sidebar__prefs"
+            variant="text"
+            shape="square"
+            :aria-label="t('settings.title')"
+            @click="router.push('/settings')"
+          >
+            <template #icon><SettingIcon /></template>
+          </TButton>
+        </TTooltip>
       </div>
       <div class="mc-sidebar__userrow">
-        <button class="mc-sidebar__profile" :aria-label="t('chat.profileAria')" @click="profileVisible = true">
+        <button class="mc-sidebar__profile" :aria-label="t('settings.account')" @click="router.push('/settings')">
           <AvatarBadge
             :name="auth.user?.nickname ?? '?'"
             :color="auth.user?.avatarColor ?? '#0052d9'"
@@ -361,9 +368,8 @@ function confirmLogout() {
       <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">{{ t('friends.empty') }}</div>
     </div>
 
-    <!-- 插件管理 / 个人资料 -->
+    <!-- 插件管理 -->
     <PluginDrawer v-model="pluginDrawerVisible" />
-    <ProfileDialog v-model="profileVisible" />
 
     <!-- 建群弹窗 -->
     <TDialog

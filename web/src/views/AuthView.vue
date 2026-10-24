@@ -10,10 +10,9 @@ import {
   MessagePlugin,
 } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
-import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
+import { LockOnIcon, SettingIcon, UserIcon } from 'tdesign-icons-vue-next'
 
 import AuthScene from '@/components/common/AuthScene.vue'
-import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 
@@ -105,7 +104,14 @@ function switchMode(m: 'login' | 'register') {
     <AuthScene />
 
     <div class="auth-top">
-      <PreferencesMenu />
+      <TButton
+        variant="text"
+        shape="square"
+        :aria-label="t('settings.title')"
+        @click="router.push('/settings')"
+      >
+        <template #icon><SettingIcon /></template>
+      </TButton>
     </div>
 
     <main class="auth-card">

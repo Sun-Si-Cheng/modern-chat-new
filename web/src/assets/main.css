@@ -32,12 +32,15 @@ a {
   --mc-text-faint: #6b6b6b;
   --mc-link: #0052d9;
   --mc-selection: rgba(0, 82, 217, 0.16);
+  /* 卡片/分组的细描边：比组件边框更淡，暗色下不会形成"重框" */
+  --mc-hairline: rgba(0, 0, 0, 0.08);
 }
 
 :root[theme-mode='dark'] {
   --mc-text-faint: #a8a8a8;
   --mc-link: #7cb8ff;
   --mc-selection: rgba(110, 168, 255, 0.28);
+  --mc-hairline: rgba(255, 255, 255, 0.08);
 }
 
 /* 浏览器表面主题化（craft floor） */
