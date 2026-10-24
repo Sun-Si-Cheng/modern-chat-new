@@ -101,7 +101,7 @@ function backToStep1() {
 
     <main class="auth-card">
       <div class="auth-card__brand">
-        <img class="auth-card__mark" src="/favicon.ico" alt="" width="24" height="24" />
+        <img class="auth-card__mark" src="/favicon.ico" alt="" width="32" height="32" />
         <span class="auth-card__product">{{ t('app.name') }}</span>
       </div>
 
@@ -225,15 +225,15 @@ function backToStep1() {
 .auth-card__brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 24px;
+  gap: 10px;
+  margin-bottom: 26px;
 }
 
-/* 产品图标：ico 自带白色底，用 1px 描边避免在深色卡片上糊成一块 */
+/* 产品图标：ico 原图 32px，按 1:1 显示最清晰；1px 描边避免深色卡片上糊成一块 */
 .auth-card__mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   flex-shrink: 0;
   display: block;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
@@ -244,7 +244,7 @@ function backToStep1() {
 }
 
 .auth-card__product {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--td-text-color-secondary);
