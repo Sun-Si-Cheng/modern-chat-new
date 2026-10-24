@@ -10,6 +10,8 @@ export interface User {
   username: string
   nickname: string
   avatarColor: string
+  /** 自定义头像 data URL；空表示用默认头像 */
+  avatar?: string
   email?: string | null
   role: 'user' | 'admin'
   bannedUntil?: string | null
@@ -32,7 +34,7 @@ export interface Conversation {
   /** 群名；单聊为 null，展示时取 peer 昵称 */
   name: string | null
   /** 单聊对方的公开信息（服务端拼装）；群聊为 null */
-  peer: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor'> | null
+  peer: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'> | null
   ownerId: number | null
   memberCount: number
   lastMessageId: number | null
@@ -45,7 +47,7 @@ export interface ConversationMember {
   userId: number
   role: 'owner' | 'member'
   joinedAt: string
-  user: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor'>
+  user: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'>
 }
 
 // ===== 消息 =====
@@ -74,14 +76,14 @@ export type FriendStatus = 0 | 1 | 2
 export interface FriendItem {
   /** 关系记录 id（user_id 维度，即 /api/friends 列表项 id） */
   id: number
-  friend: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor'>
+  friend: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'>
   status: FriendStatus
   createdAt: string
 }
 
 export interface FriendRequestItem {
   id: number
-  from: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor'>
+  from: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'>
   createdAt: string
 }
 

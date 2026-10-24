@@ -142,7 +142,7 @@ func (s *FriendStore) briefs(ids []uint) (map[uint]model.UserBrief, error) {
 	}
 	var rows []model.UserBrief
 	if err := s.db.Model(&model.User{}).
-		Select("id, username, nickname, avatar_color").
+		Select("id, username, nickname, avatar_color, avatar").
 		Where("id IN ?", ids).
 		Scan(&rows).Error; err != nil {
 		return nil, err

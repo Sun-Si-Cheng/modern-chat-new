@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -7,14 +7,24 @@ const props = withDefaults(
     color?: string
     size?: number
     online?: boolean
+    /** 自定义头像（data URL）；为空时用默认头像图 */
+    src?: string
   }>(),
-  { color: '#0052d9', size: 40, online: false },
+  { color: '#0052d9', size: 40, online: false, src: '' },
 )
 
 const initial = computed(() => props.name?.trim()?.charAt(0)?.toUpperCase() || '?')
 
-/** 默认头像资源不可用时回退为首字母 + 取色底，避免出现空白圆 */
+/** 图片不可用（无网络 / 格式不支持）时回退为首字母 + 取色底 */
 const imageFailed = ref(false)
+
+// 头像地址变化时允许重新尝试加载
+watch(
+  () => props.src,
+  () => {
+    imageFailed.value = false
+  },
+)
 </script>
 
 <template>
@@ -25,7 +35,7 @@ const imageFailed = ref(false)
     <img
       v-if="!imageFailed"
       class="mc-avatar__img"
-      src="/default-avatar.svg"
+      :src="src || '/default-avatar.svg'"
       :alt="name"
       draggable="false"
       @error="imageFailed = true"
@@ -58,7 +68,7 @@ const imageFailed = ref(false)
   border-radius: 50%;
   object-fit: cover;
   display: block;
-  /* 与图标自带的浅蓝圆底一致，避免四角透出 */
+  /* 与默认头像自带的浅蓝圆底一致，避免四角透出 */
   background: #e4efff;
 }
 

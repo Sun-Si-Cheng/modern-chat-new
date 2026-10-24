@@ -5,11 +5,13 @@ import "time"
 
 // User 用户。JSON 输出即对外的 User 实体（camelCase）。
 type User struct {
-	ID            uint       `gorm:"primaryKey" json:"id"`
-	Username      string     `gorm:"size:20;uniqueIndex" json:"username"`
-	PasswordHash  string     `gorm:"size:60" json:"-"`
-	Nickname      string     `gorm:"size:20" json:"nickname"`
-	AvatarColor   string     `gorm:"size:16" json:"avatarColor"`
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Username     string `gorm:"size:20;uniqueIndex" json:"username"`
+	PasswordHash string `gorm:"size:60" json:"-"`
+	Nickname     string `gorm:"size:20" json:"nickname"`
+	AvatarColor  string `gorm:"size:16" json:"avatarColor"`
+	// Avatar 自定义头像：前端压缩后的 data URL（≤256KB），空表示使用默认头像
+	Avatar        string     `gorm:"type:mediumtext" json:"avatar,omitempty"`
 	Email         *string    `gorm:"size:254;uniqueIndex" json:"email,omitempty"`
 	EmailVerified bool       `json:"-"`
 	Role          string     `gorm:"size:10;default:user" json:"role"` // user | admin

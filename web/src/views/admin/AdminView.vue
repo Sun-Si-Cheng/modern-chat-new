@@ -230,7 +230,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         >
           <template #user="{ row }">
             <div class="mc-admin__user">
-              <AvatarBadge :name="row.nickname" :color="row.avatarColor" :size="30" />
+              <AvatarBadge :name="row.nickname" :src="row.avatar" :color="row.avatarColor" :size="30" />
               <span>{{ row.nickname }}</span>
             </div>
           </template>

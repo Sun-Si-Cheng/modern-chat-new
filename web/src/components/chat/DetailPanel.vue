@@ -151,6 +151,7 @@ async function leave() {
         <div class="mc-detail__member" v-for="m in members" :key="m.userId">
           <AvatarBadge
             :name="m.user.nickname"
+            :src="m.user.avatar"
             :color="m.user.avatarColor"
             :size="30"
             :online="ws.onlineUsers.has(m.userId)"
@@ -178,6 +179,7 @@ async function leave() {
         <div class="mc-detail__member">
           <AvatarBadge
             :name="conv.peer?.nickname ?? '?'"
+            :src="conv.peer?.avatar"
             :color="conv.peer?.avatarColor"
             :size="40"
             :online="conv.peer ? ws.onlineUsers.has(conv.peer.id) : false"

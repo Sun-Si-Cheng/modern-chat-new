@@ -213,6 +213,13 @@ const senderAvatarColor = (m: Message) => {
   if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatarColor
   return '#7b8290'
 }
+
+/** 对方自定义头像（单聊取 peer；群聊成员头像由详情面板展示） */
+const senderAvatar = (m: Message) => {
+  const c = conv.value
+  if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatar ?? ''
+  return ''
+}
 </script>
 
 <template>
@@ -271,6 +278,7 @@ const senderAvatarColor = (m: Message) => {
               <AvatarBadge
                 v-if="!senderOf(item.msg)"
                 :name="conv?.type === 1 ? conv.peer?.nickname ?? '?' : memberName(item.msg.senderId)"
+                :src="senderAvatar(item.msg)"
                 :color="senderAvatarColor(item.msg)"
                 :size="32"
               />
