@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config 全部运行配置，来源仅环境变量。
@@ -16,6 +17,7 @@ type Config struct {
 	LogLevel      string
 	Migrate       bool
 	PluginMaxSize int64
+	FrontendURLs  []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
 	SMTP          SMTPConfig
 }
 
@@ -26,7 +28,9 @@ type SMTPConfig struct {
 
 func (c SMTPConfig) Enabled() bool { return c.Host != "" }
 
-// Load 读取环境变量；JWT_SECRET 缺省时生成随机值并告警（仅限开发，重启即全端失效）。
+// Load 读取环境变量。JWT_SECRET 规则：
+//   - 生产（GIN_MODE=release）必须显式设置且 ≥32 字节，否则拒绝启动；
+//   - 开发模式缺省时生成随机值并告警（重启即全端失效）。
 func Load() (Config, error) {
 	cfg := Config{
 		Port:          getv("PORT", "8080"),
@@ -44,12 +48,21 @@ func Load() (Config, error) {
 			From: getv("SMTP_FROM", "modernchat@localhost"),
 		},
 	}
+	// 前端来源：逗号分隔，用于 WS Origin 白名单与找回密码链接
+	for _, u := range strings.Split(getv("FRONTEND_URL", "http://localhost:5173"), ",") {
+		if u = strings.TrimSpace(strings.TrimSuffix(u, "/")); u != "" {
+			cfg.FrontendURLs = append(cfg.FrontendURLs, u)
+		}
+	}
 	if len(cfg.JWTSecret) < 32 {
 		if cfg.JWTSecret != "" {
 			return cfg, fmt.Errorf("JWT_SECRET 长度不足 32 字节")
 		}
+		if cfg.GinMode == "release" {
+			return cfg, fmt.Errorf("生产模式（GIN_MODE=release）必须显式设置 JWT_SECRET（≥32 字节，如 openssl rand -hex 32）")
+		}
 		cfg.JWTSecret = randomHex(32)
-		fmt.Fprintln(os.Stderr, "WARN: JWT_SECRET 未设置，已生成随机值（重启后所有登录态失效；生产环境必须显式设置）")
+		fmt.Fprintln(os.Stderr, "WARN: JWT_SECRET 未设置，已生成随机值（重启后所有登录态失效；仅限本地开发）")
 	}
 	return cfg, nil
 }

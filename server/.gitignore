@@ -6,3 +6,9 @@
 cover
 cover.out
 .env
+
+# 证书与密钥（如未来引入 TLS）
+*.pem
+*.key
+*.crt
+*.p12

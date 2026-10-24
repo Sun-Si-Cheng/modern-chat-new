@@ -1,6 +1,6 @@
 module gitee.com/Sun-Si-Cheng/modern-chat-new/server
 
-go 1.26.3
+go 1.26.0
 
 require (
 	github.com/gin-gonic/gin v1.10.0
