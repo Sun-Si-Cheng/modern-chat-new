@@ -17,6 +17,7 @@ import {
 
 import AvatarBadge from './AvatarBadge.vue'
 import PluginDrawer from './PluginDrawer.vue'
+import ProfileDialog from './ProfileDialog.vue'
 import { DashboardIcon, ExtensionIcon, PoweroffIcon } from 'tdesign-icons-vue-next'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -33,6 +34,7 @@ const ws = useWsStore()
 
 const tab = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
+const profileVisible = ref(false)
 
 // ===== 搜索（人 + 群） =====
 
@@ -215,17 +217,19 @@ function confirmLogout() {
         <span class="mc-sidebar__product">ModernChat</span>
       </div>
       <div class="mc-sidebar__userrow">
-        <AvatarBadge
-          :name="auth.user?.nickname ?? '?'"
-          :color="auth.user?.avatarColor ?? '#0052d9'"
-          :online="ws.connected"
-        />
-        <div class="mc-sidebar__me-info">
-          <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
-          <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-            {{ ws.connected ? '在线' : '连接中…' }}
+        <button class="mc-sidebar__profile" aria-label="编辑个人资料" @click="profileVisible = true">
+          <AvatarBadge
+            :name="auth.user?.nickname ?? '?'"
+            :color="auth.user?.avatarColor ?? '#0052d9'"
+            :online="ws.connected"
+          />
+          <div class="mc-sidebar__me-info">
+            <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
+            <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
+              {{ ws.connected ? '在线' : '连接中…' }}
+            </div>
           </div>
-        </div>
+        </button>
         <div class="mc-sidebar__me-actions">
           <TTooltip content="插件管理">
             <TButton variant="text" shape="square" aria-label="插件管理" @click="pluginDrawerVisible = true">
@@ -336,8 +340,9 @@ function confirmLogout() {
       <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">还没有好友</div>
     </div>
 
-    <!-- 插件管理 -->
+    <!-- 插件管理 / 个人资料 -->
     <PluginDrawer v-model="pluginDrawerVisible" />
+    <ProfileDialog v-model="profileVisible" />
 
     <!-- 建群弹窗 -->
     <TDialog
@@ -400,6 +405,33 @@ function confirmLogout() {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 用户行即资料入口 */
+.mc-sidebar__profile {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px;
+  margin: -4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.mc-sidebar__profile:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-sidebar__profile:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 1px;
 }
 
 .mc-sidebar__me-info {

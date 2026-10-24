@@ -14,12 +14,13 @@ import (
 
 // AdminHandler 站长后台。
 type AdminHandler struct {
-	users *store.UserStore
-	convs *store.ConversationStore
+	users   *store.UserStore
+	convs   *store.ConversationStore
+	plugins *store.PluginStore
 }
 
-func NewAdminHandler(users *store.UserStore, convs *store.ConversationStore) *AdminHandler {
-	return &AdminHandler{users: users, convs: convs}
+func NewAdminHandler(users *store.UserStore, convs *store.ConversationStore, plugins *store.PluginStore) *AdminHandler {
+	return &AdminHandler{users: users, convs: convs, plugins: plugins}
 }
 
 // Users 用户分页列表。
@@ -154,6 +155,54 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 	}
 	notifyFor(c).ToUsers([]uint{u.ID}, gin.H{"type": "kicked", "reason": "密码已被站长重置"})
 	c.JSON(http.StatusOK, gin.H{"newPassword": pwd})
+}
+
+// Plugins 插件聚合列表（按 name，含全局下架状态）。
+func (h *AdminHandler) Plugins(c *gin.Context) {
+	page := int(parseUint64Default(c.Query("page"), 1))
+	pageSize := int(parseUint64Default(c.Query("pageSize"), 20))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	rows, total, err := h.plugins.AdminList(page, pageSize)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"plugins":  rows,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+// SetPluginGlobalDisabled 按插件名全局下架 / 恢复（对所有用户立即生效）。
+func (h *AdminHandler) SetPluginGlobalDisabled(c *gin.Context) {
+	var req struct {
+		Name     string `json:"name"`
+		Disabled bool   `json:"disabled"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	if req.Name == "" || len([]rune(req.Name)) > 30 {
+		fail(c, http.StatusBadRequest, "插件名不合法")
+		return
+	}
+	affected, err := h.plugins.SetGlobalDisabledByName(req.Name, req.Disabled)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if affected == 0 {
+		fail(c, http.StatusNotFound, "插件不存在")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "affected": affected})
 }
 
 func parseUserID(c *gin.Context) (uint, bool) {

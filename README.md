@@ -2,7 +2,7 @@
 
 一个**前后端分离、插件优先**的网页聊天平台。开箱只有最朴素的账号 + 纯文本聊天；用户可以自己写 JS 插件并安装，给网站加图片、表情、主题、机器人、小游戏等任意能力。
 
-> 状态：前端（`web/`）已完成；后端（`server/`）按 [docs/设计文档.md](docs/设计文档.md) 实现中。
+> 状态：前端（`web/`）与后端（`server/`）均已完成，接口契约见 [docs/后端需求规格.md](docs/后端需求规格.md)，设计见 [docs/设计文档.md](docs/设计文档.md)。
 
 ---
 
@@ -48,33 +48,38 @@ modernchat-new/
 
 ## 快速开始
 
-### 前端
+### 方式一：Docker 一键起后端（推荐）
 
 ```bash
-cd web
-npm install
-npm run dev        # http://localhost:5173，已代理 /api 与 /ws 到 :8080
+docker compose up -d --build    # MySQL 8 + 后端（:8080），首次启动自动建表
+cd web && npm install && npm run dev   # 前端 :5173
 ```
 
-构建与检查：
+需要自定义密钥时修改 `docker-compose.yml` 中的 `JWT_SECRET`（如 `openssl rand -hex 32`）。
+
+### 方式二：手动运行
+
+```bash
+# 后端（需自备 MySQL 8.0，MIGRATE=false 时用 AutoMigrate 自动建表）
+cd server
+cp .env.example .env       # DB_DSN + JWT_SECRET（GIN_MODE=release 时必须设置）
+go run ./cmd/server        # :8080
+
+# 前端
+cd web
+npm install
+npm run dev                # http://localhost:5173，已代理 /api 与 /ws 到 :8080
+```
+
+首个注册的用户自动成为站长（可访问 `/admin`：用户封禁 / 重置密码 / 插件全局下架）。
+
+### 前端检查命令
 
 ```bash
 npm run type-check # vue-tsc
 npm run lint       # oxlint + eslint
 npm run build      # 产物在 dist/
 ```
-
-> 当前仅有前端：打开页面会停在登录页（接口 401 属预期）。后端就绪前可注册首个账号体验完整流程。
-
-### 后端（实现中）
-
-```bash
-cd server
-cp .env.example .env   # MySQL DSN + JWT_SECRET
-go run ./cmd/server    # :8080
-```
-
-首个注册的用户自动成为站长（可访问 `/admin` 后台：封禁 / 解封 / 重置密码）。
 
 ---
 
@@ -137,7 +142,18 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 - **上传文件**：聊天页 → 插件管理 → 上传 JS
 - **URL 安装**：服务端拉取前做 SSRF 防护（拒绝私网 / 回环 / 非 http(s)，限大小与超时）
 
-安装后会弹出权限清单，**确认后才启用**；站长可在后台全局下架任意插件（`global_disabled`，对所有用户立即生效）。
+安装后会弹出权限清单，**确认后才启用**；站长可在后台「插件」分区按插件名全局下架（对所有用户立即生效）。
+
+### 试一试示例插件
+
+仓库自带 [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js)：侧边栏天气面板 + 自定义 `weather` 消息类型。
+
+1. 登录后点击侧栏「插件」图标 → 上传该文件 → 确认权限清单并启用
+2. 右侧详情面板出现「天气（示例插件）」卡片：点「刷新数据」看面板更新，「发送到当前聊天」把天气发到当前会话
+3. 消息气泡中该消息由插件自定义渲染（白名单组件卡片），而不是裸 JSON
+4. 站长账号在 `/admin` → 「插件」分区可看到按名称聚合的安装记录，并执行全局下架
+
+示例刻意不发起网络请求，「接入真实 API」的写法（`net` 权限 + `allowedHosts` + `api.request`）见文件头注释。
 
 ---
 
@@ -148,7 +164,9 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 
 ## 部署
 
-- 前端 `npm run build` 产物由 Nginx 托管；`/api` 反代到 `:8080`，`/ws` 需加 `Upgrade` / `Connection` 头（示例见 `deploy/nginx.conf.example`，随 server 一并交付）
+- **Docker**：`docker compose up -d --build` 起 MySQL + 后端；前端可构建后由 `deploy/nginx.compose.conf` 的 nginx 容器托管（配置见 `docker-compose.yml` 末尾注释）
+- **裸机**：`go build -o modernchat-server ./cmd/server`；前端 `npm run build` 产物交 Nginx，`/api` 反代 `:8080`，`/ws` 加 `Upgrade` / `Connection` 头（`deploy/nginx.conf.example`）
+- 生产必须设置：`GIN_MODE=release`、`JWT_SECRET`（≥32 字节，缺省拒绝启动）、`FRONTEND_URL`（WS Origin 白名单 + 找回密码链接）、`MIGRATE=true`
 - 配置（DB DSN、JWT_SECRET、SMTP）走环境变量，不进仓库
 - 本期为**单实例**架构（在线状态与 Hub 路由在内存），水平扩展列入二期
 
