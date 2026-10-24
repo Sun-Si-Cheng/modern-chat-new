@@ -53,6 +53,12 @@ async function save() {
         <TButton variant="outline" @click="visible = false">{{ t('common.cancel') }}</TButton>
         <TButton theme="primary" :loading="saving" @click="save">{{ t('common.save') }}</TButton>
       </div>
+
+      <p class="profile-form__legal">
+        <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
+        <span>·</span>
+        <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
+      </p>
     </div>
   </TDialog>
 </template>
@@ -81,5 +87,15 @@ async function save() {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+
+.profile-form__legal {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--td-component-border);
+  font-size: 12px;
+  color: var(--mc-text-faint);
+  display: flex;
+  gap: 6px;
 }
 </style>

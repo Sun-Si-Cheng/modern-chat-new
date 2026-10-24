@@ -261,4 +261,15 @@ export default {
     switchLang: 'Switch to English',
     switchTheme: '切换主题',
   },
+  legal: {
+    terms: '用户协议',
+    privacy: '隐私协议',
+    updated: '更新日期',
+    effective: '生效日期',
+    agreePrefix: '注册即表示你已阅读并同意',
+    and: '与',
+    zhPrevails: '',
+    termsLink: '《用户协议》',
+    privacyLink: '《隐私协议》',
+  },
 }
