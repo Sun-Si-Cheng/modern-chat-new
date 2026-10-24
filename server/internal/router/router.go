@@ -16,12 +16,13 @@ import (
 
 // Deps 路由依赖容器。
 type Deps struct {
-	Cfg         config.Config
-	DB          *gorm.DB
-	Mailer      *service.Mailer
-	Notifier    handler.Notifier
-	WS          *ws.Hub
-	AuthLimiter *middleware.LimiterStore // 认证类接口按 IP 限流
+	Cfg           config.Config
+	DB            *gorm.DB
+	Mailer        *service.Mailer
+	Notifier      handler.Notifier
+	WS            *ws.Hub
+	AuthLimiter   *middleware.LimiterStore // 认证类接口按 IP 限流
+	PluginLimiter *middleware.LimiterStore // 插件安装按用户限流
 }
 
 // New 装配引擎。
@@ -89,8 +90,9 @@ func New(d Deps) *gin.Engine {
 		authed.GET("/plugins", pluginH.List)
 		authed.GET("/plugins/active", pluginH.Active)
 		authed.GET("/plugins/:id/code", pluginH.Code)
-		authed.POST("/plugins/upload", pluginH.Upload)
-		authed.POST("/plugins/from-url", pluginH.FromURL)
+		pluginLimit := middleware.RateLimit(d.PluginLimiter, middleware.KeyByUID)
+		authed.POST("/plugins/upload", pluginLimit, pluginH.Upload)
+		authed.POST("/plugins/from-url", pluginLimit, pluginH.FromURL)
 		authed.PATCH("/plugins/:id", pluginH.SetEnabled)
 		authed.DELETE("/plugins/:id", pluginH.Remove)
 	}
