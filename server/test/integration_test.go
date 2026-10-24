@@ -185,12 +185,26 @@ func readFrame(t *testing.T, conn *websocket.Conn, wantType string) map[string]a
 	}
 }
 
-func expectSilence(t *testing.T, conn *websocket.Conn, d time.Duration) {
+// expectSilence 在 d 时间内不应收到 watchType 类型的帧。
+// 只判定指定类型：连接建立后还会异步到达 presence 等帧，不能一律算作"不该收到"。
+func expectSilence(t *testing.T, conn *websocket.Conn, d time.Duration, watchType string) {
 	t.Helper()
-	_ = conn.SetReadDeadline(time.Now().Add(d))
-	_, _, err := conn.ReadMessage()
-	if err == nil {
-		t.Fatal("期望无帧，但收到了")
+	deadline := time.Now().Add(d)
+	for {
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			t.Fatalf("set deadline: %v", err)
+		}
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return // 超时未读到 = 静默，符合预期
+		}
+		var f map[string]any
+		if err := json.Unmarshal(data, &f); err != nil {
+			continue
+		}
+		if f["type"] == watchType {
+			t.Fatalf("期望无 %s 帧，但收到了: %s", watchType, string(data))
+		}
 	}
 }
 
@@ -301,7 +315,12 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("ws resend: %v", err)
 	}
 	readFrame(t, connA, "message") // A 收到回放
-	expectSilence(t, connB, 800*time.Millisecond)
+	// 幂等重发不应让 B 再收到消息帧（presence 等异步帧不算）
+	expectSilence(t, connB, 800*time.Millisecond, "message")
+	// gorilla/websocket 在读超时后连接即不可用（后续读取一律失败），
+	// 因此这条连接用完即弃：后续断言改用 B 的新连接。
+	_ = connB.Close()
+	connB = wsDial(t, e, tokenB)
 
 	// B 上报已读 → A 收 read 帧
 	msgID := uint64(gotB["id"].(float64))

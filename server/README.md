@@ -102,6 +102,27 @@ go vet ./... && gofmt -l .             # 静态检查
 
 集成测试覆盖：注册（首注册者=站长）→ 好友申请/同意 → 单聊幂等 → WS 收发 → `clientMsgId` 重发幂等 → 已读回执 → 撤回 → 未读数 → 群聊/加入/成员 → 封禁踢线 → 插件上传/同名升级/代码下发/SSRF 拒绝/全局下架。
 
+> **坑**：集成测试连不上 MySQL 时会 `t.Skip`，而 `go test` 对 SKIP 仍返回 `ok` —— 看上去"通过"，实际一条都没跑（覆盖率接近 0）。用下面的脚本会自动检测并告警。
+
+### 覆盖率（单测 + 集成合并）
+
+```bash
+# Windows（在 server/ 目录）
+$env:DB_DSN = 'root:密码@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local'
+..\scripts\coverage.ps1
+
+# Linux / macOS
+DB_DSN='root:密码@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local' ../scripts/coverage.sh
+
+# HTML 报告
+go tool cover -html=cover.out -o coverage.html
+```
+
+要点：
+- 集成测试库需提前创建：`CREATE DATABASE modernchat_test CHARACTER SET utf8mb4;`
+- 覆盖率必须用 `-coverpkg=./internal/...` 指定被统计的包，否则 `go test ./...` 只报"各包自己单测"的数字（store/handler 会假性显示 0%）
+- 当前基线：**总计 50.7%**（handler 44%、store 62%、ws 70%、plugin 67%、middleware 67%、router 97%、model 100%；config / version 尚无覆盖、service 20%）
+
 ## 结构
 
 ```
