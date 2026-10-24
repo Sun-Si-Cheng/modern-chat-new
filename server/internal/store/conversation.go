@@ -66,9 +66,15 @@ func (s *ConversationStore) Rename(convID uint, name string) error {
 	return s.db.Model(&model.Conversation{}).Where("id = ?", convID).Update("name", name).Error
 }
 
-// SetOwner 转让群主：新群主 role=owner，旧群主降 member。
+// SetOwner 转让群主：conversations.owner_id 与两侧成员 role 必须在同一事务内一起改，
+// 否则前端（读 ownerId）与后端（判 members.role）会得出不同结论。
 func (s *ConversationStore) SetOwner(convID, newOwnerID, oldOwnerID uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Conversation{}).
+			Where("id = ?", convID).
+			Update("owner_id", newOwnerID).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&model.ConversationMember{}).
 			Where("conversation_id = ? AND user_id = ?", convID, newOwnerID).
 			Update("role", "owner").Error; err != nil {
