@@ -319,14 +319,19 @@ function backToStep1() {
   color: var(--td-success-color);
 }
 
-/* ===== 表单 ===== */
+/* ===== 表单 =====
+ * 字段间距用 flex gap 统一控制：TDesign 的 FormItem margin 在本布局下不生效，
+ * 会导致「最后一个字段紧贴按钮」。gap 对 FormItem 与按钮同样有效。 */
 .auth-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
   margin-top: 24px;
   animation: auth-form-in 0.16s ease-out;
 }
 
 .auth-card__form :deep(.t-form__item) {
-  margin-bottom: 26px;
+  margin-bottom: 0;
 }
 
 @keyframes auth-form-in {
@@ -347,7 +352,7 @@ function backToStep1() {
 }
 
 .auth-card__submit {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .auth-card__links {
