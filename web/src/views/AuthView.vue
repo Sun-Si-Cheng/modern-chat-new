@@ -12,6 +12,7 @@ import {
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
 
+import AuthScene from '@/components/common/AuthScene.vue'
 import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
@@ -101,10 +102,7 @@ function switchMode(m: 'login' | 'register') {
 <template>
   <div class="auth-page">
     <!-- 背景层：两段纯色（天 / 水）+ 地平线；放置 web/public/login-bg.jpg 可覆盖为自定义图片 -->
-    <div class="auth-scene" aria-hidden="true">
-      <div class="auth-scene__water" />
-      <div class="auth-scene__img" />
-    </div>
+    <AuthScene />
 
     <div class="auth-top">
       <PreferencesMenu />
@@ -203,51 +201,6 @@ function switchMode(m: 'login' | 'register') {
   justify-content: center;
   padding: 32px 20px 56px;
   overflow-y: auto;
-}
-
-.auth-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background: #123a5c; /* 天 */
-}
-
-.auth-scene__water {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34%;
-  background: #0b2436; /* 水 */
-  border-top: 1px solid rgba(255, 255, 255, 0.1); /* 地平线 */
-}
-
-/* 可选自定义背景图：把图片放到 web/public/login-bg.jpg 即自动覆盖纯色（404 时无副作用） */
-.auth-scene__img {
-  position: absolute;
-  inset: 0;
-  background: url('/login-bg.jpg') center / cover no-repeat;
-}
-
-/* 图片蒙版：无论用户放什么图，都保证卡片周围与页脚文字可读；暗色主题下压得更沉 */
-.auth-scene__img::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(8, 19, 31, 0.28);
-}
-
-:root[theme-mode='dark'] .auth-scene__img::after {
-  background: rgba(3, 8, 14, 0.52);
-}
-
-:root[theme-mode='dark'] .auth-scene {
-  background: #08131f;
-}
-
-:root[theme-mode='dark'] .auth-scene__water {
-  background: #050d16;
-  border-top-color: rgba(255, 255, 255, 0.06);
 }
 
 /* ===== 顶部偏好（语言 / 主题） ===== */
