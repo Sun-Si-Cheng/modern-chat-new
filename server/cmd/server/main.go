@@ -49,9 +49,10 @@ func main() {
 		}
 	}
 
-	// 限流器：认证按 IP 10/min；发消息按用户 20/min（WS 侧）
+	// 限流器：认证按 IP 10/min；发消息按用户 20/min（WS 侧）；插件安装按用户 5/min
 	authLimiter := middleware.NewLimiterStore(10, 10)
 	msgLimiter := middleware.NewLimiterStore(20, 20)
+	pluginLimiter := middleware.NewLimiterStore(5, 5)
 
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
@@ -63,12 +64,13 @@ func main() {
 	go hub.Run()
 
 	r := router.New(router.Deps{
-		Cfg:         cfg,
-		DB:          db,
-		Mailer:      service.NewMailer(cfg.SMTP),
-		Notifier:    hub,
-		WS:          hub,
-		AuthLimiter: authLimiter,
+		Cfg:           cfg,
+		DB:            db,
+		Mailer:        service.NewMailer(cfg.SMTP),
+		Notifier:      hub,
+		WS:            hub,
+		AuthLimiter:   authLimiter,
+		PluginLimiter: pluginLimiter,
 	})
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}

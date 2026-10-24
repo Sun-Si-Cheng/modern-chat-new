@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -63,3 +64,11 @@ func RateLimit(l *LimiterStore, keyFn func(c *gin.Context) string) gin.HandlerFu
 
 // KeyByIP 按 IP 限流（登录/注册/找回）。
 func KeyByIP(c *gin.Context) string { return "ip:" + c.ClientIP() }
+
+// KeyByUID 按用户限流（发消息 / 插件安装；须置于 Auth 之后）。
+func KeyByUID(c *gin.Context) string {
+	if u := UserFrom(c); u != nil {
+		return "u:" + strconv.FormatUint(uint64(u.ID), 10)
+	}
+	return "ip:" + c.ClientIP()
+}
