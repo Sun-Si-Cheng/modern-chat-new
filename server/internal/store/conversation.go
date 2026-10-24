@@ -89,6 +89,28 @@ func (s *ConversationStore) MemberUserIDs(convID uint) ([]uint, error) {
 	return ids, err
 }
 
+// ConvIDsOfUser 用户所在的全部会话 id。
+func (s *ConversationStore) ConvIDsOfUser(userID uint) ([]uint, error) {
+	var ids []uint
+	err := s.db.Model(&model.ConversationMember{}).
+		Where("user_id = ?", userID).
+		Pluck("conversation_id", &ids).Error
+	return ids, err
+}
+
+// MemberIDsOfConvs 一组会话的全部成员（去重）。
+func (s *ConversationStore) MemberIDsOfConvs(convIDs []uint) ([]uint, error) {
+	var ids []uint
+	if len(convIDs) == 0 {
+		return ids, nil
+	}
+	err := s.db.Model(&model.ConversationMember{}).
+		Where("conversation_id IN ?", convIDs).
+		Distinct().
+		Pluck("user_id", &ids).Error
+	return ids, err
+}
+
 // SingleExists 查找两人已存在的 type=1 会话（单聊幂等复用）。
 func (s *ConversationStore) SingleExists(a, b uint) (*model.Conversation, error) {
 	var c model.Conversation

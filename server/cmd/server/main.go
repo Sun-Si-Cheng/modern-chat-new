@@ -14,7 +14,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/router"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/ws"
 )
 
 func main() {
@@ -26,8 +30,48 @@ func main() {
 	setupLogger(cfg.LogLevel)
 	gin.SetMode(cfg.GinMode)
 
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: router.New()}
+	// 数据库（重试连接）
+	db, err := store.Open(cfg.DBDSN, 10, 2*time.Second)
+	if err != nil {
+		slog.Error("db open", "err", err)
+		os.Exit(1)
+	}
+	if cfg.Migrate {
+		if err := store.RunMigrations(cfg.DBDSN); err != nil {
+			slog.Error("migrate", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("migrations applied")
+	} else {
+		if err := store.AutoMigrate(db); err != nil {
+			slog.Error("automigrate", "err", err)
+			os.Exit(1)
+		}
+	}
 
+	// 限流器：认证按 IP 10/min；发消息按用户 20/min（WS 侧）
+	authLimiter := middleware.NewLimiterStore(10, 10)
+	msgLimiter := middleware.NewLimiterStore(20, 20)
+
+	// WebSocket Hub
+	hub := ws.NewHub(&ws.Deps{
+		Convs:      store.NewConversationStore(db),
+		Messages:   store.NewMessageStore(db),
+		Friends:    store.NewFriendStore(db),
+		MsgLimiter: msgLimiter,
+	})
+	go hub.Run()
+
+	r := router.New(router.Deps{
+		Cfg:      cfg,
+		DB:       db,
+		Mailer:   service.NewMailer(cfg.SMTP),
+		Notifier: hub,
+		WS:       hub,
+		AuthLimiter: authLimiter,
+	})
+
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
 	go func() {
 		slog.Info("server started", "port", cfg.Port, "mode", cfg.GinMode)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -46,6 +90,8 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("shutdown", "err", err)
 	}
+	hub.Close()
+	store.Close(db)
 	slog.Info("bye")
 }
 
