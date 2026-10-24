@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin, Button as TButton } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
 import DeclarativeNodes from '@/components/declarative'
+import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -215,6 +216,15 @@ const senderAvatarColor = (m: Message) => {
 <template>
   <section class="mc-msgpane">
     <header class="mc-msgpane__header">
+      <TButton
+        class="mc-msgpane__back"
+        variant="text"
+        shape="square"
+        aria-label="返回会话列表"
+        @click="convStore.currentConvId = null"
+      >
+        <template #icon><ArrowLeftIcon /></template>
+      </TButton>
       <template v-if="conv">
         <div class="mc-msgpane__title">
           {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
@@ -269,11 +279,18 @@ const senderAvatarColor = (m: Message) => {
                 <!-- 普通文本 -->
                 <div v-else class="mc-msg__bubble" :class="{ pending: item.msg.pending, failed: item.msg.failed }">
                   <span class="mc-msg__text">{{ item.msg.content }}</span>
-                  <span v-if="canRecall(item.msg)" class="mc-msg__recall" title="撤回" @click="recall(item.msg)">撤回</span>
+                  <span
+                    v-if="canRecall(item.msg)"
+                    class="mc-msg__recall"
+                    role="button"
+                    tabindex="0"
+                    @click="recall(item.msg)"
+                    @keydown.enter="recall(item.msg)"
+                  >撤回</span>
                   <span v-if="item.msg.failed" class="mc-msg__resend" @click="convStore.resend(item.msg)">重发</span>
                 </div>
 
-                <div class="mc-msg__meta text-placeholder">
+                <div class="mc-msg__meta text-placeholder num">
                   <template v-if="senderOf(item.msg) && conv?.type === 1">
                     {{ peerReadUpTo >= item.msg.id ? '已读' : '未读' }} ·
                   </template>
@@ -315,12 +332,25 @@ const senderAvatarColor = (m: Message) => {
 
 .mc-msgpane__title {
   font-weight: 600;
+  font-size: 16px;
 }
 
 .mc-msgpane__sub {
   font-size: 12px;
   font-weight: 400;
   margin-left: 8px;
+}
+
+/* 返回按钮：仅窄屏（单面板模式）显示 */
+.mc-msgpane__back {
+  display: none;
+  margin-right: 4px;
+}
+
+@media (max-width: 768px) {
+  .mc-msgpane__back {
+    display: inline-flex;
+  }
 }
 
 .mc-msgpane__list {
@@ -373,7 +403,6 @@ const senderAvatarColor = (m: Message) => {
   padding: 8px 12px;
   word-break: break-word;
   white-space: pre-wrap;
-  box-shadow: var(--td-shadow-1);
 }
 
 .mc-msg.mine .mc-msg__bubble {
@@ -427,8 +456,15 @@ const senderAvatarColor = (m: Message) => {
   right: auto;
 }
 
-.mc-msg:hover .mc-msg__recall {
+.mc-msg:hover .mc-msg__recall,
+.mc-msg:focus-within .mc-msg__recall {
   opacity: 1;
+}
+
+.mc-msg__recall:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--td-brand-color);
+  border-radius: 2px;
 }
 
 .mc-msg__resend {

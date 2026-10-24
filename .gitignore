@@ -11,6 +11,9 @@ web/.env.local
 # dsh
 .dsh/
 
+#skill
+.taste-skill/
+before/
 # 编辑器/系统
 .idea/
 .vscode/

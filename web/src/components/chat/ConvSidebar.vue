@@ -10,13 +10,14 @@ import {
   List as TList,
   ListItem as TListItem,
   MessagePlugin,
-  Popup as TPopup,
   Tabs as TTabss,
   TabPanel as TTabPanel,
+  Tooltip as TTooltip,
 } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import PluginDrawer from './PluginDrawer.vue'
+import { DashboardIcon, ExtensionIcon, PoweroffIcon } from 'tdesign-icons-vue-next'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -207,27 +208,41 @@ function confirmLogout() {
 
 <template>
   <aside class="mc-sidebar">
-    <!-- 顶部个人信息 -->
+    <!-- 顶部：产品名 + 当前用户 -->
     <header class="mc-sidebar__me">
-      <AvatarBadge
-        :name="auth.user?.nickname ?? '?'"
-        :color="auth.user?.avatarColor ?? '#0052d9'"
-        :online="ws.connected"
-      />
-      <div class="mc-sidebar__me-info">
-        <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
-        <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
-          {{ ws.connected ? '在线' : '连接中…' }}
-        </div>
+      <div class="mc-sidebar__wordmark">
+        <span class="mc-sidebar__mark">M</span>
+        <span class="mc-sidebar__product">ModernChat</span>
       </div>
-      <div class="mc-sidebar__me-actions">
-        <TPopup content="插件管理">
-          <TButton variant="text" shape="square" @click="pluginDrawerVisible = true">插</TButton>
-        </TPopup>
-        <TPopup v-if="auth.isAdmin" content="站长后台">
-          <TButton variant="text" shape="square" @click="router.push('/admin')">盾</TButton>
-        </TPopup>
-        <TButton variant="text" shape="square" @click="confirmLogout">出</TButton>
+      <div class="mc-sidebar__userrow">
+        <AvatarBadge
+          :name="auth.user?.nickname ?? '?'"
+          :color="auth.user?.avatarColor ?? '#0052d9'"
+          :online="ws.connected"
+        />
+        <div class="mc-sidebar__me-info">
+          <div class="mc-sidebar__me-name">{{ auth.user?.nickname }}</div>
+          <div class="mc-sidebar__me-status" :class="ws.connected ? 'on' : 'off'">
+            {{ ws.connected ? '在线' : '连接中…' }}
+          </div>
+        </div>
+        <div class="mc-sidebar__me-actions">
+          <TTooltip content="插件管理">
+            <TButton variant="text" shape="square" aria-label="插件管理" @click="pluginDrawerVisible = true">
+              <template #icon><ExtensionIcon /></template>
+            </TButton>
+          </TTooltip>
+          <TTooltip v-if="auth.isAdmin" content="站长后台">
+            <TButton variant="text" shape="square" aria-label="站长后台" @click="router.push('/admin')">
+              <template #icon><DashboardIcon /></template>
+            </TButton>
+          </TTooltip>
+          <TTooltip content="退出登录">
+            <TButton variant="text" shape="square" aria-label="退出登录" @click="confirmLogout">
+              <template #icon><PoweroffIcon /></template>
+            </TButton>
+          </TTooltip>
+        </div>
       </div>
     </header>
 
@@ -283,7 +298,7 @@ function confirmLogout() {
           <div class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || '暂无消息' }}</div>
         </div>
         <div class="mc-conv-item__right">
-          <span class="text-placeholder mc-conv-item__time">{{ fmtTime(c.lastMessageAt) }}</span>
+          <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>
           <TBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
         </div>
       </div>
@@ -349,9 +364,42 @@ function confirmLogout() {
 
 .mc-sidebar__me {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 10px;
+}
+
+.mc-sidebar__wordmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.mc-sidebar__mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--td-brand-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.mc-sidebar__product {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.mc-sidebar__userrow {
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 14px 10px;
 }
 
 .mc-sidebar__me-info {
@@ -439,8 +487,9 @@ function confirmLogout() {
   background: var(--td-bg-color-secondarycontainer);
 }
 
+/* 选中态用中性灰阶，品牌色留给未读数据 */
 .mc-conv-item.active {
-  background: var(--td-brand-color-light);
+  background: var(--td-bg-color-container-active, #ebebeb);
 }
 
 .mc-conv-item__mid {
