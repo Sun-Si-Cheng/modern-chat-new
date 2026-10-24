@@ -10,7 +10,8 @@ const { t } = useAppI18n()
 
 const items = computed(() => {
   const convs = convStore.conversations
-  const unread = convs.reduce((s, c) => s + c.unreadCount, 0)
+  // 计数口径统一为「会话数」，避免未读显示成消息条数而其他项是会话数
+  const unread = convs.filter((c) => c.unreadCount > 0).length
   return [
     { value: 'all' as const, label: t('chat.filterAll'), count: convs.length },
     { value: 'unread' as const, label: t('chat.filterUnread'), count: unread },
@@ -61,9 +62,10 @@ const items = computed(() => {
 }
 
 .group-pane__title {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 4px 8px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-placeholder);
+  padding: 6px 10px 10px;
 }
 
 .group-pane__list {
@@ -90,16 +92,17 @@ const items = computed(() => {
   color: var(--td-text-color-primary);
   cursor: pointer;
   text-align: left;
+  transition: background 0.12s ease-out;
 }
 
 .group-pane__item:hover {
   background: var(--td-bg-color-container);
 }
 
+/* 选中态用一块中性底色表达，不加阴影 */
 .group-pane__item.is-active {
   background: var(--td-bg-color-container);
-  font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  font-weight: 600;
 }
 
 .group-pane__item:focus-visible {

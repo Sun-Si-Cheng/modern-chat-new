@@ -33,19 +33,46 @@ interface DisplayItem {
   kind: 'date' | 'msg'
   label?: string
   msg?: Message
+  /** 同一发送者连续消息的第一条：显示头像与昵称 */
+  firstInGroup?: boolean
+  /** 连续消息的最后一条：显示时间等元信息 */
+  lastInGroup?: boolean
 }
+
+/** 同一发送者、间隔 5 分钟内的连续消息归为一组，减少重复头像与时间行 */
+const GROUP_GAP = 5 * 60 * 1000
 
 const displayItems = computed<DisplayItem[]>(() => {
   const out: DisplayItem[] = []
   let lastDate = ''
+  let prev: Message | undefined
   for (const m of messages.value) {
     const d = new Date(m.createdAt).toDateString()
     if (d !== lastDate) {
+      const prevItem = out[out.length - 1]
+      if (prevItem?.kind === 'msg') prevItem.lastInGroup = true
       lastDate = d
+      prev = undefined
       out.push({ key: `date-${d}`, kind: 'date', label: formatDateLabel(m.createdAt) })
     }
-    out.push({ key: m.clientMsgId || `msg-${m.id}`, kind: 'msg', msg: m })
+    const now = new Date(m.createdAt).getTime()
+    const first =
+      !prev || prev.senderId !== m.senderId || now - new Date(prev.createdAt).getTime() > GROUP_GAP
+    if (first) {
+      const prevItem = out[out.length - 1]
+      if (prevItem?.kind === 'msg') prevItem.lastInGroup = true
+    }
+    out.push({
+      key: m.clientMsgId || `msg-${m.id}`,
+      kind: 'msg',
+      msg: m,
+      firstInGroup: first,
+      lastInGroup: false,
+    })
+    prev = m
   }
+  const lastItem = out[out.length - 1]
+  if (lastItem?.kind === 'msg') lastItem.lastInGroup = true
   return out
 })
 
@@ -101,30 +128,55 @@ watch(
 
 onMounted(scrollToBottom)
 
-// ===== 群成员昵称缓存 =====
+// ===== 群成员资料缓存（昵称 / 头像 / 取色） =====
 
-const memberNameCache = reactive<Record<number, string>>({})
-
-function memberName(userId: number): string {
-  if (memberNameCache[userId]) return memberNameCache[userId]
-  void loadMemberNames()
-  return t('message.userFallback', { n: userId })
+interface MemberProfile {
+  name: string
+  avatar: string
+  color: string
 }
 
-let memberNamesLoading = false
+const memberCache = reactive<Record<number, MemberProfile>>({})
 
-async function loadMemberNames() {
-  if (memberNamesLoading || !conv.value) return
-  memberNamesLoading = true
+function memberProfile(userId: number): MemberProfile {
+  const hit = memberCache[userId]
+  if (hit) return hit
+  void loadMemberProfiles()
+  return { name: t('message.userFallback', { n: userId }), avatar: '', color: '#7b8290' }
+}
+
+function memberName(userId: number): string {
+  return memberProfile(userId).name
+}
+
+let memberProfilesLoading = false
+
+async function loadMemberProfiles() {
+  if (memberProfilesLoading || !conv.value || conv.value.type !== 2) return
+  memberProfilesLoading = true
   try {
     const members = await convApi.members(conv.value.id)
-    for (const m of members) memberNameCache[m.userId] = m.user.nickname
+    for (const m of members) {
+      memberCache[m.userId] = {
+        name: m.user.nickname,
+        avatar: m.user.avatar ?? '',
+        color: m.user.avatarColor || '#7b8290',
+      }
+    }
   } catch {
     /* 忽略：下次渲染重试 */
   } finally {
-    memberNamesLoading = false
+    memberProfilesLoading = false
   }
 }
+
+// 切换会话时清空昵称缓存，避免把上一个群的成员名带过来
+watch(
+  () => conv.value?.id,
+  () => {
+    for (const k of Object.keys(memberCache)) delete memberCache[Number(k)]
+  },
+)
 
 // ===== 撤回 =====
 
@@ -144,6 +196,45 @@ const peerReadUpTo = computed(() => {
   const c = conv.value
   if (!c || c.type !== 1 || !c.peer) return 0
   return convStore.readByConv[c.id]?.[c.peer.id] ?? 0
+})
+
+/** 自己发出的最后一条已落库消息：只在这一条上展示已读/未读，避免每条都重复 */
+const lastOwnMessageId = computed(() => {
+  const uid = auth.user?.id
+  if (!uid) return 0
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m && m.senderId === uid && m.id > 0) return m.id
+  }
+  return 0
+})
+
+function showReadState(m: Message): boolean {
+  return conv.value?.type === 1 && senderOf(m) && m.id > 0 && m.id === lastOwnMessageId.value
+}
+
+/** 连续消息只在最后一条展示时间；发送失败的消息始终展示，保证「重发」可达 */
+function showMeta(item: DisplayItem): boolean {
+  return !!item.lastInGroup || !!item.msg?.failed
+}
+
+// ===== 顶部会话信息 =====
+
+const headerAvatar = computed(() => {
+  const c = conv.value
+  if (!c) return null
+  return c.type === 1
+    ? {
+        name: c.peer?.nickname ?? '?',
+        src: c.peer?.avatar ?? '',
+        color: c.peer?.avatarColor ?? '#0052d9',
+      }
+    : { name: c.name ?? '#', src: '', color: '#2ba471' }
+})
+
+const peerOnline = computed(() => {
+  const p = conv.value?.peer
+  return !!p && ws.onlineUsers.has(p.id)
 })
 
 // ===== 正在输入 =====
@@ -208,16 +299,19 @@ function renderedNodes(m: Message): RenderedDesc['nodes'] {
 }
 
 const senderOf = (m: Message) => m.senderId === auth.user?.id
+
 const senderAvatarColor = (m: Message) => {
   const c = conv.value
   if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatarColor
+  if (c?.type === 2) return memberProfile(m.senderId).color
   return '#7b8290'
 }
 
-/** 对方自定义头像（单聊取 peer；群聊成员头像由详情面板展示） */
+/** 发送者头像：单聊取 peer，群聊取成员资料缓存 */
 const senderAvatar = (m: Message) => {
   const c = conv.value
   if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatar ?? ''
+  if (c?.type === 2) return memberProfile(m.senderId).avatar
   return ''
 }
 </script>
@@ -235,101 +329,155 @@ const senderAvatar = (m: Message) => {
         <template #icon><ArrowLeftIcon /></template>
       </TButton>
       <template v-if="conv">
-        <div class="mc-msgpane__title">
-          {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
-          <span class="text-placeholder mc-msgpane__sub">
+        <AvatarBadge
+          v-if="headerAvatar"
+          class="mc-msgpane__avatar"
+          :name="headerAvatar.name"
+          :src="headerAvatar.src"
+          :color="headerAvatar.color"
+          :size="34"
+        />
+        <div class="mc-msgpane__heading">
+          <div class="mc-msgpane__title" :title="conv.type === 1 ? (conv.peer?.nickname ?? '') : (conv.name ?? '')">
+            {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
+          </div>
+          <div class="mc-msgpane__sub text-placeholder">
+            <span
+              v-if="conv.type === 1"
+              class="mc-msgpane__presence"
+              :class="{ 'is-online': peerOnline }"
+            />
             {{
               conv.type === 1
-                ? conv.peer && ws.onlineUsers.has(conv.peer.id)
+                ? peerOnline
                   ? t('chat.online')
                   : t('chat.offline')
                 : t('chat.membersCount', { n: conv.memberCount })
             }}
-          </span>
+          </div>
         </div>
       </template>
     </header>
 
-    <DynamicScroller
-      v-if="conv"
-      ref="scrollerRef"
-      class="mc-msgpane__list"
-      :items="displayItems"
-      :min-item-size="52"
-      key-field="key"
-      @scroll="onScroll"
-    >
-      <template #before>
-        <div v-if="convStore.loadingMessages" class="text-placeholder mc-msgpane__loading">
-          {{ t('common.loading') }}
-        </div>
-        <div v-else-if="!convStore.hasMoreByConv[conv.id]" class="text-placeholder mc-msgpane__loading">
-          {{ t('message.noEarlier') }}
-        </div>
-      </template>
+    <div v-if="conv" class="mc-msgpane__stream">
+      <DynamicScroller
+        ref="scrollerRef"
+        class="mc-msgpane__list"
+        :items="displayItems"
+        :min-item-size="52"
+        key-field="key"
+        @scroll="onScroll"
+      >
+        <template #before>
+          <div v-if="convStore.loadingMessages" class="text-placeholder mc-msgpane__loading">
+            {{ t('common.loading') }}
+          </div>
+          <div v-else-if="!convStore.hasMoreByConv[conv.id]" class="text-placeholder mc-msgpane__loading">
+            {{ t('message.noEarlier') }}
+          </div>
+        </template>
 
-      <template #default="{ item }">
-        <DynamicScrollerItem :item="item" :active="true">
-          <template v-if="item.kind === 'date'">
-            <div class="mc-msgpane__date text-placeholder">{{ item.label }}</div>
-          </template>
-          <template v-else-if="item.msg">
-            <div class="mc-msg" :class="{ mine: senderOf(item.msg) }">
-              <AvatarBadge
-                v-if="!senderOf(item.msg)"
-                :name="conv?.type === 1 ? conv.peer?.nickname ?? '?' : memberName(item.msg.senderId)"
-                :src="senderAvatar(item.msg)"
-                :color="senderAvatarColor(item.msg)"
-                :size="32"
-              />
-              <div class="mc-msg__body">
-                <div v-if="conv?.type === 2 && !senderOf(item.msg)" class="mc-msg__sender text-placeholder">
-                  {{ memberName(item.msg.senderId) }}
-                </div>
+        <template #default="{ item }">
+          <DynamicScrollerItem :item="item" :active="true">
+            <template v-if="item.kind === 'date'">
+              <div class="mc-msgpane__date">
+                <span class="text-placeholder">{{ item.label }}</span>
+              </div>
+            </template>
+            <template v-else-if="item.msg">
+              <div
+                class="mc-msg"
+                :class="{
+                  mine: senderOf(item.msg),
+                  repeat: !item.firstInGroup && !senderOf(item.msg),
+                  'group-start': item.firstInGroup,
+                }"
+              >
+                <AvatarBadge
+                  v-if="!senderOf(item.msg) && item.firstInGroup"
+                  :name="conv?.type === 1 ? conv.peer?.nickname ?? '?' : memberName(item.msg.senderId)"
+                  :src="senderAvatar(item.msg)"
+                  :color="senderAvatarColor(item.msg)"
+                  :size="32"
+                />
+                <div class="mc-msg__body">
+                  <div
+                    v-if="conv?.type === 2 && !senderOf(item.msg) && item.firstInGroup"
+                    class="mc-msg__sender"
+                  >
+                    {{ memberName(item.msg.senderId) }}
+                  </div>
 
-                <!-- 撤回 -->
-                <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">{{ t('message.recalled') }}</div>
+                  <!-- 撤回 -->
+                  <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">{{ t('message.recalled') }}</div>
 
-                <!-- 自定义类型：插件白名单渲染 -->
-                <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">
-                  <DeclarativeNodes v-if="isRenderedOk(item.msg)" :nodes="renderedNodes(item.msg)" />
-                  <span v-else class="text-placeholder">
-                    {{ t('message.unknownType', { type: item.msg.msgType }) }}
-                  </span>
-                </div>
+                  <!-- 自定义类型：插件白名单渲染 -->
+                  <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">
+                    <DeclarativeNodes v-if="isRenderedOk(item.msg)" :nodes="renderedNodes(item.msg)" />
+                    <span v-else class="text-placeholder">
+                      {{ t('message.unknownType', { type: item.msg.msgType }) }}
+                    </span>
+                  </div>
 
-                <!-- 普通文本 -->
-                <div v-else class="mc-msg__bubble" :class="{ pending: item.msg.pending, failed: item.msg.failed }">
-                  <span class="mc-msg__text">{{ item.msg.content }}</span>
-                  <span
-                    v-if="canRecall(item.msg)"
-                    class="mc-msg__recall"
-                    role="button"
-                    tabindex="0"
-                    :aria-label="t('message.recallAria')"
-                    @click="recall(item.msg)"
-                    @keydown.enter="recall(item.msg)"
-                  >{{ t('message.recall') }}</span>
-                  <span v-if="item.msg.failed" class="mc-msg__resend" @click="convStore.resend(item.msg)">
-                    {{ t('message.resend') }}
-                  </span>
-                </div>
+                  <!-- 普通文本 -->
+                  <div v-else class="mc-msg__bubble" :class="{ pending: item.msg.pending, failed: item.msg.failed }">
+                    <span class="mc-msg__text">{{ item.msg.content }}</span>
+                  </div>
 
-                <div class="mc-msg__meta text-placeholder num">
-                  <template v-if="senderOf(item.msg) && conv?.type === 1">
-                    {{ peerReadUpTo >= item.msg.id ? t('message.read') : t('message.unread') }} ·
-                  </template>
-                  {{ fmtTime(item.msg.createdAt) }}
+                  <div v-if="showMeta(item)" class="mc-msg__meta text-placeholder num">
+                    <button
+                      v-if="canRecall(item.msg)"
+                      type="button"
+                      class="mc-msg__action"
+                      :aria-label="t('message.recallAria')"
+                      @click="recall(item.msg)"
+                    >
+                      {{ t('message.recall') }}
+                    </button>
+                    <button
+                      v-if="item.msg.failed"
+                      type="button"
+                      class="mc-msg__action is-danger"
+                      @click="convStore.resend(item.msg)"
+                    >
+                      {{ t('message.resend') }}
+                    </button>
+                    <span v-if="showReadState(item.msg)">
+                      {{ peerReadUpTo >= item.msg.id ? t('message.read') : t('message.unread') }} ·
+                    </span>
+                    <span>{{ fmtTime(item.msg.createdAt) }}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </template>
-        </DynamicScrollerItem>
-      </template>
-    </DynamicScroller>
+            </template>
+          </DynamicScrollerItem>
+        </template>
+      </DynamicScroller>
 
-    <div v-if="typingNames.length" class="mc-msgpane__typing text-placeholder">
-      {{ t('message.typingOnly', { names: typingNames.join(', ') }) }}
+      <button
+        v-if="!stickToBottom"
+        type="button"
+        class="mc-msgpane__jump"
+        :aria-label="t('chat.scrollToLatest')"
+        :title="t('chat.scrollToLatest')"
+        @click="scrollToBottom"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 5v12m0 0 5-5m-5 5-5-5"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <div class="mc-msgpane__typing" aria-live="polite">
+      <span v-if="typingNames.length" class="text-placeholder">
+        {{ t('message.typingOnly', { names: typingNames.join(', ') }) }}
+      </span>
     </div>
 
     <MessageComposer v-if="conv" />
@@ -346,30 +494,61 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msgpane__header {
-  height: 56px;
+  height: 60px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  gap: 10px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
 }
 
+.mc-msgpane__avatar {
+  flex-shrink: 0;
+}
+
+.mc-msgpane__heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .mc-msgpane__title {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mc-msgpane__sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 400;
-  margin-left: 8px;
+  line-height: 1.3;
+}
+
+/* 在线状态点：只作为状态提示，不抢标题层级 */
+.mc-msgpane__presence {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--td-text-color-placeholder);
+}
+
+.mc-msgpane__presence.is-online {
+  background: var(--td-success-color, #2ba471);
 }
 
 /* 返回按钮：仅窄屏（单面板模式）显示 */
 .mc-msgpane__back {
   display: none;
-  margin-right: 4px;
+  margin-right: 2px;
 }
 
 @media (max-width: 768px) {
@@ -378,10 +557,18 @@ const senderAvatar = (m: Message) => {
   }
 }
 
+.mc-msgpane__stream {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .mc-msgpane__list {
   flex: 1;
   min-height: 0;
-  padding: 12px 16px;
+  padding: 8px 24px 12px;
 }
 
 .mc-msgpane__loading {
@@ -390,16 +577,37 @@ const senderAvatar = (m: Message) => {
   font-size: 12px;
 }
 
+/* 日期分隔：细线夹住日期，避免居中孤立的一行字 */
 .mc-msgpane__date {
-  text-align: center;
-  font-size: 12px;
-  padding: 10px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0 10px;
+  font-size: 11px;
+}
+
+.mc-msgpane__date::before,
+.mc-msgpane__date::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--mc-hairline);
 }
 
 .mc-msg {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  margin: 6px 0;
+}
+
+/* 连续消息缩短行距，换人时留出呼吸 */
+.mc-msg.group-start {
+  margin-top: 12px;
+}
+
+/* 同人连续消息不重复头像，用 40px 占位保持气泡对齐 */
+.mc-msg.repeat {
+  padding-left: 40px;
 }
 
 .mc-msg.mine {
@@ -407,7 +615,8 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msg__body {
-  max-width: 62%;
+  max-width: 64%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -418,20 +627,28 @@ const senderAvatar = (m: Message) => {
 
 .mc-msg__sender {
   font-size: 12px;
-  margin-bottom: 2px;
+  font-weight: 500;
+  color: var(--td-text-color-secondary);
+  margin: 0 0 3px 2px;
 }
 
 .mc-msg__bubble {
-  position: relative;
   background: var(--td-bg-color-container);
-  border-radius: 8px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
   padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.55;
   word-break: break-word;
   white-space: pre-wrap;
 }
 
 .mc-msg.mine .mc-msg__bubble {
   background: var(--td-brand-color);
+  border-color: transparent;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 4px;
   color: #fff;
 }
 
@@ -440,14 +657,15 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msg__bubble.failed {
-  outline: 1px solid var(--td-error-color);
+  border-color: var(--td-error-color);
 }
 
 .mc-msg__bubble.recalled {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
   background: transparent;
-  box-shadow: none;
+  border-color: transparent;
+  border-radius: 0;
   padding: 2px 0;
 }
 
@@ -459,56 +677,113 @@ const senderAvatar = (m: Message) => {
   user-select: text;
 }
 
-.mc-msg__recall,
-.mc-msg__resend {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 12px;
+/* 时间与操作合并到一条元信息行，悬停时才出现撤回 */
+.mc-msg__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  margin-top: 3px;
+  padding: 0 2px;
+  font-size: 11px;
+  user-select: none;
+}
+
+.mc-msg.mine .mc-msg__meta {
+  justify-content: flex-end;
+}
+
+.mc-msg__action {
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--td-text-color-placeholder);
+  font: inherit;
+  font-size: 11px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
-  user-select: none;
-  white-space: nowrap;
+  transition: opacity 0.15s ease-out;
 }
 
-.mc-msg__recall {
-  right: -46px;
-}
-
-.mc-msg.mine .mc-msg__recall {
-  left: -46px;
-  right: auto;
-}
-
-.mc-msg:hover .mc-msg__recall,
-.mc-msg:focus-within .mc-msg__recall {
+.mc-msg:hover .mc-msg__action,
+.mc-msg:focus-within .mc-msg__action {
   opacity: 1;
 }
 
-.mc-msg__recall:focus-visible {
-  opacity: 1;
-  outline: 1px solid var(--td-brand-color);
-  border-radius: 2px;
+.mc-msg__action:hover {
+  color: var(--td-text-color-primary);
 }
 
-.mc-msg__resend {
-  right: -52px;
+.mc-msg__action.is-danger {
   color: var(--td-error-color);
   opacity: 1;
 }
 
-.mc-msg__meta {
-  font-size: 11px;
-  margin-top: 2px;
-  user-select: none;
+.mc-msg__action:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--td-brand-color);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
+/* 回到底部：浮在消息流右下角，不遮挡输入区 */
+.mc-msgpane__jump {
+  position: absolute;
+  right: 24px;
+  bottom: 14px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--td-component-border);
+  border-radius: 50%;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+}
+
+.mc-msgpane__jump:hover {
+  color: var(--td-text-color-primary);
+  border-color: var(--td-brand-color);
+}
+
+.mc-msgpane__jump:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 2px;
+}
+
+/* 固定高度：有人输入时只替换文字，不推挤消息流 */
 .mc-msgpane__typing {
   height: 22px;
   flex-shrink: 0;
-  padding: 0 16px;
+  padding: 0 24px;
   font-size: 12px;
+  line-height: 22px;
+}
+
+@media (max-width: 768px) {
+  .mc-msgpane__header {
+    height: 56px;
+    padding: 0 12px;
+  }
+
+  .mc-msgpane__list {
+    padding: 6px 14px 10px;
+  }
+
+  .mc-msg__body {
+    max-width: 74%;
+  }
+
+  .mc-msgpane__typing {
+    padding: 0 14px;
+  }
+
+  .mc-msgpane__jump {
+    right: 14px;
+    bottom: 10px;
+  }
 }
 </style>
