@@ -27,6 +27,7 @@ web/.eslintcache
 *.crt
 *.p12
 .env.example
+
 # ===== 构建产物与二进制 =====
 *.exe
 *.dll
@@ -39,8 +40,8 @@ coverage/
 *.coverprofile
 *.prof
 .task3-patches/
-.mc-patches
-
+.mc-patches/
+.screenshots/
 
 # ===== 日志与临时文件 =====
 *.log
@@ -76,6 +77,7 @@ desktop.ini
 # ===== 运行时数据（如后续启用上传）=====
 uploads/
 data/
+server/logs/
 
 # ===== 协作提交锁（多 agent 并发提交时的互斥标记，勿入库）=====
 .mc-commit.lock/
