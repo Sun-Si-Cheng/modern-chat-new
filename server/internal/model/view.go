@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // UserBrief 对外用户摘要（搜索、成员、peer 等，不含 email）。
 type UserBrief struct {
@@ -50,4 +53,32 @@ type MemberView struct {
 	Role     string    `json:"role"` // owner | member
 	JoinedAt time.Time `json:"joinedAt"`
 	User     UserBrief `json:"user"`
+}
+
+// PluginView 插件响应体（permissions/allowedHosts 为数组）。
+type PluginView struct {
+	ID             uint      `json:"id"`
+	Name           string    `json:"name"`
+	Version        string    `json:"version"`
+	Description    string    `json:"description"`
+	Permissions    []string  `json:"permissions"`
+	AllowedHosts   []string  `json:"allowedHosts"`
+	Enabled        bool      `json:"enabled"`
+	GlobalDisabled bool      `json:"globalDisabled"`
+	InstalledBy    uint      `json:"installedBy"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+// View 从 Plugin 组装响应体；JSON 字段解析失败时给空数组。
+func (p *Plugin) View() PluginView {
+	v := PluginView{
+		ID: p.ID, Name: p.Name, Version: p.Version, Description: p.Description,
+		Enabled: p.Enabled, GlobalDisabled: p.GlobalDisabled, InstalledBy: p.InstalledBy,
+		CreatedAt: p.CreatedAt,
+		Permissions:   []string{},
+		AllowedHosts:  []string{},
+	}
+	_ = json.Unmarshal([]byte(p.Permissions), &v.Permissions)
+	_ = json.Unmarshal([]byte(p.AllowedHosts), &v.AllowedHosts)
+	return v
 }

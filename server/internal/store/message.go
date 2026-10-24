@@ -82,10 +82,18 @@ func (s *MessageStore) BumpUnread(convID, senderID uint, msgID uint64) error {
 }
 
 // MarkRead 上报已读：清未读、推进 last_read_message_id（只前进不后退）。
-func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) error {
-	return s.db.Model(&model.UserConversation{}).
+// 返回受影响行数（0 表示重复上报，无需广播）。
+func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) (int64, error) {
+	res := s.db.Model(&model.UserConversation{}).
 		Where("user_id = ? AND conversation_id = ? AND last_read_message_id < ?", userID, convID, upToID).
-		Updates(map[string]any{"unread_count": 0, "last_read_message_id": upToID}).Error
+		Updates(map[string]any{"unread_count": 0, "last_read_message_id": upToID})
+	return res.RowsAffected, res.Error
+}
+
+// RemoveInbox 删除成员的收件箱行（退群 / 被踢）。
+func (s *MessageStore) RemoveInbox(userID, convID uint) error {
+	return s.db.Where("user_id = ? AND conversation_id = ?", userID, convID).
+		Delete(&model.UserConversation{}).Error
 }
 
 // RecallUnreadAdjust 撤回未读消息时回退未读（仅未读到该消息的人）。

@@ -1,0 +1,261 @@
+package ws
+
+import (
+	"encoding/json"
+	"log/slog"
+	"time"
+	"unicode/utf8"
+
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+)
+
+// 上行帧（§7）：宽松解析，按 type 路由。
+type clientFrame struct {
+	Type        string `json:"type"`
+	ConvID      uint   `json:"convId"`
+	ClientMsgID string `json:"clientMsgId"`
+	Content     string `json:"content"`
+	MsgType     string `json:"msgType"`
+	UpToID      uint64 `json:"upToId"`
+	MessageID   uint64 `json:"messageId"`
+}
+
+// Dispatch 上行帧路由：非成员一律 error 帧。
+func (h *Hub) Dispatch(c *Client, data []byte) {
+	var f clientFrame
+	if err := json.Unmarshal(data, &f); err != nil {
+		h.sendError(c, "帧格式错误")
+		return
+	}
+	switch f.Type {
+	case "ping":
+		c.trySend(mustJSON(ginH{"type": "pong"}))
+	case "chat":
+		h.handleChat(c, &f)
+	case "typing":
+		h.handleTyping(c, &f)
+	case "read":
+		h.handleRead(c, &f)
+	case "recall":
+		h.handleRecall(c, &f)
+	default:
+		h.sendError(c, "未知帧类型")
+	}
+}
+
+// handleChat 发消息链路（§9.1）。
+func (h *Hub) handleChat(c *Client, f *clientFrame) {
+	if h.deps == nil {
+		return
+	}
+	// 限流：每用户 20 条/分
+	if !h.deps.MsgLimiter.Allow(ukey(c.UserID)) {
+		h.sendError(c, "操作过于频繁，请稍后再试")
+		return
+	}
+	if !h.requireMember(c, f.ConvID) {
+		return
+	}
+	content := []rune(f.Content)
+	if len(content) < 1 || len(content) > 1000 {
+		h.sendError(c, "消息需为 1-1000 个字符")
+		return
+	}
+	if f.ClientMsgID == "" || len(f.ClientMsgID) > 36 {
+		h.sendError(c, "clientMsgId 不合法")
+		return
+	}
+	msgType := f.MsgType
+	if msgType == "" {
+		msgType = "text"
+	}
+	if l := len(msgType); l > 32 || !isSafeMsgType(msgType) {
+		h.sendError(c, "msgType 不合法")
+		return
+	}
+
+	// 幂等：同 client_msg_id 直接回放原消息
+	if existing, err := h.deps.Messages.ByClientMsg(f.ConvID, f.ClientMsgID); err != nil {
+		slog.Error("ws idempotent lookup", "err", err.Error())
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	} else if existing != nil {
+		c.trySend(mustJSON(messageFrame(existing, f.ClientMsgID)))
+		return
+	}
+
+	msg := &model.Message{
+		ConversationID: f.ConvID,
+		SenderID:       c.UserID,
+		ClientMsgID:    f.ClientMsgID,
+		MsgType:        msgType,
+		Content:        string(content),
+		CreatedAt:      time.Now(),
+	}
+	if err := h.deps.Messages.Create(msg); err != nil {
+		slog.Error("ws create message", "err", err.Error())
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+
+	// 收件箱冗余：全员 last=新消息；新成员行在此首次创建
+	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	if err != nil {
+		slog.Error("ws members", "err", err.Error())
+		return
+	}
+	rows := make([]model.UserConversation, 0, len(memberIDs))
+	for _, uid := range memberIDs {
+		rows = append(rows, model.UserConversation{
+			UserID:         uid,
+			ConversationID: f.ConvID,
+			LastMessageID:  msgIDPtr(uint64(msg.ID)),
+			LastMessageAt:  &msg.CreatedAt,
+		})
+	}
+	if err := h.deps.Messages.UpsertInbox(rows); err != nil {
+		slog.Error("ws upsert inbox", "err", err.Error())
+	}
+	if err := h.deps.Messages.BumpUnread(f.ConvID, c.UserID, uint64(msg.ID)); err != nil {
+		slog.Error("ws bump unread", "err", err.Error())
+	}
+
+	// fan-out：message 帧；非发送者额外 conv_change
+	mf := messageFrame(msg, f.ClientMsgID)
+	others := withoutID(memberIDs, c.UserID)
+	h.ToUsers(memberIDs, mf)
+	h.ToUsers(others, ginH{"type": "conv_change", "convId": f.ConvID})
+}
+
+// handleTyping 转发正在输入（不落库）。
+func (h *Hub) handleTyping(c *Client, f *clientFrame) {
+	if !h.requireMember(c, f.ConvID) {
+		return
+	}
+	ids, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	if err != nil {
+		return
+	}
+	h.ToUsers(withoutID(ids, c.UserID), ginH{"type": "typing", "convId": f.ConvID, "userId": c.UserID})
+}
+
+// handleRead 已读上报。
+func (h *Hub) handleRead(c *Client, f *clientFrame) {
+	if f.UpToID == 0 || !h.requireMember(c, f.ConvID) {
+		return
+	}
+	affected, err := h.deps.Messages.MarkRead(c.UserID, f.ConvID, f.UpToID)
+	if err != nil {
+		slog.Error("ws mark read", "err", err.Error())
+		return
+	}
+	if affected == 0 {
+		return
+	}
+	ids, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	if err != nil {
+		return
+	}
+	h.ToUsers(withoutID(ids, c.UserID), ginH{
+		"type": "read", "convId": f.ConvID, "userId": c.UserID, "upToId": f.UpToID,
+	})
+}
+
+// handleRecall 撤回：本人 + 2 分钟内；未读接收者回退。
+func (h *Hub) handleRecall(c *Client, f *clientFrame) {
+	if f.MessageID == 0 {
+		return
+	}
+	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	if err != nil || msg == nil || msg.SenderID != c.UserID {
+		return
+	}
+	if time.Since(msg.CreatedAt) > 2*time.Minute {
+		h.sendError(c, "超过 2 分钟，无法撤回")
+		return
+	}
+	if err := h.deps.Messages.MarkRecalled(msg.ID); err != nil {
+		slog.Error("ws recall", "err", err.Error())
+		return
+	}
+	if err := h.deps.Messages.RecallUnreadAdjust(msg.ConversationID, c.UserID, uint64(msg.ID)); err != nil {
+		slog.Error("ws recall unread adjust", "err", err.Error())
+	}
+	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	if err != nil {
+		return
+	}
+	h.ToUsers(ids, ginH{"type": "recall", "messageId": msg.ID, "convId": msg.ConversationID})
+}
+
+// requireMember 上行帧的会话成员校验。
+func (h *Hub) requireMember(c *Client, convID uint) bool {
+	if convID == 0 || h.deps == nil {
+		return false
+	}
+	m, err := h.deps.Convs.MemberOf(convID, c.UserID)
+	if err != nil || m == nil {
+		h.sendError(c, "无权访问该会话")
+		return false
+	}
+	return true
+}
+
+func (h *Hub) sendError(c *Client, reason string) {
+	c.trySend(mustJSON(ginH{"type": "error", "reason": reason}))
+}
+
+func messageFrame(m *model.Message, clientMsgID string) ginH {
+	frame := ginH{
+		"type":     "message",
+		"id":       m.ID,
+		"convId":   m.ConversationID,
+		"from":     ginH{"id": m.SenderID},
+		"content":  m.Content,
+		"msgType":  m.MsgType,
+		"createdAt": m.CreatedAt,
+	}
+	if clientMsgID != "" {
+		frame["clientMsgId"] = clientMsgID
+	}
+	return frame
+}
+
+func isSafeMsgType(s string) bool {
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		ok := b == '-' || b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z')
+		if !ok {
+			return false
+		}
+	}
+	return utf8.RuneCountInString(s) > 0
+}
+
+func msgIDPtr(id uint64) *uint64 { return &id }
+
+func withoutID(ids []uint, exclude uint) []uint {
+	out := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if id != exclude {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func ukey(uid uint) string {
+	// 稳定字符串 key（避免 rune 转换歧义）
+	const digits = "0123456789"
+	if uid == 0 {
+		return "u0"
+	}
+	buf := [20]byte{}
+	i := len(buf)
+	for uid > 0 {
+		i--
+		buf[i] = digits[uid%10]
+		uid /= 10
+	}
+	return "u" + string(buf[i:])
+}

@@ -71,6 +71,13 @@ func (s *UserStore) Search(kw string, limit int) ([]model.UserBrief, error) {
 	return rows, err
 }
 
+// List 分页用户列表（站长后台）。
+func (s *UserStore) List(page, pageSize int) ([]model.User, error) {
+	var rows []model.User
+	err := s.db.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error
+	return rows, err
+}
+
 // BumpTokenVersion token_version+1：旧 JWT 全部失效。
 func (s *UserStore) BumpTokenVersion(id uint) error {
 	return s.db.Model(&model.User{}).Where("id = ?", id).

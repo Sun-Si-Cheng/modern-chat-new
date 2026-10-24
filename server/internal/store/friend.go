@@ -25,6 +25,16 @@ func (s *FriendStore) Between(a, b uint) ([]model.Friend, error) {
 	return rows, err
 }
 
+// PendingBetween 两人之间指定状态的记录（含双向）。
+func (s *FriendStore) PendingBetween(a, b uint, status int8) ([]model.Friend, error) {
+	var rows []model.Friend
+	err := s.db.Where(
+		"status = ? AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))",
+		status, a, b, b, a,
+	).Find(&rows).Error
+	return rows, err
+}
+
 func (s *FriendStore) ByID(id uint) (*model.Friend, error) {
 	var f model.Friend
 	err := s.db.First(&f, id).Error
@@ -111,6 +121,17 @@ func (s *FriendStore) list(userID uint, status int8, _ bool) ([]model.FriendItem
 		})
 	}
 	return out, nil
+}
+
+// FriendIDs 我的好友 id 集合（status=1，双向去重）。
+func (s *FriendStore) FriendIDs(userID uint) ([]uint, error) {
+	var ids []uint
+	err := s.db.Raw(
+		"SELECT friend_id FROM friends WHERE status = 1 AND user_id = ? "+
+			"UNION "+
+			"SELECT user_id FROM friends WHERE status = 1 AND friend_id = ?",
+		userID, userID).Scan(&ids).Error
+	return ids, err
 }
 
 // briefs 批量取用户摘要 -> map[id]。
