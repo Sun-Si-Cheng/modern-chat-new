@@ -6,6 +6,9 @@
 cover
 cover.out
 .env
+.env.example
+.env.local
+.env.development.local
 
 # 证书与密钥（如未来引入 TLS）
 *.pem
