@@ -293,6 +293,7 @@ export default {
     languageZh: '简体中文',
     languageEn: 'English',
     sceneTitle: 'Sign-in background',
+    sceneHint: 'Affects only the sign-in and password-reset background; the chat UI is unchanged.',
     loginRequired: 'Sign in to edit your display name and email',
   },
   legal: {
