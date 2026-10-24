@@ -42,8 +42,30 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `FRONTEND_URL` | 前端来源，逗号分隔；用于 WS Origin 白名单与找回密码链接 |
 | `MIGRATE` | `true` 走 `migrations/` 版本化 SQL（生产）；`false` 用 AutoMigrate（开发） |
 | `PLUGIN_MAX_SIZE` | 插件文件上限，默认 1MB |
+| `LOG_DIR` | 日志目录，默认 `logs`（相对运行目录）；留空则只输出 stdout |
+| `LOG_RETAIN_DAYS` | 日志保留天数，默认 **15**；超期文件自动删除 |
 | `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` | 可选。配置后限流走 Redis 共享配额（支持多实例）；**连接失败自动降级为内存限流并打 WARN 日志**，不影响启动 |
 | `SMTP_*` | 可选；留空时找回密码链接打印到日志 |
+
+## 日志
+
+- **双通道**：同时写 stdout（容器/服务管理器）与 `logs/app-YYYYMMDD.log`（按天自动切换，追加写入）。
+- **自动清理**：启动时清理一次，之后每小时检查；只删除本目录内 `app-*.log` 且日期超过 `LOG_RETAIN_DAYS`（默认 15 天）的文件，不会误删其他内容。
+- **级别约定**：
+  - `info`：业务动作（注册、登录成功、好友关系变更、会话创建/加入/退出/转让、插件安装/升级/启停/卸载、消息撤回）
+  - `warn`：安全与异常信号（登录失败、封禁、限流命中、WS Origin 拒绝、WS 鉴权失败、Redis 降级、慢请求 >500ms、4xx 请求）
+  - `error`：服务端故障（5xx 请求、数据库写失败）
+  - `debug`：消息落库元数据（conv/msg/sender/字数）
+- **隐私边界**：不记录密码、令牌、消息正文；登录失败只记用户名与 IP。
+- 排查示例：
+
+```bash
+# 看某个用户当天做了什么
+grep '"uid":42' logs/app-$(date +%Y%m%d).log | jq -r '.msg + " " + (.path // "")'
+
+# 看限流/安全事件
+grep -E '"level":"WARN"' logs/app-*.log | jq -r 'select(.msg=="rate limited") | .key'
+```
 
 启动时会读取同目录的 `.env`（已被 gitignore）；同名环境变量优先于 `.env`。
 启动日志会明确输出当前限流后端：`rate limiting backed by redis` 或 `redis unavailable, falling back to in-memory limiter`。

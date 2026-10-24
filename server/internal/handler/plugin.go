@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -89,7 +90,7 @@ func (h *PluginHandler) Upload(c *gin.Context) {
 		fail(c, http.StatusRequestEntityTooLarge, "插件文件超过 1MB")
 		return
 	}
-	h.createFromCode(c, string(body))
+	h.createFromCode(c, string(body), "upload")
 }
 
 // FromURL URL 安装（服务端拉取前执行 SSRF 防护）。
@@ -109,10 +110,10 @@ func (h *PluginHandler) FromURL(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "插件拉取失败")
 		return
 	}
-	h.createFromCode(c, code)
+	h.createFromCode(c, code, "url")
 }
 
-func (h *PluginHandler) createFromCode(c *gin.Context, code string) {
+func (h *PluginHandler) createFromCode(c *gin.Context, code string, source string) {
 	m, err := plugin.Parse(code)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -136,6 +137,8 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string) {
 			internal(c, err)
 			return
 		}
+		slog.Info("plugin updated",
+			"uid", me, "plugin", existing.ID, "name", m.Name, "version", m.Version, "source", source)
 		c.Header("X-Plugin-Updated", "true")
 		c.JSON(http.StatusOK, existing.View())
 		return
@@ -155,6 +158,9 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string) {
 		internal(c, err)
 		return
 	}
+	slog.Info("plugin installed",
+		"uid", me, "plugin", p.ID, "name", p.Name, "version", p.Version,
+		"perms", len(m.Permissions), "hosts", len(m.AllowedHosts), "source", source)
 	c.JSON(http.StatusOK, p.View())
 }
 
@@ -190,6 +196,7 @@ func (h *PluginHandler) SetEnabled(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("plugin toggled", "uid", me.ID, "plugin", p.ID, "name", p.Name, "enabled", p.Enabled)
 	c.JSON(http.StatusOK, p.View())
 }
 
@@ -205,5 +212,6 @@ func (h *PluginHandler) Remove(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("plugin uninstalled", "uid", me.ID, "plugin", id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

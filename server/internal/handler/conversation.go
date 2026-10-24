@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -110,6 +111,7 @@ func (h *ConversationHandler) CreateSingle(c *gin.Context) {
 	}
 	// 通知对方刷新列表
 	notifyFor(c).ToUsers([]uint{target.ID}, gin.H{"type": "conv_change", "convId": conv.ID})
+	slog.Info("conversation created", "type", "single", "conv", conv.ID, "a", me.ID, "b", target.ID)
 	c.JSON(http.StatusOK, h.buildSingleView(conv, target, me.ID))
 }
 
@@ -143,6 +145,7 @@ func (h *ConversationHandler) CreateGroup(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("conversation created", "type", "group", "conv", conv.ID, "owner", me.ID, "name", name)
 	c.JSON(http.StatusOK, model.ConversationView{
 		ID: conv.ID, Type: conv.Type, Name: conv.Name, OwnerID: conv.OwnerID, MemberCount: 1,
 	})
@@ -239,6 +242,7 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 		return
 	}
 	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	slog.Info("conversation joined", "conv", convID, "uid", me.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -272,6 +276,7 @@ func (h *ConversationHandler) Leave(c *gin.Context) {
 		return
 	}
 	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	slog.Info("conversation left", "conv", convID, "uid", me.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -333,6 +338,7 @@ func (h *ConversationHandler) Rename(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("conversation renamed", "conv", convID, "by", me.ID, "name", name)
 	ids, err := h.convs.MemberUserIDs(convID)
 	if err != nil {
 		internal(c, err)
@@ -378,6 +384,7 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("member kicked", "conv", convID, "target", req.UserID, "by", me.ID)
 	notifyFor(c).ToUsers(append(ids, req.UserID), gin.H{"type": "conv_change", "convId": convID})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -413,6 +420,7 @@ func (h *ConversationHandler) Transfer(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("conversation owner transferred", "conv", convID, "from", me.ID, "to", req.UserID)
 	ids, err := h.convs.MemberUserIDs(convID)
 	if err != nil {
 		internal(c, err)

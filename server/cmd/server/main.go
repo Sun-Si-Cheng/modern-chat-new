@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/logx"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/router"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
@@ -31,7 +33,11 @@ func main() {
 		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
-	setupLogger(cfg.LogLevel)
+	logCloser, err := setupLogger(cfg)
+	if err != nil {
+		slog.Error("logger init", "err", err)
+		os.Exit(1)
+	}
 	gin.SetMode(cfg.GinMode)
 
 	// 数据库（重试连接）
@@ -121,11 +127,12 @@ func main() {
 	}
 	store.Close(db)
 	slog.Info("bye")
+	_ = logCloser.Close()
 }
 
-func setupLogger(level string) {
+func setupLogger(cfg config.Config) (io.Closer, error) {
 	var lv slog.Level
-	switch level {
+	switch cfg.LogLevel {
 	case "debug":
 		lv = slog.LevelDebug
 	case "warn":
@@ -135,5 +142,5 @@ func setupLogger(level string) {
 	default:
 		lv = slog.LevelInfo
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lv})))
+	return logx.Setup(lv, cfg.LogDir, cfg.LogRetainDays)
 }

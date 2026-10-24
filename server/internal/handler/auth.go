@@ -129,10 +129,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		// 登录失败是安全审计要点（撞库/暴力破解的早期信号），只记用户名与来源，不记密码
+		slog.Warn("login failed", "username", req.Username, "ip", c.ClientIP())
 		fail(c, http.StatusBadRequest, "用户名或密码错误")
 		return
 	}
 	if u.IsBanned() {
+		slog.Warn("login rejected: banned", "uid", u.ID, "username", u.Username, "ip", c.ClientIP())
 		msg := "账号已被封禁"
 		if u.BanReason != nil && *u.BanReason != "" {
 			msg += "：" + *u.BanReason

@@ -60,7 +60,15 @@ func (l *LimiterStore) Allow(key string) bool {
 // RateLimit REST 限流中间件；keyFn 决定按 IP 还是按用户。
 func RateLimit(l Limiter, keyFn func(c *gin.Context) string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !l.Allow(keyFn(c)) {
+		key := keyFn(c)
+		if !l.Allow(key) {
+			// 限流命中是安全事件（撞库/刷接口的早期信号），单独记 warn
+			slog.Warn("rate limited",
+				"key", key,
+				"method", c.Request.Method,
+				"path", c.FullPath(),
+				"ip", c.ClientIP(),
+			)
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "操作过于频繁，请稍后再试"})
 			return
 		}

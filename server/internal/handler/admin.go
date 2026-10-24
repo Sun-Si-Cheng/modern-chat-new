@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/rand"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
@@ -99,6 +101,10 @@ func (h *AdminHandler) Ban(c *gin.Context) {
 		return
 	}
 	notifyFor(c).ToUsers([]uint{u.ID}, gin.H{"type": "kicked", "reason": "账号已被封禁"})
+	slog.Warn("user banned",
+		"target", u.ID, "username", u.Username,
+		"days", req.Days, "until", until.Format(time.RFC3339), "reason", req.Reason,
+		"by", middleware.UserFrom(c).ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -123,6 +129,7 @@ func (h *AdminHandler) Unban(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("user unbanned", "target", u.ID, "username", u.Username, "by", middleware.UserFrom(c).ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -154,6 +161,8 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 	notifyFor(c).ToUsers([]uint{u.ID}, gin.H{"type": "kicked", "reason": "密码已被站长重置"})
+	slog.Warn("user password reset by admin",
+		"target", u.ID, "username", u.Username, "by", middleware.UserFrom(c).ID)
 	c.JSON(http.StatusOK, gin.H{"newPassword": pwd})
 }
 
@@ -202,6 +211,9 @@ func (h *AdminHandler) SetPluginGlobalDisabled(c *gin.Context) {
 		fail(c, http.StatusNotFound, "插件不存在")
 		return
 	}
+	slog.Warn("plugin globally toggled",
+		"name", req.Name, "disabled", req.Disabled, "affected", affected,
+		"by", middleware.UserFrom(c).ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "affected": affected})
 }
 

@@ -18,6 +18,8 @@ type Config struct {
 	Migrate       bool
 	PluginMaxSize int64
 	FrontendURLs  []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
+	LogDir        string   // 日志目录；留空则只输出 stdout
+	LogRetainDays int      // 日志保留天数（默认 15）
 	Redis         RedisConfig
 	SMTP          SMTPConfig
 }
@@ -51,6 +53,8 @@ func Load() (Config, error) {
 		LogLevel:      getv("LOG_LEVEL", "info"),
 		Migrate:       getv("MIGRATE", "false") == "true",
 		PluginMaxSize: geti("PLUGIN_MAX_SIZE", 1<<20),
+		LogDir:        getv("LOG_DIR", "logs"),
+		LogRetainDays: int(geti("LOG_RETAIN_DAYS", 15)),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),

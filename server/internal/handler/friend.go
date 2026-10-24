@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -106,6 +107,7 @@ func (h *FriendHandler) Apply(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("friend request sent", "from", me.ID, "to", target.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -136,6 +138,7 @@ func (h *FriendHandler) Handle(c *gin.Context) {
 			internal(c, err)
 			return
 		}
+		slog.Info("friend request rejected", "from", f.UserID, "by", me.ID)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -151,6 +154,7 @@ func (h *FriendHandler) Handle(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("friend request accepted", "from", f.UserID, "by", me.ID)
 
 	// 双方各自若无单聊则保持未创建（首次发消息/点开时由前端 createSingle 幂等创建）
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -172,5 +176,6 @@ func (h *FriendHandler) Remove(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	slog.Info("friend removed", "user", me.ID, "friend", friendID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

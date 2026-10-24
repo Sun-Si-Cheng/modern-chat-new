@@ -39,6 +39,7 @@ func upgraderFor(allowed []string) websocket.Upgrader {
 					return true
 				}
 			}
+			slog.Warn("ws origin rejected", "origin", origin, "remote", r.RemoteAddr)
 			return false
 		},
 	}
@@ -53,15 +54,18 @@ func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *
 	}
 	cl, err := middleware.ParseToken(token, secret)
 	if err != nil {
+		slog.Warn("ws handshake rejected: bad token", "remote", r.RemoteAddr)
 		http.Error(w, `{"error":"登录已失效，请重新登录"}`, http.StatusUnauthorized)
 		return
 	}
 	u, err := users.ByID(cl.UID)
 	if err != nil || u == nil || u.TokenVersion != cl.TV {
+		slog.Warn("ws handshake rejected: stale token", "uid", cl.UID, "remote", r.RemoteAddr)
 		http.Error(w, `{"error":"登录已失效，请重新登录"}`, http.StatusUnauthorized)
 		return
 	}
 	if u.IsBanned() {
+		slog.Warn("ws handshake rejected: banned", "uid", u.ID, "remote", r.RemoteAddr)
 		http.Error(w, `{"error":"账号已被封禁"}`, http.StatusForbidden)
 		return
 	}
