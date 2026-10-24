@@ -23,7 +23,7 @@ type Deps struct {
 	Convs      *store.ConversationStore
 	Messages   *store.MessageStore
 	Friends    *store.FriendStore
-	MsgLimiter *middleware.LimiterStore // 每用户 20 条/分
+	MsgLimiter middleware.Limiter // 每用户 20 条/分（内存或 Redis）
 }
 
 // Hub 在线连接注册表（按用户分片锁）。

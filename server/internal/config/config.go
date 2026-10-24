@@ -18,8 +18,19 @@ type Config struct {
 	Migrate       bool
 	PluginMaxSize int64
 	FrontendURLs  []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
+	Redis         RedisConfig
 	SMTP          SMTPConfig
 }
+
+// RedisConfig 可选：配置后限流使用 Redis 共享配额，连接失败自动降级为内存。
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
+// Enabled 是否配置了 Redis（Addr 为空即禁用）。
+func (r RedisConfig) Enabled() bool { return r.Addr != "" }
 
 // SMTPConfig 找回密码邮件发送；为空时打日志（开发期）。
 type SMTPConfig struct {
@@ -40,6 +51,11 @@ func Load() (Config, error) {
 		LogLevel:      getv("LOG_LEVEL", "info"),
 		Migrate:       getv("MIGRATE", "false") == "true",
 		PluginMaxSize: geti("PLUGIN_MAX_SIZE", 1<<20),
+		Redis: RedisConfig{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       int(geti("REDIS_DB", 0)),
+		},
 		SMTP: SMTPConfig{
 			Host: os.Getenv("SMTP_HOST"),
 			Port: getv("SMTP_PORT", "587"),
