@@ -255,3 +255,9 @@ Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
 
 - 远端：<https://gitee.com/Sun-Si-Cheng/modern-chat-new>（分支 `master`）
 - 提交约定：每完成一个模块 `git add -A` → commit → push
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 授权，Copyright 2026 Sun-Si-Cheng。
+
+在遵守许可证的前提下可自由使用、修改与分发（含商业用途）；再分发时需保留版权与许可声明，修改过的文件需注明变更。完整条款见 [LICENSE](LICENSE)。

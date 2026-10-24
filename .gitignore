@@ -1,24 +1,75 @@
-# 后端
+# ===== 后端（Go / server）=====
 server/modernchat
+server/modernchat-server
 server/*.exe
-server/.env
+server/*.test
+server/cover
+server/cover.out
+server/*.out
+bin/
+*.test
 
-# 前端
+# ===== 前端（Vue / web）=====
 node_modules/
 web/dist/
+dist/
 web/.env.local
+web/.env.*.local
+web/.eslintcache
+.vite/
 
-# dsh
-.dsh/
+# ===== 环境变量与密钥（保留示例文件）=====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
 
-#skill
-.taste-skill/
-before/
-# 编辑器/系统
+# ===== 构建产物与二进制 =====
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# ===== 测试与覆盖率 =====
+coverage/
+*.coverprofile
+*.prof
+
+# ===== 日志与临时文件 =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# ===== 编辑器 / IDE =====
 .idea/
 .vscode/
-.DS_Store
-Thumbs.db
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
-# 日志
-*.log
+# ===== 操作系统 =====
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# ===== 工具工作区（本地技能 / 设计检查产物）=====
+.dsh/
+.taste-skill/
+
+# ===== 运行时数据（如后续启用上传）=====
+uploads/
+data/
