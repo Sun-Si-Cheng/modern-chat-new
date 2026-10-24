@@ -18,7 +18,7 @@ export const authApi = {
   login: (body: { username: string; password: string }) => http.post<AuthPayload>('/auth/login', body),
   forgot: (body: { email: string }) => http.post<{ ok: true }>('/auth/forgot', body),
   reset: (body: { token: string; newPassword: string }) =>
-    http.post<{ ok: true }>('/auth/reset', { token: body.token, new_password: body.newPassword }),
+    http.post<{ ok: true }>('/auth/reset', { token: body.token, newPassword: body.newPassword }),
   me: () => http.get<User>('/me'),
   updateMe: (body: { nickname?: string; email?: string }) => http.patch<User>('/me', body),
 }
@@ -89,7 +89,7 @@ export const pluginApi = {
     }).then(async (res) => {
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
       if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : '上传失败')
-      return data.plugin as Plugin
+      return data as unknown as Plugin
     })
   },
   fromUrl: (url: string) => http.post<Plugin>('/plugins/from-url', { url }),
