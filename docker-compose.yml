@@ -1,0 +1,62 @@
+# ModernChat 本地一键环境（MySQL + 后端）
+#
+#   docker compose up -d --build     # 起 MySQL 与后端（:8080）
+#   cd web && npm run dev            # 前端 :5173（代理到 8080）
+#
+# 说明：
+# - 首次启动 MIGRATE=true 会执行 server/migrations 建表
+# - JWT_SECRET 请换成自己的随机串（openssl rand -hex 32）
+# - 前端已构建时，可把 web/dist 挂到 nginx 容器，见文末注释
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: modernchat-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: modernchat
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build: ./server
+    container_name: modernchat-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      GIN_MODE: release
+      DB_DSN: "root:root@tcp(mysql:3306)/modernchat?charset=utf8mb4&parseTime=True&loc=Local"
+      JWT_SECRET: "dev-only-secret-please-change-32-bytes-min"
+      LOG_LEVEL: info
+      MIGRATE: "true"
+      FRONTEND_URL: "http://localhost:5173"
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:
+
+# 若要把已构建的前端也放进容器（cd web && npm run build 后）：
+#
+#  web:
+#    image: nginx:alpine
+#    volumes:
+#      - ./web/dist:/usr/share/nginx/html:ro
+#      - ./deploy/nginx.compose.conf:/etc/nginx/conf.d/default.conf:ro
+#    ports: ["80:80"]
+#    depends_on: [server]

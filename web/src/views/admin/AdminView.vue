@@ -7,22 +7,31 @@ import {
   Input as TInput,
   InputNumber as TInputNumber,
   MessagePlugin,
+  TabPanel as TTabPanel,
+  Tabs as TTabss,
   Table as TTable,
   Tag as TTag,
 } from 'tdesign-vue-next'
 import type { TableRowData, TableProps } from 'tdesign-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
-import { adminApi, type AdminUserRow } from '@/api'
+import { adminApi, type AdminPluginRow, type AdminUserRow } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
 
+const tab = ref<'users' | 'plugins'>('users')
+
 const loading = ref(false)
 const users = ref<AdminUserRow[]>([])
 const total = ref(0)
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
+
+// ---- 插件聚合管理 ----
+const pluginsLoading = ref(false)
+const plugins = ref<AdminPluginRow[]>([])
+const pluginPagination = ref({ current: 1, pageSize: 20, total: 0 })
 
 onMounted(() => {
   if (auth.user?.role !== 'admin') {
@@ -30,7 +39,48 @@ onMounted(() => {
     return
   }
   void fetchUsers()
+  void fetchPlugins()
 })
+
+async function fetchPlugins() {
+  pluginsLoading.value = true
+  try {
+    const page = await adminApi.plugins(pluginPagination.value.current, pluginPagination.value.pageSize)
+    plugins.value = page.plugins
+    pluginPagination.value.total = page.total
+  } catch (e) {
+    void MessagePlugin.error((e as Error).message)
+  } finally {
+    pluginsLoading.value = false
+  }
+}
+
+function onPluginPageChange(info: { current: number; pageSize: number }) {
+  pluginPagination.value.current = info.current
+  pluginPagination.value.pageSize = info.pageSize
+  void fetchPlugins()
+}
+
+async function toggleGlobalDisabled(row: AdminPluginRow) {
+  const next = !row.globalDisabled
+  const dialog = DialogPlugin.confirm({
+    header: next ? '全局下架插件' : '恢复插件',
+    body: next
+      ? `下架「${row.name}」后，所有用户的该插件将立即停用（${row.installCount} 份安装记录受影响）。`
+      : `恢复「${row.name}」后，用户可自行重新启用。`,
+    confirmBtn: next ? { content: '下架', theme: 'danger' } : '恢复',
+    onConfirm: async () => {
+      try {
+        const r = await adminApi.setPluginGlobalDisabled(row.name, next)
+        void MessagePlugin.success(next ? `已下架（影响 ${r.affected} 份安装）` : '已恢复')
+        await fetchPlugins()
+      } catch (e) {
+        void MessagePlugin.error((e as Error).message)
+      }
+      dialog.destroy()
+    },
+  })
+}
 
 async function fetchUsers() {
   loading.value = true
@@ -115,6 +165,15 @@ const columns: TableProps['columns'] = [
   { colKey: 'status', title: '状态', width: 160 },
   { colKey: 'ops', title: '操作', width: 220 },
 ]
+
+const pluginColumns: TableProps['columns'] = [
+  { colKey: 'name', title: '插件', width: 220 },
+  { colKey: 'version', title: '版本', width: 100 },
+  { colKey: 'installCount', title: '安装数', width: 100 },
+  { colKey: 'enabledCount', title: '启用数', width: 100 },
+  { colKey: 'globalStatus', title: '全局状态', width: 120 },
+  { colKey: 'ops', title: '操作', width: 120 },
+]
 </script>
 
 <template>
@@ -124,40 +183,77 @@ const columns: TableProps['columns'] = [
       <TButton variant="text" @click="router.push('/chat')">返回聊天</TButton>
     </header>
 
-    <TTable
-      row-key="id"
-      :data="users"
-      :columns="columns"
-      :loading="loading"
-      :pagination="{ ...pagination, total }"
-      @page-change="onPageChange"
-    >
-      <template #user="{ row }">
-        <div class="mc-admin__user">
-          <AvatarBadge :name="row.nickname" :color="row.avatarColor" :size="30" />
-          <span>{{ row.nickname }}</span>
-        </div>
-      </template>
+    <TTabss v-model="tab" class="mc-admin__tabs">
+      <TTabPanel value="users" label="用户">
+        <TTable
+          row-key="id"
+          :data="users"
+          :columns="columns"
+          :loading="loading"
+          :pagination="{ ...pagination, total }"
+          @page-change="onPageChange"
+        >
+          <template #user="{ row }">
+            <div class="mc-admin__user">
+              <AvatarBadge :name="row.nickname" :color="row.avatarColor" :size="30" />
+              <span>{{ row.nickname }}</span>
+            </div>
+          </template>
 
-      <template #role="{ row }">
-        {{ row.role === 'admin' ? '站长' : '用户' }}
-      </template>
+          <template #role="{ row }">
+            {{ row.role === 'admin' ? '站长' : '用户' }}
+          </template>
 
-      <template #status="{ row }">
-        <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
-          已封禁{{ row.banReason ? `：${row.banReason}` : '' }}
-        </TTag>
-        <TTag v-else theme="success" variant="light" size="small">正常</TTag>
-      </template>
+          <template #status="{ row }">
+            <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
+              已封禁{{ row.banReason ? `：${row.banReason}` : '' }}
+            </TTag>
+            <TTag v-else theme="success" variant="light" size="small">正常</TTag>
+          </template>
 
-      <template #ops="{ row }">
-        <div class="mc-admin__ops">
-          <a v-if="!isBanned(row)" @click="openBan(row)">封禁</a>
-          <a v-else @click="unban(row)">解封</a>
-          <a @click="resetPassword(row)">重置密码</a>
-        </div>
-      </template>
-    </TTable>
+          <template #ops="{ row }">
+            <div class="mc-admin__ops">
+              <a v-if="!isBanned(row)" @click="openBan(row)">封禁</a>
+              <a v-else @click="unban(row)">解封</a>
+              <a @click="resetPassword(row)">重置密码</a>
+            </div>
+          </template>
+        </TTable>
+      </TTabPanel>
+
+      <TTabPanel value="plugins" label="插件">
+        <p class="mc-admin__hint text-placeholder">
+          按插件名聚合所有用户的安装记录。全局下架后，所有用户的该插件立即停用。
+        </p>
+        <TTable
+          row-key="name"
+          :data="plugins"
+          :columns="pluginColumns"
+          :loading="pluginsLoading"
+          :pagination="{ ...pluginPagination }"
+          @page-change="onPluginPageChange"
+        >
+          <template #name="{ row }">
+            <span class="mc-admin__plugin-name">{{ row.name }}</span>
+          </template>
+          <template #installCount="{ row }">
+            <span class="mc-admin__num">{{ row.installCount }}</span>
+          </template>
+          <template #enabledCount="{ row }">
+            <span class="mc-admin__num">{{ row.enabledCount }}</span>
+          </template>
+          <template #globalStatus="{ row }">
+            <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">已下架</TTag>
+            <TTag v-else theme="success" variant="light" size="small">正常</TTag>
+          </template>
+          <template #ops="{ row }">
+            <div class="mc-admin__ops">
+              <a @click="toggleGlobalDisabled(row)">{{ row.globalDisabled ? '恢复' : '全局下架' }}</a>
+            </div>
+          </template>
+        </TTable>
+      </TTabPanel>
+    </TTabss>
 
     <!-- 封禁弹窗 -->
     <TDialog v-model:visible="banVisible" header="封禁用户" @confirm="doBan">
@@ -193,6 +289,27 @@ const columns: TableProps['columns'] = [
 .mc-admin__ops {
   display: flex;
   gap: 12px;
+}
+
+.mc-admin__tabs {
+  margin-top: 4px;
+}
+
+.mc-admin__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mc-admin__plugin-name {
+  font-weight: 500;
+}
+
+/* 数字列右对齐 + 等宽 */
+.mc-admin__num {
+  display: block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .mc-admin__ops a {

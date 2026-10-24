@@ -48,7 +48,7 @@ func New(d Deps) *gin.Engine {
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
-	adminH := handler.NewAdminHandler(users, convs)
+	adminH := handler.NewAdminHandler(users, convs, plugins)
 
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
@@ -104,6 +104,9 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/users/:id/ban", adminH.Ban)
 		admin.POST("/users/:id/unban", adminH.Unban)
 		admin.POST("/users/:id/reset-password", adminH.ResetPassword)
+
+		admin.GET("/plugins", adminH.Plugins)
+		admin.POST("/plugins/global-disable", adminH.SetPluginGlobalDisabled)
 	}
 
 	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）

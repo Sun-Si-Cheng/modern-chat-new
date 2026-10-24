@@ -117,4 +117,24 @@ export const adminApi = {
   unban: (id: number) => http.post<{ ok: true }>(`/admin/users/${id}/unban`),
   resetPassword: (id: number) =>
     http.post<{ newPassword: string }>(`/admin/users/${id}/reset-password`),
+  plugins: (page = 1, pageSize = 20) => http.get<AdminPluginsPage>('/admin/plugins', { page, pageSize }),
+  setPluginGlobalDisabled: (name: string, disabled: boolean) =>
+    http.post<{ ok: true; affected: number }>('/admin/plugins/global-disable', { name, disabled }),
+}
+
+/** 站长视角：按插件名聚合的行 */
+export interface AdminPluginRow {
+  name: string
+  version: string
+  installCount: number
+  enabledCount: number
+  globalDisabled: boolean
+  createdAt: string
+}
+
+export interface AdminPluginsPage {
+  plugins: AdminPluginRow[]
+  total: number
+  page: number
+  pageSize: number
 }

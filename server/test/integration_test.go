@@ -406,4 +406,32 @@ function __mcActivate(api) {}`
 	if code, _ := apiJSON(t, e, "POST", "/api/plugins/from-url", token, `{"url":"ftp://example.com/x.js"}`); code != 400 {
 		t.Fatalf("非 http(s) 应 400")
 	}
+
+	// 站长全局下架：按 name 聚合 + 下架后代码下发 403
+	adminTok, _ := register(t, e, "plugadmin") // 首个注册者为 admin（本用例 setup 已清库）
+	code, listAny := apiAny(t, e, "GET", "/api/admin/plugins", adminTok, "")
+	if code != 200 {
+		t.Fatalf("admin 插件列表应 200，got %d", code)
+	}
+	list := listAny.(map[string]any)["plugins"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("应聚合出 1 个插件，got %v", listAny)
+	}
+	row := list[0].(map[string]any)
+	if row["installCount"].(float64) != 1 || row["globalDisabled"].(bool) {
+		t.Fatalf("聚合行异常: %v", row)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/admin/plugins/global-disable", adminTok, `{"name":"hello","disabled":true}`); code != 200 {
+		t.Fatalf("全局下架应 200，got %d", code)
+	}
+	codeReq2, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/plugins/%d/code", e.ts.URL, pid), nil)
+	codeReq2.Header.Set("Authorization", "Bearer "+token)
+	codeResp2, err := http.DefaultClient.Do(codeReq2)
+	if err != nil {
+		t.Fatalf("code after disable: %v", err)
+	}
+	defer codeResp2.Body.Close()
+	if codeResp2.StatusCode != 403 {
+		t.Fatalf("下架后代码下发应 403，got %d", codeResp2.StatusCode)
+	}
 }
