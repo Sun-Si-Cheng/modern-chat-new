@@ -9,6 +9,7 @@ import {
   ListItem as TListItem,
   MessagePlugin,
 } from 'tdesign-vue-next'
+import { ChatIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -21,6 +22,7 @@ import type { Conversation, User } from '@/types/proto'
 
 /** 会话 / 联系人列表栏（第二栏，视图由图标栏驱动） */
 const props = defineProps<{ view: 'chats' | 'contacts' }>()
+const emit = defineEmits<{ 'open-add-friend': [] }>()
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
@@ -80,20 +82,6 @@ async function joinGroup(g: Conversation) {
 }
 
 // ===== 好友 =====
-
-const applyName = ref('')
-
-async function applyFriend() {
-  const name = applyName.value.trim()
-  if (!name) return
-  try {
-    await friendsStore.apply(name)
-    void MessagePlugin.success(t('friends.applyOk'))
-    applyName.value = ''
-  } catch (e) {
-    void MessagePlugin.error(te(e))
-  }
-}
 
 async function handleRequest(id: number, accept: boolean) {
   try {
@@ -209,11 +197,13 @@ const sortedConvs = computed(() => {
 
     <!-- 会话列表 -->
     <div v-else-if="props.view === 'chats'" class="mc-sidebar__list">
-      <div
+      <button
         v-for="c in sortedConvs"
         :key="c.id"
+        type="button"
         class="mc-conv-item"
         :class="{ active: c.id === convStore.currentConvId }"
+        :aria-current="c.id === convStore.currentConvId ? 'true' : undefined"
         @click="convStore.openConversation(c.id)"
       >
         <AvatarBadge
@@ -222,23 +212,25 @@ const sortedConvs = computed(() => {
           :color="convAvatar(c).color"
           :online="c.type === 1 && c.peer ? ws.onlineUsers.has(c.peer.id) : false"
         />
-        <div class="mc-conv-item__mid">
-          <div class="mc-conv-item__name">{{ convName(c) }}</div>
-          <div class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || t('chat.noMessage') }}</div>
-        </div>
-        <div class="mc-conv-item__right">
+        <span class="mc-conv-item__mid">
+          <span class="mc-conv-item__name">{{ convName(c) }}</span>
+          <span class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || t('chat.noMessage') }}</span>
+        </span>
+        <span class="mc-conv-item__right">
           <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>
           <TBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
-        </div>
+        </span>
+      </button>
+      <div v-if="!sortedConvs.length" class="mc-sidebar__empty">
+        <ChatIcon />
+        <p>{{ t('chat.noConversation') }}</p>
       </div>
-      <div v-if="!sortedConvs.length" class="text-placeholder mc-sidebar__empty">{{ t('chat.noConversation') }}</div>
     </div>
 
     <!-- 联系人 -->
     <div v-else class="mc-sidebar__list">
       <div class="mc-sidebar__add-friend">
-        <TInput v-model="applyName" :placeholder="t('friends.addPlaceholder')" clearable @enter="applyFriend" />
-        <TButton size="small" variant="outline" @click="applyFriend">{{ t('friends.apply') }}</TButton>
+        <TButton block variant="outline" @click="emit('open-add-friend')">{{ t('friends.addTitle') }}</TButton>
       </div>
 
       <template v-if="friendsStore.requests.length">
@@ -272,8 +264,9 @@ const sortedConvs = computed(() => {
           </TButton>
         </div>
       </div>
-      <div v-if="!friendsStore.accepted.length" class="text-placeholder mc-sidebar__empty">
-        {{ t('friends.empty') }}
+      <div v-if="!friendsStore.accepted.length" class="mc-sidebar__empty">
+        <UserCircleIcon />
+        <p>{{ t('friends.empty') }}</p>
       </div>
     </div>
   </aside>
@@ -293,7 +286,9 @@ const sortedConvs = computed(() => {
 .mc-sidebar__search {
   display: flex;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 10px 12px 8px;
+  background: var(--td-bg-color-container);
+  border-bottom: 1px solid var(--mc-hairline);
 }
 
 .mc-sidebar__results,
@@ -310,9 +305,25 @@ const sortedConvs = computed(() => {
 }
 
 .mc-sidebar__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--mc-text-faint);
   text-align: center;
-  padding: 24px 0;
-  font-size: 13px;
+}
+
+.mc-sidebar__empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.7;
+}
+
+.mc-sidebar__empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .mc-sidebar__add-friend {
@@ -334,12 +345,19 @@ const sortedConvs = computed(() => {
 }
 
 .mc-conv-item {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
+  border: none;
   border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+  transition: background 0.12s ease-out;
 }
 
 .mc-conv-item:hover {
@@ -351,19 +369,33 @@ const sortedConvs = computed(() => {
   background: var(--td-bg-color-container-active, #ebebeb);
 }
 
+.mc-conv-item:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: -2px;
+}
+
 .mc-conv-item__mid {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .mc-conv-item__name {
+  display: block;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.mc-conv-item.active .mc-conv-item__name {
+  font-weight: 600;
+}
+
 .mc-conv-item__preview {
+  display: block;
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -375,6 +407,7 @@ const sortedConvs = computed(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .mc-conv-item__time {
@@ -387,6 +420,11 @@ const sortedConvs = computed(() => {
   gap: 8px;
   padding: 7px 10px;
   border-radius: 8px;
+  transition: background 0.12s ease-out;
+}
+
+.mc-friend-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .mc-friend-item__actions {

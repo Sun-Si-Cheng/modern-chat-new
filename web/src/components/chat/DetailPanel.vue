@@ -140,6 +140,14 @@ async function leave() {
     <!-- 群信息 / 群管理 -->
     <template v-if="conv">
       <div v-if="isGroup" class="mc-detail__section">
+        <div class="mc-detail__group">
+          <AvatarBadge :name="conv.name ?? '#'" color="#2ba471" :size="40" />
+          <div class="mc-detail__group-meta">
+            <div class="mc-detail__group-name">{{ conv.name }}</div>
+            <div class="text-placeholder">{{ t('chat.membersCount', { n: conv.memberCount }) }}</div>
+          </div>
+        </div>
+
         <div class="mc-detail__title">
           {{ t('group.info') }}
           <span v-if="isOwner" class="mc-detail__actions">
@@ -158,7 +166,7 @@ async function leave() {
           />
           <span class="mc-detail__member-name">
             {{ m.user.nickname }}
-            <span v-if="m.role === 'owner'" class="text-placeholder">{{ t('group.owner') }}</span>
+            <span v-if="m.role === 'owner'" class="mc-detail__role">{{ t('group.owner') }}</span>
             <span v-if="m.userId === auth.user?.id" class="text-placeholder">{{ t('group.me') }}</span>
           </span>
           <span v-if="isOwner && m.userId !== auth.user?.id" class="mc-detail__member-ops">
@@ -176,17 +184,20 @@ async function leave() {
       <!-- 单聊资料 -->
       <div v-else class="mc-detail__section">
         <div class="mc-detail__title">{{ t('group.peerInfo') }}</div>
-        <div class="mc-detail__member">
+        <div class="mc-detail__peer">
           <AvatarBadge
             :name="conv.peer?.nickname ?? '?'"
             :src="conv.peer?.avatar"
             :color="conv.peer?.avatarColor"
-            :size="40"
+            :size="48"
             :online="conv.peer ? ws.onlineUsers.has(conv.peer.id) : false"
           />
           <div>
-            <div>{{ conv.peer?.nickname }}</div>
-            <div class="text-placeholder">@{{ conv.peer?.username }}</div>
+            <div class="mc-detail__peer-name">{{ conv.peer?.nickname }}</div>
+            <div class="text-placeholder mc-detail__peer-meta">
+              @{{ conv.peer?.username }} ·
+              {{ conv.peer && ws.onlineUsers.has(conv.peer.id) ? t('chat.online') : t('chat.offline') }}
+            </div>
           </div>
         </div>
       </div>
@@ -219,14 +230,42 @@ async function leave() {
 }
 
 .mc-detail__section {
-  padding: 14px;
-  border-bottom: 1px solid var(--td-component-border);
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+/* 群身份：头像 + 群名 + 人数，先回答“这是哪个群” */
+.mc-detail__group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.mc-detail__group-meta {
+  min-width: 0;
+}
+
+.mc-detail__group-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-detail__group-meta .text-placeholder {
+  font-size: 12px;
 }
 
 .mc-detail__title {
   font-weight: 600;
-  font-size: 15px;
-  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+  margin-bottom: 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -247,20 +286,62 @@ async function leave() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 0;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  transition: background 0.12s ease-out;
+}
+
+.mc-detail__member:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .mc-detail__member-name {
   flex: 1;
   min-width: 0;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.mc-detail__role {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .mc-detail__member-ops a {
   font-size: 12px;
+  color: var(--td-text-color-secondary);
   cursor: pointer;
+}
+
+.mc-detail__member-ops a:hover {
+  color: var(--td-error-color);
+}
+
+/* 单聊资料：更大的头像承担身份识别 */
+.mc-detail__peer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mc-detail__peer-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mc-detail__peer-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .mc-detail__footer {

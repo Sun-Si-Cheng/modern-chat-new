@@ -30,7 +30,11 @@ import { useWsStore } from '@/stores/ws'
  * 头像(资料卡) + 新建菜单 + 功能导航(消息/联系人/插件/后台) + 底部设置
  */
 defineProps<{ view: 'chats' | 'contacts' }>()
-const emit = defineEmits<{ 'update:view': [v: 'chats' | 'contacts']; 'open-plugins': [] }>()
+const emit = defineEmits<{
+  'update:view': [v: 'chats' | 'contacts']
+  'open-plugins': []
+  'open-add-friend': []
+}>()
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -69,7 +73,7 @@ function menuNewGroup() {
 
 function menuAddFriend() {
   moreVisible.value = false
-  emit('update:view', 'contacts')
+  emit('open-add-friend')
 }
 
 function menuSearchUser() {
