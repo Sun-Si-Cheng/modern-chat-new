@@ -185,7 +185,7 @@ async function leave() {
   <div class="mc-detail">
     <!-- 群信息 / 群管理 -->
     <template v-if="conv">
-      <div v-if="isGroup" class="mc-detail__section">
+      <div v-if="isGroup" :key="`group-${conv.id}`" class="mc-detail__section">
         <div class="mc-detail__group">
           <AvatarBadge :name="conv.name ?? '#'" color="#2ba471" :size="40" />
           <div class="mc-detail__group-meta">
@@ -228,7 +228,7 @@ async function leave() {
       </div>
 
       <!-- 单聊资料 -->
-      <div v-else class="mc-detail__section">
+      <div v-else :key="`peer-${conv.id}`" class="mc-detail__section">
         <div class="mc-detail__title">{{ t('group.peerInfo') }}</div>
         <div class="mc-detail__peer">
           <AvatarBadge
@@ -296,6 +296,7 @@ async function leave() {
 .mc-detail__section {
   padding: 16px 14px;
   border-bottom: 1px solid var(--mc-hairline);
+  animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out);
 }
 
 /* 群身份：头像 + 群名 + 人数，先回答“这是哪个群” */
@@ -413,6 +414,7 @@ async function leave() {
   display: flex;
   align-items: center;
   margin-top: 12px;
+  animation: mc-fade-up var(--mc-dur-slow) var(--mc-ease-out);
 }
 
 .mc-detail__tag {

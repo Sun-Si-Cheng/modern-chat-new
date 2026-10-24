@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin, Button as TButton } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
@@ -109,12 +109,30 @@ function scrollToBottom() {
   })
 }
 
+/** 新到达消息的一次性入场 key，避免虚拟滚动重新挂载时反复播放动画 */
+const animatedKey = ref('')
+let animateTimer: ReturnType<typeof setTimeout> | null = null
+
 watch(
   () => messages.value.length,
-  () => {
+  (len, prev) => {
+    if (prev !== undefined && len > prev) {
+      const last = messages.value[messages.value.length - 1]
+      if (last) {
+        animatedKey.value = last.clientMsgId || `msg-${last.id}`
+        if (animateTimer) clearTimeout(animateTimer)
+        animateTimer = setTimeout(() => {
+          animatedKey.value = ''
+        }, 460)
+      }
+    }
     if (stickToBottom.value) scrollToBottom()
   },
 )
+
+onBeforeUnmount(() => {
+  if (animateTimer) clearTimeout(animateTimer)
+})
 
 watch(
   () => conv.value?.id,
@@ -391,6 +409,7 @@ const senderAvatar = (m: Message) => {
                   mine: senderOf(item.msg),
                   repeat: !item.firstInGroup && !senderOf(item.msg),
                   'group-start': item.firstInGroup,
+                  'is-new': !!animatedKey && item.key === animatedKey,
                 }"
               >
                 <AvatarBadge
@@ -454,29 +473,32 @@ const senderAvatar = (m: Message) => {
         </template>
       </DynamicScroller>
 
-      <button
-        v-if="!stickToBottom"
-        type="button"
-        class="mc-msgpane__jump"
-        :aria-label="t('chat.scrollToLatest')"
-        :title="t('chat.scrollToLatest')"
-        @click="scrollToBottom"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M12 5v12m0 0 5-5m-5 5-5-5"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
+      <Transition name="mc-fade-scale">
+        <button
+          v-if="!stickToBottom"
+          type="button"
+          class="mc-msgpane__jump"
+          :aria-label="t('chat.scrollToLatest')"
+          :title="t('chat.scrollToLatest')"
+          @click="scrollToBottom"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 5v12m0 0 5-5m-5 5-5-5"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </Transition>
     </div>
 
     <div class="mc-msgpane__typing" aria-live="polite">
-      <span v-if="typingNames.length" class="text-placeholder">
+      <span v-if="typingNames.length" class="mc-typing text-placeholder">
         {{ t('message.typingOnly', { names: typingNames.join(', ') }) }}
+        <span class="mc-typing__dots" aria-hidden="true"><i /><i /><i /></span>
       </span>
     </div>
 
@@ -543,6 +565,7 @@ const senderAvatar = (m: Message) => {
 
 .mc-msgpane__presence.is-online {
   background: var(--td-success-color, #2ba471);
+  animation: mc-soft-pulse 2.4s ease-in-out infinite;
 }
 
 /* 返回按钮：仅窄屏（单面板模式）显示 */
@@ -608,6 +631,11 @@ const senderAvatar = (m: Message) => {
 /* 同人连续消息不重复头像，用 40px 占位保持气泡对齐 */
 .mc-msg.repeat {
   padding-left: 40px;
+}
+
+/* 新到达的消息：只播放一次轻微上浮 */
+.mc-msg.is-new {
+  animation: mc-bubble-in var(--mc-dur-slow) var(--mc-ease-out) both;
 }
 
 .mc-msg.mine {
@@ -742,11 +770,16 @@ const senderAvatar = (m: Message) => {
   background: var(--td-bg-color-container);
   color: var(--td-text-color-secondary);
   cursor: pointer;
+  transition:
+    color var(--mc-dur-fast) var(--mc-ease-out),
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-msgpane__jump:hover {
   color: var(--td-text-color-primary);
   border-color: var(--td-brand-color);
+  transform: translateY(-1px);
 }
 
 .mc-msgpane__jump:focus-visible {
@@ -761,6 +794,35 @@ const senderAvatar = (m: Message) => {
   padding: 0 24px;
   font-size: 12px;
   line-height: 22px;
+}
+
+.mc-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: mc-fade-in var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-typing__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mc-typing__dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: mc-dot-bounce 1.2s infinite ease-in-out;
+}
+
+.mc-typing__dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.mc-typing__dots i:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 @media (max-width: 768px) {

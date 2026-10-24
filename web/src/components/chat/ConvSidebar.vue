@@ -296,6 +296,7 @@ const sortedConvs = computed(() => {
   flex: 1;
   overflow-y: auto;
   padding: 4px 8px 12px;
+  animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out);
 }
 
 .mc-sidebar__group-label {
@@ -312,6 +313,7 @@ const sortedConvs = computed(() => {
   padding: 40px 20px;
   color: var(--mc-text-faint);
   text-align: center;
+  animation: mc-fade-up var(--mc-dur-slow) var(--mc-ease-out);
 }
 
 .mc-sidebar__empty svg {
@@ -338,6 +340,7 @@ const sortedConvs = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out) both;
 }
 
 .mc-sidebar__result-name {
@@ -357,11 +360,17 @@ const sortedConvs = computed(() => {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease-out;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-conv-item:hover {
   background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-conv-item:hover :deep(.mc-avatar) {
+  transform: scale(1.04);
 }
 
 /* 选中态用中性灰阶，品牌色留给未读数据 */

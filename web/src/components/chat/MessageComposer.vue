@@ -151,6 +151,7 @@ function onKeydown(e: KeyboardEvent) {
 
 .mc-composer__count {
   font-size: 11px;
+  animation: mc-fade-in var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-composer__count.is-near-limit {

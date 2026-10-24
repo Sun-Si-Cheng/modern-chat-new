@@ -18,6 +18,10 @@ const globalConfig = computed(
 
 <template>
   <TConfigProvider :global-config="globalConfig">
-    <RouterView />
+    <RouterView v-slot="{ Component }">
+      <Transition name="mc-route" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
   </TConfigProvider>
 </template>

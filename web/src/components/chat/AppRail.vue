@@ -266,6 +266,15 @@ async function doCreateGroup() {
   border-radius: 50%;
   cursor: pointer;
   line-height: 0;
+  transition: transform var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.app-rail__avatar:hover {
+  transform: scale(1.05);
+}
+
+.app-rail__avatar:active {
+  transform: scale(0.96);
 }
 
 .app-rail__avatar:focus-visible {
@@ -274,6 +283,7 @@ async function doCreateGroup() {
 }
 
 .app-rail__btn {
+  position: relative;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -285,16 +295,39 @@ async function doCreateGroup() {
   background: transparent;
   color: var(--td-text-color-secondary);
   cursor: pointer;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out),
+    transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .app-rail__btn:hover {
   background: var(--td-bg-color-secondarycontainer);
   color: var(--td-text-color-primary);
+  transform: translateY(-1px);
+}
+
+.app-rail__btn:active {
+  transform: scale(0.94);
 }
 
 .app-rail__btn.is-active {
   background: var(--td-brand-color-1, var(--td-brand-color));
   color: var(--td-brand-color);
+}
+
+/* 选中项左侧一小段品牌色标记，随切换弹入 */
+.app-rail__btn.is-active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--td-brand-color);
+  transform: translateY(-50%);
+  animation: mc-pop-in-centered var(--mc-dur-fast) var(--mc-ease-spring);
 }
 
 .app-rail__btn:focus-visible {
@@ -310,6 +343,11 @@ async function doCreateGroup() {
 
 .app-rail__icon :deep(svg) {
   font-size: 20px;
+  transition: transform var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.app-rail__btn:hover .app-rail__icon :deep(svg) {
+  transform: scale(1.06);
 }
 
 /* 未读/申请小红点 */
@@ -321,6 +359,7 @@ async function doCreateGroup() {
   height: 8px;
   border-radius: 50%;
   background: var(--td-error-color, #d54941);
+  animation: mc-pop-in var(--mc-dur-base) var(--mc-ease-spring);
 }
 
 /* 新建菜单 */

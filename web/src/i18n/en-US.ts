@@ -151,7 +151,7 @@ export default {
     unread: 'Unread',
     recallOk: 'Recalled',
     recallAria: 'Recall message',
-    typingOnly: '{names} is typing…',
+    typingOnly: '{names} is typing',
     noEarlier: 'No earlier messages',
     unknownType: '[{type} message]',
     renderFailed: '[Plugin message could not be rendered]',

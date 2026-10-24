@@ -179,7 +179,8 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 8px 6px;
   border-radius: 8px;
-  transition: background 0.12s ease-out;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+  animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out) both;
 }
 
 .add-friend__item:hover {
@@ -230,5 +231,6 @@ onBeforeUnmount(() => {
   text-align: center;
   font-size: 12px;
   line-height: 1.6;
+  animation: mc-fade-in var(--mc-dur-base) var(--mc-ease-out);
 }
 </style>
