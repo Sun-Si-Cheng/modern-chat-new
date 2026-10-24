@@ -282,6 +282,7 @@ export default {
     avatarUpdated: '头像已更新',
     avatarInvalid: '请选择 png / jpeg / webp 图片',
     avatarFailed: '头像更新失败',
+    uploading: '上传中…',
     menu: '个人菜单',
   },
   settings: {

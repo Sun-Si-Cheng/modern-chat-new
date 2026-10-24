@@ -16,6 +16,8 @@ const { t, te } = useAppI18n()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
+/** 头像大图预览弹窗 */
+const previewOpen = ref(false)
 
 function pickFile() {
   fileInput.value?.click()
@@ -76,32 +78,15 @@ function goSettings() {
 <template>
   <div class="profile-card">
     <div class="profile-card__head">
-      <!-- 头像：hover 出现相机，点击选图上传 -->
-      <button
-        type="button"
-        class="profile-card__avatar"
-        :aria-label="t('profile.changeAvatar')"
-        :disabled="uploading"
-        @click="pickFile"
-      >
-        <AvatarBadge
-          :name="auth.user?.nickname ?? '?'"
-          :src="auth.user?.avatar"
-          :color="auth.user?.avatarColor ?? '#0052d9'"
-          :size="72"
-        />
-        <span class="profile-card__cam">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-            <path
-              d="M3 8.6A2.6 2.6 0 0 1 5.6 6h1.1l.9-1.5A1.6 1.6 0 0 1 9 3.8h6a1.6 1.6 0 0 1 1.4.7l.9 1.5h1.1A2.6 2.6 0 0 1 21 8.6v8.8A2.6 2.6 0 0 1 18.4 20H5.6A2.6 2.6 0 0 1 3 17.4V8.6Z"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linejoin="round"
-            />
-            <circle cx="12" cy="13" r="3.5" stroke="currentColor" stroke-width="1.7" />
-          </svg>
-        </span>
-      </button>
+      <!-- 头像：点击弹出大图预览（预览内可更换） -->
+      <AvatarBadge
+        :name="auth.user?.nickname ?? '?'"
+        :src="auth.user?.avatar"
+        :color="auth.user?.avatarColor ?? '#0052d9'"
+        :size="72"
+        preview
+        @preview="previewOpen = true"
+      />
 
       <div class="profile-card__info">
         <div class="profile-card__name-row">
@@ -121,6 +106,29 @@ function goSettings() {
       accept="image/png,image/jpeg,image/webp"
       @change="onFileChange"
     />
+
+    <!-- 头像大图预览 -->
+    <Teleport to="body">
+      <div v-if="previewOpen" class="avatar-viewer" @click="previewOpen = false">
+        <div class="avatar-viewer__panel" @click.stop>
+          <img
+            class="avatar-viewer__img"
+            :src="auth.user?.avatar || '/default-avatar.svg'"
+            :alt="auth.user?.nickname"
+            draggable="false"
+          />
+          <div class="avatar-viewer__name">{{ auth.user?.nickname }}</div>
+          <div class="avatar-viewer__actions">
+            <button type="button" class="avatar-viewer__change" :disabled="uploading" @click="pickFile">
+              {{ uploading ? t('profile.uploading') : t('profile.changeAvatar') }}
+            </button>
+            <button type="button" class="avatar-viewer__close" @click="previewOpen = false">
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <ul class="profile-card__menu">
       <li>
@@ -150,41 +158,79 @@ function goSettings() {
   gap: 12px;
 }
 
-/* 头像按钮：hover / 键盘聚焦时显示相机遮罩 */
-.profile-card__avatar {
-  position: relative;
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: 50%;
-  cursor: pointer;
-  line-height: 0;
-}
-
-.profile-card__avatar:disabled {
-  cursor: progress;
-}
-
-.profile-card__cam {
-  position: absolute;
+/* 头像大图预览弹窗 */
+.avatar-viewer {
+  position: fixed;
   inset: 0;
+  z-index: 3000;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.avatar-viewer__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+}
+
+.avatar-viewer__img {
+  width: 240px;
+  height: 240px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
+  object-fit: cover;
+  background: #e4efff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.avatar-viewer__name {
   color: #fff;
-  opacity: 0;
-  transition: opacity 0.14s ease-out;
+  font-size: 16px;
+  font-weight: 600;
 }
 
-.profile-card__avatar:hover .profile-card__cam,
-.profile-card__avatar:focus-visible .profile-card__cam {
-  opacity: 1;
+.avatar-viewer__actions {
+  display: flex;
+  gap: 10px;
 }
 
-.profile-card__avatar:focus-visible {
-  outline: 2px solid var(--td-brand-color);
+.avatar-viewer__actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.avatar-viewer__change {
+  background: var(--td-brand-color);
+  color: #fff;
+}
+
+.avatar-viewer__change:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.avatar-viewer__close {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.avatar-viewer__change:hover {
+  filter: brightness(1.08);
+}
+
+.avatar-viewer__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.avatar-viewer__actions button:focus-visible {
+  outline: 2px solid #fff;
   outline-offset: 2px;
 }
 
