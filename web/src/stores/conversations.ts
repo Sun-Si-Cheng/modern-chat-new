@@ -47,7 +47,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     else conversations.value.push(conv)
   }
 
-  // ===== 消息历史（游标分页 before_id） =====
+  // ===== 消息历史（游标分页 beforeId） =====
 
   async function openConversation(convId: number) {
     currentConvId.value = convId
