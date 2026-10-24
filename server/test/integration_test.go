@@ -355,6 +355,49 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("A 自身多端同步帧异常: %v", changedA)
 	}
 
+	// 头像回归：会话列表 peer 与成员接口都必须带 users.avatar
+	avatar := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	if code, _ := apiJSON(t, e, "PATCH", "/api/me", tokenA, fmt.Sprintf(`{"avatar":%q}`, avatar)); code != 200 {
+		t.Fatalf("设置头像应 200，got %d", code)
+	}
+	readFrame(t, connB, "user_change")
+	readFrame(t, connA, "user_change")
+
+	_, convsPeer := apiAny(t, e, "GET", "/api/conversations", tokenB, "")
+	peerAvatar := ""
+	if list, ok := convsPeer.([]any); ok {
+		for _, cv := range list {
+			m, _ := cv.(map[string]any)
+			if m == nil || uint64(m["id"].(float64)) != convID {
+				continue
+			}
+			if peer, ok := m["peer"].(map[string]any); ok {
+				peerAvatar, _ = peer["avatar"].(string)
+			}
+		}
+	}
+	if peerAvatar != avatar {
+		t.Fatalf("会话列表 peer.avatar 未同步，got %q", peerAvatar)
+	}
+
+	_, membersWithAvatar := apiAny(t, e, "GET", fmt.Sprintf("/api/conversations/%d/members", convID), tokenA, "")
+	foundMemberAvatar := false
+	if list, ok := membersWithAvatar.([]any); ok {
+		for _, item := range list {
+			mm, _ := item.(map[string]any)
+			if mm == nil {
+				continue
+			}
+			u, _ := mm["user"].(map[string]any)
+			if av, _ := u["avatar"].(string); av == avatar {
+				foundMemberAvatar = true
+			}
+		}
+	}
+	if !foundMemberAvatar {
+		t.Fatalf("成员列表应包含 A 的头像，got %v", membersWithAvatar)
+	}
+
 	// 群聊：B 建群，A 加入
 	code, group := apiJSON(t, e, "POST", "/api/conversations/group", tokenB, `{"name":"测试群"}`)
 	if code != 200 {
