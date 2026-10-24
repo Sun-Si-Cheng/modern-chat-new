@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Form as TForm,
   FormItem as TFormItem,
   Input as TInput,
   Button as TButton,
+  Checkbox as TCheckbox,
   MessagePlugin,
 } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
@@ -27,6 +28,25 @@ const form = ref<FormInstanceFunctions>()
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', nickname: '', password: '', confirm: '' })
 
+/**
+ * 协议同意状态：
+ * - 登录态默认勾选（已有账号视为此前已同意，避免每次重复勾选）；
+ * - 注册态优先沿用本机记录，否则要求用户主动勾选；
+ * - 勾选结果写入 localStorage，后续访问自动沿用。
+ */
+const AGREED_KEY = 'mc_terms_agreed'
+const storedAgreed = () => localStorage.getItem(AGREED_KEY) === '1'
+const agreed = ref(mode.value === 'login' || storedAgreed())
+
+watch(agreed, (v) => {
+  if (v) localStorage.setItem(AGREED_KEY, '1')
+  else localStorage.removeItem(AGREED_KEY)
+})
+
+watch(mode, (m) => {
+  agreed.value = m === 'login' || storedAgreed()
+})
+
 /** 当前模式的表单数据（模板与校验共用） */
 const data = computed(() => (mode.value === 'login' ? loginForm : registerForm))
 
@@ -47,6 +67,10 @@ const rules = computed<FormProps['rules']>(() => ({
 }))
 
 async function doSubmit() {
+  if (!agreed.value) {
+    void MessagePlugin.warning(t('legal.agreeRequired'))
+    return
+  }
   loading.value = true
   try {
     if (mode.value === 'login') {
@@ -132,6 +156,19 @@ function switchMode(m: 'login' | 'register') {
           </TInput>
         </TFormItem>
 
+        <!-- 协议同意：紧邻密码与提交按钮之间 -->
+        <div class="auth-card__agree">
+          <TCheckbox v-model="agreed" size="small">
+            <span class="auth-card__agree-text">
+              {{ t('legal.agreePrefix') }}
+              <!-- 新标签打开，避免打断登录流程 -->
+              <RouterLink :to="'/terms'" target="_blank" @click.stop>{{ t('legal.termsLink') }}</RouterLink>
+              {{ t('legal.and') }}
+              <RouterLink :to="'/privacy'" target="_blank" @click.stop>{{ t('legal.privacyLink') }}</RouterLink>
+            </span>
+          </TCheckbox>
+        </div>
+
         <TButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">
           {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
         </TButton>
@@ -140,8 +177,6 @@ function switchMode(m: 'login' | 'register') {
       <div class="auth-card__links">
         <template v-if="mode === 'login'">
           <RouterLink to="/forgot">{{ t('auth.forgot') }}</RouterLink>
-          <span class="auth-card__dot" aria-hidden="true">·</span>
-          <span class="text-placeholder">{{ t('auth.noAccount') }}</span>
           <button type="button" class="auth-card__link-btn" @click="switchMode('register')">
             {{ t('auth.signupLink') }}
           </button>
@@ -153,16 +188,7 @@ function switchMode(m: 'login' | 'register') {
           </button>
         </template>
       </div>
-
-      <p class="auth-card__legal">
-        <span v-if="mode === 'register'" class="text-placeholder">{{ t('legal.agreePrefix') }}</span>
-        <RouterLink to="/terms">{{ t('legal.termsLink') }}</RouterLink>
-        <span class="text-placeholder">{{ t('legal.and') }}</span>
-        <RouterLink to="/privacy">{{ t('legal.privacyLink') }}</RouterLink>
-      </p>
     </main>
-
-    <p class="auth-foot text-placeholder">{{ t('auth.footDb') }} · {{ t('auth.footSingle') }}</p>
   </div>
 </template>
 
@@ -314,24 +340,32 @@ function switchMode(m: 'login' | 'register') {
   }
 }
 
-.auth-card__submit {
-  margin-top: 4px;
+/* 协议同意行：位于密码之后、提交按钮之前 */
+.auth-card__agree {
+  margin: 6px 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-card__agree-text {
+  margin-left: 4px;
+  color: var(--mc-text-faint);
+}
+
+.auth-card__agree-text a {
+  color: var(--mc-link);
 }
 
 .auth-card__links {
-  margin-top: 18px;
+  margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--td-component-border);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 14px;
   font-size: 14px;
-}
-
-.auth-card__dot {
-  color: var(--mc-text-faint);
 }
 
 /* 切换模式是动作而非跳转，用按钮保持语义与键盘可达 */
@@ -354,41 +388,11 @@ function switchMode(m: 'login' | 'register') {
   border-radius: 2px;
 }
 
-.auth-card__legal {
-  margin: 14px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--mc-text-faint);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: center;
-}
-
-.auth-card__legal a {
-  color: var(--mc-link);
-}
-
-/* ===== 页脚 ===== */
-/* 页脚压在场景层上：用半透明深色胶囊保证任意背景图下的对比度 */
-.auth-foot {
-  position: relative;
-  z-index: 1;
-  margin: 20px 0 0;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(8, 19, 31, 0.5);
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 13px;
-  text-align: center;
-}
-
 /* ===== 窄屏：卡片贴边，弱化阴影 ===== */
 @media (max-width: 520px) {
   .auth-page {
-    padding: 16px 12px 32px;
+    padding: 64px 12px 32px;
     justify-content: flex-start;
-    padding-top: 64px;
   }
 
   .auth-card {
@@ -398,10 +402,6 @@ function switchMode(m: 'login' | 'register') {
 
   .auth-card__title {
     font-size: 22px;
-  }
-
-  .auth-foot {
-    margin-top: 16px;
   }
 }
 </style>
