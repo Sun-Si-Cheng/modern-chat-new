@@ -79,9 +79,17 @@ func (s *PluginStore) AdminList(page, pageSize int) ([]AdminRow, int64, error) {
 		return nil, 0, err
 	}
 	var rows []AdminRow
+	// 修复缺陷：原 MAX(version) 是字符串比较，'9.0.0' > '10.0.0'，会展示过期版本号。
+	// 这里按语义版本数值化排序后取第一：major*1000000 + minor*1000 + patch。
+	// GREATEST 与 COALESCE 防止 GROUP_CONCAT 生成 NULL（无行时不返回行，安全）。
 	err := s.db.Raw(`
 		SELECT name,
-		       MAX(version)                AS version,
+		       SUBSTRING_INDEX(
+		           GROUP_CONCAT(DISTINCT version ORDER BY
+		               (CAST(SUBSTRING_INDEX(version, '.', 1) AS UNSIGNED) * 1000000
+		                + CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(version, '.', 2), '.', -1) AS UNSIGNED) * 1000
+		                + CAST(SUBSTRING_INDEX(version, '.', -1) AS UNSIGNED)) DESC SEPARATOR ','),
+		           ',', 1)                 AS version,
 		       COUNT(*)                    AS install_count,
 		       SUM(enabled)                AS enabled_count,
 		       MAX(global_disabled)        AS global_disabled,
@@ -97,4 +105,22 @@ func (s *PluginStore) AdminList(page, pageSize int) ([]AdminRow, int64, error) {
 func (s *PluginStore) SetGlobalDisabledByName(name string, disabled bool) (int64, error) {
 	res := s.db.Model(&model.Plugin{}).Where("name = ?", name).Update("global_disabled", disabled)
 	return res.RowsAffected, res.Error
+}
+
+// GlobalDisabledByName 同名插件是否曾被站长全局下架。
+// 修复缺陷：卸载后重新安装会创建全新记录，global_disabled 默认 false，
+// 于是「下架→卸载→重装」可绕过全局下架；新建时必须继承同名插件的下架状态。
+func (s *PluginStore) GlobalDisabledByName(name string) (bool, error) {
+	var row struct {
+		MaxDisabled *int64 `gorm:"column:max_disabled"`
+	}
+	err := s.db.Model(&model.Plugin{}).
+		Where("name = ?", name).
+		Select("MAX(global_disabled) AS max_disabled").
+		Scan(&row).Error
+	if err != nil {
+		return false, err
+	}
+	// 无同名记录时 MAX 返回 NULL，视为未下架
+	return row.MaxDisabled != nil && *row.MaxDisabled != 0, nil
 }

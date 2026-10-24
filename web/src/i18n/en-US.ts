@@ -9,6 +9,7 @@ export default {
     close: 'Close',
     none: 'None',
     more: 'More',
+    saveFailed: 'Failed to save',
   },
   auth: {
     brand: {

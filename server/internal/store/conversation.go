@@ -1,9 +1,11 @@
 package store
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 )
@@ -53,6 +55,33 @@ func (s *ConversationStore) CountMembers(convID uint) (int64, error) {
 	var n int64
 	err := s.db.Model(&model.ConversationMember{}).Where("conversation_id = ?", convID).Count(&n).Error
 	return n, err
+}
+
+// ErrGroupFull 群成员已达上限。
+var ErrGroupFull = errors.New("group is full")
+
+// JoinGroup 原子入群：锁会话行 → 数成员 → 插入成员行，全程在同一事务内。
+// 修复缺陷：原实现先 CountMembers 再 AddMembers，两步之间没有互斥，
+// 并发入群可让成员数突破 200 上限；这里用 SELECT ... FOR UPDATE 把「判容量」
+// 与「写入」串行化到同一会话行上。
+func (s *ConversationStore) JoinGroup(convID, userID uint, maxMembers int64) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var conv model.Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conv, convID).Error; err != nil {
+			return err
+		}
+		var n int64
+		if err := tx.Model(&model.ConversationMember{}).
+			Where("conversation_id = ?", convID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n >= maxMembers {
+			return ErrGroupFull
+		}
+		return tx.Create(&model.ConversationMember{
+			ConversationID: convID, UserID: userID, Role: "member",
+		}).Error
+	})
 }
 
 // RemoveMember 踢人 / 退群时删除成员行。

@@ -356,6 +356,7 @@ const sortedConvs = computed(() => {
   border: none;
   border-radius: 8px;
   background: transparent;
+  box-sizing: border-box;
   color: inherit;
   font: inherit;
   text-align: left;

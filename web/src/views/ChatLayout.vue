@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button as TButton, MessagePlugin } from 'tdesign-vue-next'
 
@@ -16,11 +16,13 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { usePluginsStore } from '@/stores/plugins'
 
 const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const pluginsStore = usePluginsStore()
 const host = usePluginHost()
 const { t, te } = useAppI18n()
 
@@ -52,6 +54,12 @@ onMounted(async () => {
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
+})
+
+// 离开聊天页（登出 / 切到设置或后台 / 被踢）：停掉插件宿主并卸载 iframe 与监听器
+onUnmounted(() => {
+  host.stop()
+  pluginsStore.reset()
 })
 </script>
 
@@ -94,7 +102,7 @@ onMounted(async () => {
       </Transition>
     </div>
     <DetailPanel v-if="convStore.currentConv" />
-    <PluginDrawer v-model:visible="pluginDrawerVisible" />
+    <PluginDrawer v-model="pluginDrawerVisible" />
     <AddFriendDialog v-model:visible="addFriendVisible" />
   </div>
 </template>

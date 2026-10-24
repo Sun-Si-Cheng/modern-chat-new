@@ -144,15 +144,24 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string, source strin
 		return
 	}
 
+	// 新建记录必须继承同名插件的全局下架状态，
+	// 否则「站长下架 → 用户卸载 → 重新安装」即可绕过下架（新记录默认 not disabled）。
+	globalDisabled, err := h.plugins.GlobalDisabledByName(m.Name)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+
 	p := &model.Plugin{
-		Name:         m.Name,
-		Version:      m.Version,
-		Description:  m.Description,
-		CodeText:     code,
-		Permissions:  string(perms),
-		AllowedHosts: string(hosts),
-		Enabled:      false,
-		InstalledBy:  me,
+		Name:           m.Name,
+		Version:        m.Version,
+		Description:    m.Description,
+		CodeText:       code,
+		Permissions:    string(perms),
+		AllowedHosts:   string(hosts),
+		Enabled:        false,
+		GlobalDisabled: globalDisabled,
+		InstalledBy:    me,
 	}
 	if err := h.plugins.Create(p); err != nil {
 		internal(c, err)
@@ -160,7 +169,8 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string, source strin
 	}
 	slog.Info("plugin installed",
 		"uid", me, "plugin", p.ID, "name", p.Name, "version", p.Version,
-		"perms", len(m.Permissions), "hosts", len(m.AllowedHosts), "source", source)
+		"perms", len(m.Permissions), "hosts", len(m.AllowedHosts), "source", source,
+		"globalDisabled", p.GlobalDisabled)
 	c.JSON(http.StatusOK, p.View())
 }
 

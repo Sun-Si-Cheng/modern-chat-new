@@ -48,6 +48,13 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	if h.deps == nil {
 		return
 	}
+	// 修复缺陷：握手时校验过封禁/TokenVersion，但连接建立后 admin 封禁或
+	// 重置密码（tv+1）不会作用于既有连接 —— 被处理过的用户只要忽略 kicked
+	// 帧就能继续发消息、写库与 fan-out。这里在落库前做一次连接级复核：
+	// 任一不通过则回 error 帧并 requestKick() 断开，与 REST 侧 401 行为一致。
+	if !h.checkConnState(c, f.ConvID) {
+		return
+	}
 	// 限流：每用户 20 条/分
 	if !h.deps.MsgLimiter.Allow(ukey(c.UserID)) {
 		slog.Warn("ws message rate limited", "uid", c.UserID, "conv", f.ConvID)
@@ -145,8 +152,30 @@ func (h *Hub) handleTyping(c *Client, f *clientFrame) {
 }
 
 // handleRead 已读上报。
+//
+// 修复缺陷：此前只校验了 upToId != 0 与成员身份，未校验该消息是否属于本会话，
+// 客户端上报 9e18 之类的伪造 ID 即可把 last_read_message_id 永久推到未来，
+// 从而废掉撤回时的未读回退（RecallUnreadAdjust 以 last_read_message_id < msgID
+// 为条件），并伪造「已读到最新」。现在落库前先按 id 反查消息，要求存在且
+// ConversationID 与上报的 convId 一致，否则回 error 帧并丢弃。
 func (h *Hub) handleRead(c *Client, f *clientFrame) {
 	if f.UpToID == 0 || !h.requireMember(c, f.ConvID) {
+		return
+	}
+	// upToId 归属校验：必须真实存在且属于本会话（防止伪造超大 ID 污染已读游标）。
+	if h.deps == nil || h.deps.Messages == nil {
+		return
+	}
+	msg, err := h.deps.Messages.ByID(uint(f.UpToID))
+	if err != nil {
+		slog.Error("ws read lookup", "err", err.Error(), "uid", c.UserID, "conv", f.ConvID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	if msg == nil || msg.ConversationID != f.ConvID {
+		slog.Warn("ws read rejected: upToId not in conversation",
+			"uid", c.UserID, "conv", f.ConvID, "upToId", f.UpToID)
+		h.sendError(c, "已读位置不合法")
 		return
 	}
 	affected, err := h.deps.Messages.MarkRead(c.UserID, f.ConvID, f.UpToID)
@@ -192,6 +221,52 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 		return
 	}
 	h.ToUsers(ids, ginH{"type": "recall", "messageId": msg.ID, "convId": msg.ConversationID})
+}
+
+// checkConnState 连接级封禁 / token_version 复核（handleChat 落库前调用）。
+//
+// 修复缺陷：IsBanned / TokenVersion 此前只在 serve.go 握手段校验，连接建立后
+// admin 封禁或重置密码（tv+1）对既有连接无效 —— 忽略 kicked 帧即可继续发消息、
+// 写库、fan-out。本函数在每次 chat 落库前复核一次：
+//   - 用户已封禁 → error 帧 + 断开；
+//   - 库中 tv 与握手缓存 tv 不一致 → error 帧 + 断开（密码被重置 / 强制重登）。
+//
+// deps.Users 允许为 nil（NewHub(nil) 单测 / 未注入），此时跳过复核以保持兼容。
+func (h *Hub) checkConnState(c *Client, convID uint) bool {
+	if h.deps == nil || h.deps.Users == nil {
+		return true
+	}
+	u, err := h.deps.Users.ByID(c.UserID)
+	if err != nil {
+		slog.Error("ws conn state lookup", "err", err.Error(), "uid", c.UserID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return false
+	}
+	if u == nil {
+		// 账号已被删除：旧连接必须立即失效
+		h.denyConn(c, convID, "登录已失效，请重新登录")
+		return false
+	}
+	if u.IsBanned() {
+		slog.Warn("ws chat rejected: banned", "uid", c.UserID, "conv", convID)
+		h.denyConn(c, convID, "账号已被封禁")
+		return false
+	}
+	if u.TokenVersion != c.tv {
+		slog.Warn("ws chat rejected: stale token version",
+			"uid", c.UserID, "conn_tv", c.tv, "db_tv", u.TokenVersion)
+		h.denyConn(c, convID, "登录已失效，请重新登录")
+		return false
+	}
+	return true
+}
+
+// denyConn 回 error 帧并强制断开该连接（连接级复核失败时使用）。
+// requestKick 幂等；这里不 close(c.send)，所有权仍属 Unregister。
+func (h *Hub) denyConn(c *Client, convID uint, reason string) {
+	h.sendError(c, reason)
+	// 先冲刷队列把 error 帧送达，再关闭连接（与 KickUser 语义一致）。
+	c.requestKick(true)
 }
 
 // requireMember 上行帧的会话成员校验。
