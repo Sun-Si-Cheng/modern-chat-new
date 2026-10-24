@@ -250,6 +250,7 @@ func (s *ConversationStore) memberBriefs(convIDs []uint) (map[uint][]model.UserB
 		Username       string `gorm:"column:username"`
 		Nickname       string `gorm:"column:nickname"`
 		AvatarColor    string `gorm:"column:avatar_color"`
+		Avatar         string `gorm:"column:avatar"`
 	}
 	if err := s.db.Table("conversation_members cm").
 		Select("cm.conversation_id, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
@@ -260,7 +261,7 @@ func (s *ConversationStore) memberBriefs(convIDs []uint) (map[uint][]model.UserB
 	}
 	for _, r := range rows {
 		out[r.ConversationID] = append(out[r.ConversationID], model.UserBrief{
-			ID: r.ID, Username: r.Username, Nickname: r.Nickname, AvatarColor: r.AvatarColor,
+			ID: r.ID, Username: r.Username, Nickname: r.Nickname, AvatarColor: r.AvatarColor, Avatar: r.Avatar,
 		})
 	}
 	return out, nil
@@ -287,12 +288,39 @@ func (s *ConversationStore) SearchGroups(kw string, limit int) ([]model.Conversa
 
 // MembersView 成员列表（含用户摘要）。
 func (s *ConversationStore) MembersView(convID uint) ([]model.MemberView, error) {
-	var rows []model.MemberView
+	var rows []struct {
+		UserID      uint      `gorm:"column:user_id"`
+		Role        string    `gorm:"column:role"`
+		JoinedAt    time.Time `gorm:"column:joined_at"`
+		ID          uint      `gorm:"column:id"`
+		Username    string    `gorm:"column:username"`
+		Nickname    string    `gorm:"column:nickname"`
+		AvatarColor string    `gorm:"column:avatar_color"`
+		Avatar      string    `gorm:"column:avatar"`
+	}
 	err := s.db.Table("conversation_members cm").
 		Select("cm.user_id, cm.role, cm.joined_at, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
 		Joins("JOIN users u ON u.id = cm.user_id").
 		Where("cm.conversation_id = ?", convID).
 		Order("cm.id ASC").
 		Scan(&rows).Error
-	return rows, err
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.MemberView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, model.MemberView{
+			UserID:   r.UserID,
+			Role:     r.Role,
+			JoinedAt: r.JoinedAt,
+			User: model.UserBrief{
+				ID:          r.ID,
+				Username:    r.Username,
+				Nickname:    r.Nickname,
+				AvatarColor: r.AvatarColor,
+				Avatar:      r.Avatar,
+			},
+		})
+	}
+	return out, nil
 }
