@@ -82,7 +82,9 @@ onMounted(async () => {
         <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
         <p class="mc-empty__hint">{{ t('chat.emptyPane') }}</p>
         <div class="mc-empty__actions">
-          <TButton theme="primary" @click="openAddFriend">{{ t('chat.emptyAddFriend') }}</TButton>
+          <TButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
+            {{ t('chat.emptyAddFriend') }}
+          </TButton>
           <TButton variant="outline" @click="pluginDrawerVisible = true">{{ t('chat.emptyPlugins') }}</TButton>
         </div>
       </div>
