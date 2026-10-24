@@ -254,6 +254,15 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("handle 应 200，got %d", code)
 	}
 
+	// 好友列表按对方去重：同意后双方各有一条记录，但列表中都只应出现 1 次
+	for name, token := range map[string]string{"A": tokenA, "B": tokenB} {
+		code, listAny := apiAny(t, e, "GET", "/api/friends", token, "")
+		list, _ := listAny.([]any)
+		if code != 200 || len(list) != 1 {
+			t.Fatalf("%s 好友列表应去重为 1 条，got %v", name, listAny)
+		}
+	}
+
 	// A 发起单聊（幂等复用）
 	code, convOut := apiJSON(t, e, "POST", "/api/conversations/single", tokenA, fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
 	if code != 200 {
