@@ -13,10 +13,9 @@ import {
   Tag as TTag,
   Button as TButton,
 } from 'tdesign-vue-next'
-
+import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
-import PreferencesMenu from '@/components/common/PreferencesMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { adminApi, systemApi, type AdminPluginRow, type AdminUserRow, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -208,7 +207,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         <span v-if="buildInfo" class="mc-admin__build text-placeholder num" :title="t('admin.buildVersion')">
           {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
         </span>
-        <PreferencesMenu />
+        <TButton
+          variant="text"
+          shape="square"
+          :aria-label="t('settings.title')"
+          @click="router.push('/settings')"
+        >
+          <template #icon><SettingIcon /></template>
+        </TButton>
         <TButton variant="text" @click="router.push('/chat')">{{ t('admin.backToChat') }}</TButton>
       </div>
     </header>

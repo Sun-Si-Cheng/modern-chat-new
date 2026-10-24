@@ -7,6 +7,12 @@ const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue'), meta: { guest: true } },
+    // 设置：公开（未登录时仅可改外观）
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/views/SettingsView.vue'),
+    },
     // 法律文档：公开可访问（登录前后都能打开）
     {
       path: '/terms',
