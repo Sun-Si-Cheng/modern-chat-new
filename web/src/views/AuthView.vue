@@ -268,19 +268,18 @@ function switchMode(m: 'login' | 'register') {
   letter-spacing: -0.02em;
 }
 
-/* 表单与标题之间留白，字段之间统一 22px */
+/* 表单与标题之间留白；字段间距用 flex gap 统一控制
+ * （TDesign 的 FormItem margin 在此布局下不生效，会导致字段贴死） */
 .auth-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
   margin-top: 26px;
   animation: auth-form-in 0.16s ease-out;
 }
 
 .auth-card__form :deep(.t-form__item) {
-  margin-bottom: 26px;
-}
-
-/* 最后一个字段与协议行之间靠 item 间距撑开，协议行自身不再附加上边距 */
-.auth-card__form :deep(.t-form__item:last-of-type) {
-  margin-bottom: 26px;
+  margin-bottom: 0;
 }
 
 @keyframes auth-form-in {
@@ -302,7 +301,7 @@ function switchMode(m: 'login' | 'register') {
 
 /* 协议同意行：位于密码之后、提交按钮之前 */
 .auth-card__agree {
-  margin: 0 0 22px;
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
 }
