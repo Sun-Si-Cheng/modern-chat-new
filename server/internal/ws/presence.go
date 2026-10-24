@@ -12,6 +12,21 @@ func (h *Hub) notifyPresence(u *model.User, online bool) {
 	})
 }
 
+// NotifyUserChange 昵称/头像变更广播：好友 + 同会话成员 + 本人其他设备，
+// 前端据此就地更新会话列表、好友列表与群成员头像，无需刷新页面。
+func (h *Hub) NotifyUserChange(userID uint, nickname, avatar, avatarColor string) {
+	if h.deps == nil {
+		return
+	}
+	h.ToUsers(h.relatedUsers(userID), ginH{
+		"type":        "user_change",
+		"userId":      userID,
+		"nickname":    nickname,
+		"avatar":      avatar,
+		"avatarColor": avatarColor,
+	})
+}
+
 // relatedUsers 与该用户相关的在线受众：同会话成员 ∪ 好友 ∪ 自己。
 func (h *Hub) relatedUsers(uid uint) []uint {
 	set := map[uint]bool{uid: true}

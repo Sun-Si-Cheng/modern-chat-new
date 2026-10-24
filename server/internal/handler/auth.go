@@ -312,6 +312,10 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 昵称/头像属于公开资料：广播给好友与同会话成员，前端就地更新各处头像
+	if req.Nickname != nil || req.Avatar != nil {
+		notifyFor(c).NotifyUserChange(u.ID, u.Nickname, u.Avatar, u.AvatarColor)
+	}
 	c.JSON(http.StatusOK, u)
 }
 

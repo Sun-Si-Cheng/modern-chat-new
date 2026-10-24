@@ -47,6 +47,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     else conversations.value.push(conv)
   }
 
+  /** 用户资料变更（昵称/头像）后就地更新会话列表里的 peer，无需重新拉取 */
+  function applyUserProfile(u: { userId: number; nickname: string; avatar: string; avatarColor: string }) {
+    for (const c of conversations.value) {
+      if (c.peer?.id === u.userId) {
+        c.peer = { ...c.peer, nickname: u.nickname, avatar: u.avatar, avatarColor: u.avatarColor }
+      }
+    }
+  }
+
   // ===== 消息历史（游标分页 beforeId） =====
 
   async function openConversation(convId: number) {
@@ -314,6 +323,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     readByConv,
     loadConversations,
     upsertConversation,
+    applyUserProfile,
     openConversation,
     loadMore,
     resync,

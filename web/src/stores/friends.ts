@@ -36,10 +36,36 @@ export const useFriendsStore = defineStore('friends', () => {
     friends.value = friends.value.filter((f) => f.friend.id !== friendId)
   }
 
+  /** 用户资料变更（昵称/头像）后就地更新好友与申请列表 */
+  function applyUserProfile(u: { userId: number; nickname: string; avatar: string; avatarColor: string }) {
+    for (const f of friends.value) {
+      if (f.friend.id === u.userId) {
+        f.friend = { ...f.friend, nickname: u.nickname, avatar: u.avatar, avatarColor: u.avatarColor }
+      }
+    }
+    for (const r of requests.value) {
+      if (r.from.id === u.userId) {
+        r.from = { ...r.from, nickname: u.nickname, avatar: u.avatar, avatarColor: u.avatarColor }
+      }
+    }
+  }
+
   function reset() {
     friends.value = []
     requests.value = []
   }
 
-  return { friends, requests, accepted, requestCount, loadAll, loadRequests, apply, handle, remove, reset }
+  return {
+    friends,
+    requests,
+    accepted,
+    requestCount,
+    loadAll,
+    loadRequests,
+    apply,
+    handle,
+    remove,
+    applyUserProfile,
+    reset,
+  }
 })
