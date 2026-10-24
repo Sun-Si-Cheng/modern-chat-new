@@ -9,7 +9,7 @@
     <meta name="theme-color" content="#17191c" media="(prefers-color-scheme: dark)" />
     <title>ModernChat</title>
     <script>
-      // 首屏防闪烁：在样式生效前应用已保存的主题（auto 跟随系统）
+      // 首屏防闪烁：在样式生效前应用已保存的主题与认证页背景色
       ;(function () {
         try {
           var saved = localStorage.getItem('mc_theme') || 'auto'
@@ -17,6 +17,11 @@
             saved === 'dark' ||
             (saved === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.setAttribute('theme-mode', dark ? 'dark' : 'light')
+
+          var scene = localStorage.getItem('mc_scene_color')
+          if (scene && /^#[0-9a-fA-F]{6}$/.test(scene)) {
+            document.documentElement.style.setProperty('--mc-scene-color', scene)
+          }
         } catch (e) {
           /* 隐私模式下 localStorage 不可用：保持默认 */
         }
