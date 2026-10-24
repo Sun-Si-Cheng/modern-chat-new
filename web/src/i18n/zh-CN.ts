@@ -151,7 +151,7 @@ export default {
     unread: '未读',
     recallOk: '已撤回',
     recallAria: '撤回',
-    typingOnly: '{names} 正在输入…',
+    typingOnly: '{names} 正在输入',
     noEarlier: '没有更早的消息了',
     unknownType: '[{type} 消息]',
     renderFailed: '[无法渲染的插件消息]',

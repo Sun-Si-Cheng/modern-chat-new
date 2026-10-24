@@ -116,3 +116,4 @@ src/
 - 消息正文用 `{{ }}` 文本插值（Vue 自动转义），全项目不使用 `v-html`
 - 数字（时间、未读数、计数）使用 `tabular-nums`
 - 动效只做反馈（hover / focus / 切换），并尊重 `prefers-reduced-motion`
+- 动效统一使用 `--mc-dur-*` / `--mc-ease-*` 令牌，只动 `transform` / `opacity`；路由与会话切换、新消息入场、侧栏视图切换、空状态分层入场均有过渡，减少动效偏好下自动降级

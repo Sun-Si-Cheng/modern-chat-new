@@ -92,11 +92,15 @@ const items = computed(() => {
   color: var(--td-text-color-primary);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s ease-out;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out),
+    transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .group-pane__item:hover {
   background: var(--td-bg-color-container);
+  transform: translateX(2px);
 }
 
 /* 选中态用一块中性底色表达，不加阴影 */

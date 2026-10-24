@@ -64,30 +64,34 @@ onMounted(async () => {
     />
     <GroupPane v-if="paneView === 'chats'" />
     <ConvSidebar :view="paneView" @open-add-friend="openAddFriend" />
-    <MessagePane v-if="convStore.currentConv" :key="convStore.currentConv.id" />
-    <div v-else class="mc-layout__empty">
-      <div class="mc-empty">
-        <div class="mc-empty__mark" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M5 5.8C5 4.8 5.8 4 6.8 4h10.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2c-.5.4-1.3 0-1.3-.7V14.2c-.3-.2-.5-.6-.5-1.1V5.8Z"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-            <path d="M8.5 8.5h7M8.5 11.5h4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+    <div class="mc-layout__main">
+      <Transition name="mc-swap" mode="out-in">
+        <MessagePane v-if="convStore.currentConv" :key="convStore.currentConv.id" />
+        <div v-else class="mc-layout__empty">
+          <div class="mc-empty">
+            <div class="mc-empty__mark" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 5.8C5 4.8 5.8 4 6.8 4h10.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2c-.5.4-1.3 0-1.3-.7V14.2c-.3-.2-.5-.6-.5-1.1V5.8Z"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                />
+                <path d="M8.5 8.5h7M8.5 11.5h4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
+            <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
+            <p class="mc-empty__hint">{{ t('chat.emptyPane') }}</p>
+            <div class="mc-empty__actions">
+              <TButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
+                {{ t('chat.emptyAddFriend') }}
+              </TButton>
+              <TButton variant="outline" @click="pluginDrawerVisible = true">{{ t('chat.emptyPlugins') }}</TButton>
+            </div>
+          </div>
         </div>
-        <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
-        <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
-        <p class="mc-empty__hint">{{ t('chat.emptyPane') }}</p>
-        <div class="mc-empty__actions">
-          <TButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
-            {{ t('chat.emptyAddFriend') }}
-          </TButton>
-          <TButton variant="outline" @click="pluginDrawerVisible = true">{{ t('chat.emptyPlugins') }}</TButton>
-        </div>
-      </div>
+      </Transition>
     </div>
     <DetailPanel v-if="convStore.currentConv" />
     <PluginDrawer v-model:visible="pluginDrawerVisible" />
@@ -100,6 +104,13 @@ onMounted(async () => {
   height: 100%;
   display: flex;
   overflow: hidden;
+}
+
+/* 会话区固定占位：切换会话/空态时只做淡入淡出，不推动右侧详情栏 */
+.mc-layout__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
 }
 
 .mc-layout__empty {
@@ -118,6 +129,31 @@ onMounted(async () => {
   align-items: center;
   max-width: 340px;
   text-align: center;
+}
+
+/* 空状态逐层入场：标记 → 标题 → 定位语 → 提示 → 动作 */
+.mc-empty > * {
+  animation: mc-fade-up var(--mc-dur-slow) var(--mc-ease-out) both;
+}
+
+.mc-empty__mark {
+  animation-name: mc-pop-in;
+}
+
+.mc-empty__title {
+  animation-delay: 40ms;
+}
+
+.mc-empty__slogan {
+  animation-delay: 70ms;
+}
+
+.mc-empty__hint {
+  animation-delay: 100ms;
+}
+
+.mc-empty__actions {
+  animation-delay: 140ms;
 }
 
 .mc-empty__mark {
