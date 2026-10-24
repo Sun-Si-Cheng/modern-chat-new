@@ -156,6 +156,12 @@ function goBack() {
           </div>
         </div>
 
+        <!-- 背景设置独立成组，并标明作用范围 -->
+        <div class="settings-subhead">
+          <span class="settings-subhead__title">{{ t('settings.sceneTitle') }}</span>
+          <span class="settings-subhead__hint">{{ t('settings.sceneHint') }}</span>
+        </div>
+
         <div class="settings-row settings-row--stack">
           <span class="settings-row__label">{{ t('prefs.sceneColor') }}</span>
           <div class="settings-colors">
@@ -196,7 +202,6 @@ function goBack() {
         </div>
 
         <div class="settings-foot">
-          <span class="text-placeholder">{{ t('settings.sceneTitle') }}</span>
           <button type="button" class="settings-link" @click="prefs.resetScene()">
             {{ t('prefs.sceneReset') }}
           </button>
@@ -468,12 +473,31 @@ function goBack() {
   margin-left: 8px;
 }
 
-/* 卡片底部辅助行（说明 + 重置入口） */
+/* 分组小标题：说明该组设置的作用范围 */
+.settings-subhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 14px 0 10px;
+  border-top: 1px solid var(--mc-hairline);
+}
+
+.settings-subhead__title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-subhead__hint {
+  font-size: 12px;
+  color: var(--mc-text-faint);
+}
+
+/* 卡片底部：重置入口 */
 .settings-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
   padding: 12px 0 14px;
   font-size: 12px;
 }

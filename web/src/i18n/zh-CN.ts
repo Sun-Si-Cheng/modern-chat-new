@@ -293,6 +293,7 @@ export default {
     languageZh: '简体中文',
     languageEn: 'English',
     sceneTitle: '登录页背景',
+    sceneHint: '仅影响登录页与找回密码页的背景，聊天界面不受影响。',
     loginRequired: '登录后可修改昵称与邮箱',
   },
   legal: {
