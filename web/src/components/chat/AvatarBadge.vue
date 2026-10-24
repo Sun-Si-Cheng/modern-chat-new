@@ -9,18 +9,11 @@ const props = withDefaults(
     online?: boolean
     /** 自定义头像（data URL）；为空时用默认头像图 */
     src?: string
-    /** 点击头像弹出大图预览（调用方负责监听 preview 事件打开弹窗） */
-    preview?: boolean
+    /** 手型指针：头像可点击（点击弹出的面板由调用方包裹 TPopup 实现） */
+    clickable?: boolean
   }>(),
-  { color: '#0052d9', size: 40, online: false, src: '', preview: false },
+  { color: '#0052d9', size: 40, online: false, src: '', clickable: false },
 )
-
-const emit = defineEmits<{ preview: [] }>()
-
-function onClick() {
-  // 阻止冒泡：会话列表里头像点击不应触发列表项
-  if (props.preview) emit('preview')
-}
 
 const initial = computed(() => props.name?.trim()?.charAt(0)?.toUpperCase() || '?')
 
@@ -39,13 +32,8 @@ watch(
 <template>
   <div
     class="mc-avatar"
-    :class="{ 'is-clickable': preview }"
+    :class="{ 'is-clickable': clickable }"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${size * 0.45}px` }"
-    :role="preview ? 'button' : undefined"
-    :tabindex="preview ? 0 : undefined"
-    :aria-label="preview ? name : undefined"
-    @click.stop="onClick"
-    @keydown.enter.stop="onClick"
   >
     <img
       v-if="!imageFailed"
@@ -77,9 +65,9 @@ watch(
   user-select: none;
 }
 
-/* 可预览头像：放大镜手势 */
+/* 可点击头像：手型指针 */
 .mc-avatar.is-clickable {
-  cursor: zoom-in;
+  cursor: pointer;
 }
 
 .mc-avatar.is-clickable:focus-visible {
