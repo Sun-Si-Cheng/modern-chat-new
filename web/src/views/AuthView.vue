@@ -133,25 +133,25 @@ function switchMode(m: 'login' | 'register') {
         @submit="onSubmit"
       >
         <TFormItem name="username">
-          <TInput v-model="data.username" :placeholder="t('auth.username')" clearable>
+          <TInput v-model="data.username" size="large" :placeholder="t('auth.username')" clearable>
             <template #prefix-icon><UserIcon /></template>
           </TInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="nickname">
-          <TInput v-model="registerForm.nickname" :placeholder="t('auth.nickname')" clearable>
+          <TInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
             <template #prefix-icon><UserIcon /></template>
           </TInput>
         </TFormItem>
 
         <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
-          <TInput v-model="data.password" type="password" :placeholder="t('auth.password')">
+          <TInput v-model="data.password" size="large" type="password" :placeholder="t('auth.password')">
             <template #prefix-icon><LockOnIcon /></template>
           </TInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="confirm">
-          <TInput v-model="registerForm.confirm" type="password" :placeholder="t('auth.confirmPassword')">
+          <TInput v-model="registerForm.confirm" size="large" type="password" :placeholder="t('auth.confirmPassword')">
             <template #prefix-icon><LockOnIcon /></template>
           </TInput>
         </TFormItem>
@@ -268,9 +268,9 @@ function switchMode(m: 'login' | 'register') {
 .auth-card {
   position: relative;
   z-index: 1;
-  width: 400px;
+  width: 420px;
   max-width: 100%;
-  padding: 28px 28px 18px;
+  padding: 36px 34px 28px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
   border-radius: 12px;
@@ -282,7 +282,7 @@ function switchMode(m: 'login' | 'register') {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 
 .auth-card__mark {
@@ -307,20 +307,31 @@ function switchMode(m: 'login' | 'register') {
 }
 
 .auth-card__title {
-  margin: 0 0 6px;
-  font-size: 24px;
+  margin: 0 0 10px;
+  font-size: 26px;
   letter-spacing: -0.02em;
 }
 
 .auth-card__sub {
-  margin: 0 0 20px;
+  margin: 0;
   font-size: 14px;
   line-height: 1.6;
   color: var(--mc-text-faint);
 }
 
+/* 表单与标题之间留白，字段之间统一 22px */
 .auth-card__form {
+  margin-top: 24px;
   animation: auth-form-in 0.16s ease-out;
+}
+
+.auth-card__form :deep(.t-form__item) {
+  margin-bottom: 26px;
+}
+
+/* 最后一个字段与协议行之间靠 item 间距撑开，协议行自身不再附加上边距 */
+.auth-card__form :deep(.t-form__item:last-of-type) {
+  margin-bottom: 26px;
 }
 
 @keyframes auth-form-in {
@@ -342,9 +353,9 @@ function switchMode(m: 'login' | 'register') {
 
 /* 协议同意行：位于密码之后、提交按钮之前 */
 .auth-card__agree {
-  margin: 6px 0 14px;
+  margin: 0 0 22px;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .auth-card__agree-text {
@@ -357,14 +368,14 @@ function switchMode(m: 'login' | 'register') {
 }
 
 .auth-card__links {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: 24px;
+  padding-top: 18px;
   border-top: 1px solid var(--td-component-border);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 16px;
   font-size: 14px;
 }
 
