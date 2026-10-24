@@ -85,9 +85,6 @@ function goBack() {
       </section>
 
       <footer class="legal-doc__footer">
-        <RouterLink :to="isTerms ? '/privacy' : '/terms'">
-          {{ isTerms ? t('legal.privacy') : t('legal.terms') }}
-        </RouterLink>
         <RouterLink to="/login">{{ t('forgot.backToLogin') }}</RouterLink>
       </footer>
     </article>
@@ -170,7 +167,7 @@ function goBack() {
 
 .legal-doc__footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 16px;
   margin-top: 48px;
   padding-top: 16px;
