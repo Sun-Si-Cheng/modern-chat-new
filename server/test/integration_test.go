@@ -348,6 +348,37 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("群成员应为 2，got %v", membersAny)
 	}
 
+	// 转让群主：conversations.owner_id 与成员 role 必须同步，否则前端（读 ownerId）
+	// 仍显示原群主有管理入口、新群主没有
+	if code, out := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/transfer", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d}`, userA.ID)); code != 200 {
+		t.Fatalf("转让群主应 200，got %d %v", code, out)
+	}
+	if code, _ := apiJSON(t, e, "PATCH", fmt.Sprintf("/api/conversations/%d", groupID), tokenB,
+		`{"name":"原群主改名"}`); code != 403 {
+		t.Fatalf("转让后原群主改群名应 403，got %d", code)
+	}
+	if code, _ := apiJSON(t, e, "PATCH", fmt.Sprintf("/api/conversations/%d", groupID), tokenA,
+		`{"name":"新群名"}`); code != 200 {
+		t.Fatalf("新群主改群名应 200，got %d", code)
+	}
+	_, convsAfter := apiAny(t, e, "GET", "/api/conversations", tokenA, "")
+	ownerSynced := false
+	if list, ok := convsAfter.([]any); ok {
+		for _, cv := range list {
+			m, _ := cv.(map[string]any)
+			if m == nil || uint64(m["id"].(float64)) != groupID {
+				continue
+			}
+			if oid, ok := m["ownerId"].(float64); ok && uint64(oid) == uint64(userA.ID) {
+				ownerSynced = true
+			}
+		}
+	}
+	if !ownerSynced {
+		t.Fatalf("转让后会话 ownerId 应更新为 %d，实际未同步", userA.ID)
+	}
+
 	// 站长封禁 A：A 的 WS 收 kicked、REST 变 401
 	_, tokenAdmin := apiJSON(t, e, "POST", "/api/auth/login", "", `{"username":"root","password":"secret123"}`)
 	adminTok := tokenAdmin["token"].(string)
