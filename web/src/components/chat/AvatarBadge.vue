@@ -9,10 +9,8 @@ const props = withDefaults(
     online?: boolean
     /** 自定义头像（data URL）；为空时用默认头像图 */
     src?: string
-    /** 手型指针：头像可点击（点击弹出的面板由调用方包裹 TPopup 实现） */
-    clickable?: boolean
   }>(),
-  { color: '#0052d9', size: 40, online: false, src: '', clickable: false },
+  { color: '#0052d9', size: 40, online: false, src: '' },
 )
 
 const initial = computed(() => props.name?.trim()?.charAt(0)?.toUpperCase() || '?')
@@ -32,7 +30,6 @@ watch(
 <template>
   <div
     class="mc-avatar"
-    :class="{ 'is-clickable': clickable }"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${size * 0.45}px` }"
   >
     <img
@@ -63,11 +60,6 @@ watch(
   justify-content: center;
   font-weight: 600;
   user-select: none;
-}
-
-/* 可点击头像：手型指针 */
-.mc-avatar.is-clickable {
-  cursor: pointer;
 }
 
 .mc-avatar.is-clickable:focus-visible {
