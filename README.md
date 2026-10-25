@@ -13,9 +13,12 @@
 | [README.md](README.md) | 定位、快速开始、插件开发、升级部署 | 第一次接触项目 |
 | [docs/设计文档.md](docs/设计文档.md) | 产品定位、架构、数据库、协议、插件系统、性能边界 | 想理解设计取舍 |
 | [docs/后端需求规格.md](docs/后端需求规格.md) | 接口契约（请求/响应字段）、校验规则、错误码、验收标准 | 改接口 / 做联调 / 验收 |
+| [docs/前端技术方案.md](docs/前端技术方案.md) | 前端结构、状态管理、WS 实时链路、性能约定、易踩的坑 | 改前端 |
+| [docs/运维手册.md](docs/运维手册.md) | 环境变量全表、部署、备份升级、日志、排障 FAQ | 部署与运维 |
 | [server/README.md](server/README.md) | 后端运行手册（配置、迁移、测试、结构） | 部署与运维后端 |
 | [web/README.md](web/README.md) | 前端结构速览与命令 | 改前端 |
 | [docs/legal/README.md](docs/legal/README.md) | 用户协议 / 隐私协议的维护方式与合规提示 | 部署上线前替换运营主体信息 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 | 了解某个功能何时加入、修了什么 |
 
 ## 核心理念：内核 vs 插件
 
@@ -32,16 +35,17 @@
 
 | 模块 | 能力 |
 |---|---|
-| 账号 | 注册（首注册者=站长）、登录、找回/重置密码（`token_version` 全端失效）、改昵称/邮箱、封禁强制下线 |
+| 账号 | 注册（首注册者=站长）、登录、找回/重置密码（`token_version` 全端失效）、改昵称/邮箱、**自定义头像**（前端裁切压缩至 256px，data URL 存储，全站显示）、封禁强制下线 |
 | 好友 | 按用户名/昵称搜索添加、申请/同意/拒绝/删除（拒绝后可重新申请） |
-| 会话 | 单聊幂等复用、群聊（建/搜/加/退，200 人上限）、会话列表（最后消息 + 未读红点） |
-| 消息 | 纯文本收发、游标分页、2 分钟撤回、"对方正在输入"、已读回执、在线状态、`client_msg_id` 幂等 |
-| 群管理 | 改群名、踢人、转让群主（群主须先转让才能退群） |
+| 会话 | 单聊幂等复用、群聊（建/搜/加/退，200 人上限）、会话列表（最后消息 + 未读红点 + 分组筛选：全部/未读/单聊/群聊） |
+| 消息 | 纯文本收发、游标分页、2 分钟撤回、"对方正在输入"、已读回执、在线状态、`client_msg_id` 幂等、断线重连自动补齐数据、发送失败标记与重发 |
+| 群管理 | 改群名、踢人、转让群主（`owner_id` 与成员角色事务同步；群主须先转让才能退群） |
 | 插件 | 上传 / URL 安装（SSRF 防护）、权限清单确认、启停、卸载、同名上传即升级、自定义消息类型渲染、站长全局下架 |
-| 界面 | 四栏聊天布局、连续消息分组、统一动效、头像/昵称实时同步、空状态引导、中 / 英文切换、亮 / 暗 / 跟随系统主题（偏好本地持久化，服务端错误消息随语言翻译） |
-| 运维 | 结构化日志、健康检查 `/api/health`、版本 `/api/version`、三级限流、WS Origin 白名单、一键从 Gitee 升级 |
+| 界面 | 飞书式四栏（图标栏 / 分组栏 / 会话列表 / 聊天区）、统一设置页（语言 / 主题 / 背景外观 / 账号）、登录页背景色与特效（光晕/波纹/网格，访客可自选，本地持久化）、连续消息分组、头像/昵称实时同步、中 / 英文切换、亮 / 暗 / 跟随系统主题 |
+| 邮件 | 找回密码邮件（SMTP，支持 465 隐式 TLS / 587 STARTTLS，QQ / 163 授权码），未配置时链接打印到服务端日志 |
+| 运维 | 结构化日志（轮转 + 保留天数）、健康检查 `/api/health`、版本 `/api/version`、三级限流、WS Origin 白名单、一键从 Gitee 升级、覆盖率脚本（单测 + 集成合并统计） |
 
-**本期不做（二期）**：语音/视频、表情回复、@人、消息转发/搜索/编辑、群管理员与禁言、插件市场、多端已读同步、水平扩展（Redis）。
+**本期不做（二期）**：语音/视频、表情回复、@人、消息转发/搜索/编辑、群管理员与禁言、插件市场、多端已读同步、水平扩展（Redis 限流已支持）。
 
 ## 技术栈
 
@@ -58,10 +62,10 @@
 
 ```
 modernchat-new/
-├── docs/                       # 设计文档 + 后端需求规格
+├── docs/                       # 设计文档 / 后端规格 / 前端方案 / 运维手册 / 协议正文
 ├── deploy/                     # nginx 配置示例（裸机 / compose 两版）
 ├── plugins/examples/           # 示例插件（可直接上传试用）
-├── scripts/                    # update.sh / update.ps1 —— 从 Gitee 拉取升级
+├── scripts/                    # update.sh / update.ps1（Gitee 升级）+ coverage.sh / coverage.ps1（覆盖率）
 ├── server/                     # Go 后端
 │   ├── cmd/server/main.go      # 入口：config → db → hub → router → 优雅停机
 │   ├── internal/
@@ -73,20 +77,21 @@ modernchat-new/
 │   │   ├── middleware/         # logger / jwt / ban / admin / limiter
 │   │   ├── ws/                 # hub(64 分片) / serve(读写 pump) / dispatch / presence
 │   │   ├── plugin/             # manifest 校验 + URL 拉取（SSRF 防护）
-│   │   └── service/            # mailer（SMTP 可选）
-│   ├── migrations/             # 0001_init.up/down.sql
-│   ├── test/                   # 集成测试（-tags integration）
+│   │   └── service/            # mailer（SMTP：465 隐式 TLS / 587 STARTTLS）
+│   ├── migrations/             # 0001_init + 0002_user_avatar（用户自定义头像）
+│   ├── test/                   # 集成测试（-tags integration；需 MySQL，详见 server/README）
 │   └── Dockerfile
 ├── web/                        # Vue 前端
 │   └── src/
 │       ├── api/                # REST 客户端（401 统一处理）
-│       ├── stores/             # auth / ws / conversations / friends / plugins
+│       ├── stores/             # auth / ws / conversations / friends / plugins / prefs
 │       ├── composables/        # useWebSocket、usePluginHost（沙箱宿主）
 │       ├── components/
-│       │   ├── chat/           # 会话列表 / 消息流 / 输入区 / 详情面板 / 插件抽屉 / 好友搜索弹窗 / 资料弹窗
+│       │   ├── chat/           # 图标栏(AppRail) / 分组栏(GroupPane) / 会话列表 / 消息流 / 输入区 / 详情面板 / 插件抽屉 / 资料卡 / 头像
+│       │   ├── common/         # AuthScene（认证页背景场景）/ QuickPrefs（认证页快捷切换）
 │       │   └── declarative/    # 描述式 UI 白名单渲染器（8 组件）+ 插件面板
 │       ├── types/proto.ts      # WS 帧与业务契约（前后端共用口径）
-│       └── views/              # 登录注册 / 找回密码 / 聊天主界面 / 站长后台
+│       └── views/              # 登录注册 / 找回密码 / 设置 / 协议 / 聊天主界面 / 站长后台
 └── docker-compose.yml          # MySQL + 后端一键环境
 ```
 

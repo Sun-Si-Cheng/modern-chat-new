@@ -1,0 +1,210 @@
+# ModernChat 运维手册
+
+> 面向**部署与维护**的人：环境变量、部署形态、备份升级、日志与排障。
+> 接口契约见 [后端需求规格.md](后端需求规格.md)，前端见 [前端技术方案.md](前端技术方案.md)。
+
+---
+
+## 1. 部署形态
+
+**技术前提**：单实例自托管。MySQL 8.0 是唯一必需依赖；Redis（限流共享配额）与 SMTP（找回密码邮件）都是**可选**，缺省时自动降级。
+
+```
+浏览器 ──HTTPS──▶ nginx（静态资源 + /api 反代 + /ws 升级）
+                        │
+                        └──▶ modernchat-server（:8080）──▶ MySQL 8.0
+```
+
+配置样例：
+
+- `deploy/nginx.conf.example` —— 裸机部署（systemd + nginx）
+- `deploy/nginx.compose.conf` —— Docker Compose 部署
+
+**nginx 必须为 `/ws` 配置 Upgrade 头**，否则 WebSocket 握手失败（见 §7）。
+
+---
+
+## 2. 环境变量全表
+
+后端从环境变量读取全部配置（`server/internal/config/config.go`），`.env` 文件在 `server/` 目录（已被 gitignore，**不要提交**）。
+
+| 变量 | 默认值 | 必填 | 说明 |
+|---|---|---|---|
+| `PORT` | `8080` | 否 | 后端监听端口 |
+| `GIN_MODE` | `release` | 否 | 生产固定 `release`；`debug` 时允许自动生成随机 `JWT_SECRET` |
+| `DB_DSN` | `root:root@tcp(127.0.0.1:3306)/modernchat?...` | **是** | MySQL 连接串，建议带 `utf8mb4&parseTime=True&loc=Local` |
+| `JWT_SECRET` | 无 | **是**（生产） | 签名密钥，**≥32 字节**；生产未设置会拒绝启动。生成：`openssl rand -hex 32` |
+| `MIGRATE` | `false` | 否 | `true` 时启动自动执行 `migrations/`（生产建议用版本化 SQL 手工执行） |
+| `FRONTEND_URL` | `http://localhost:5173` | **是** | 允许的前端来源，逗号分隔。用于 **WS Origin 白名单**与找回密码链接里的站点地址 |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1` | 否 | 可信反向代理网段；**显式设为空串 = 不信任任何代理**（此时不使用 XFF 判定来源 IP） |
+| `PLUGIN_MAX_SIZE` | `1048576`（1 MB） | 否 | 插件上传大小上限（字节） |
+| `LOG_LEVEL` | `info` | 否 | `debug` / `info` / `warn` / `error` |
+| `LOG_DIR` | `logs` | 否 | 日志目录；留空则只输出 stdout |
+| `LOG_RETAIN_DAYS` | `15` | 否 | 日志保留天数 |
+| `REDIS_ADDR` | 空 | 否 | 配置后限流使用 Redis 共享配额（多实例）；连接失败自动降级为内存 |
+| `REDIS_PASSWORD` | 空 | 否 | Redis 密码 |
+| `REDIS_DB` | `0` | 否 | Redis 库号 |
+| `SMTP_HOST` | 空 | 否 | 留空时找回密码链接只打印到服务端日志（**用户收不到邮件**） |
+| `SMTP_PORT` | `587` | 否 | `465` = 隐式 TLS（QQ / 163 推荐）；`587` = STARTTLS 升级 |
+| `SMTP_USER` | 空 | 否 | 登录用户名；QQ / 163 填**授权码**不是登录密码 |
+| `SMTP_PASS` | 空 | 否 | 授权码 / 密码 |
+| `SMTP_FROM` | `modernchat@localhost` | 否 | 发件人，**QQ / 163 必须与 `SMTP_USER` 一致**，否则被拒信 |
+
+> `FRONTEND_URL` 写法注意：逗号分隔、每项**不要带尾随空格**，可以带结尾斜杠（后端会去掉）。
+> 例：`FRONTEND_URL=https://chat.example.com,https://intranet.example.com`
+
+---
+
+## 3. 首次部署
+
+```bash
+# 1. 拉代码
+git clone https://gitee.com/Sun-Si-Cheng/modern-chat-new.git && cd modernchat-new
+
+# 2. 准备数据库
+mysql -uroot -p -e "CREATE DATABASE modernchat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 3. 配置
+cp server/.env.example server/.env
+# 编辑 server/.env：至少填 DB_DSN / JWT_SECRET / FRONTEND_URL
+
+# 4. 构建并启动
+cd server && go build -o ../bin/modernchat-server ./cmd/server   # Windows 加 .exe
+../bin/modernchat-server
+
+# 5. 构建前端并交给 nginx
+cd ../web && npm ci && npm run build     # 产物在 web/dist
+
+# 6. 校验
+curl http://127.0.0.1:8080/api/health     # {"status":"ok"}
+curl http://127.0.0.1:8080/api/version
+```
+
+**首个注册账号自动成为站长**（`role=admin`），之后注册的均为普通用户。注册入口在登录页「立即注册」。
+
+---
+
+## 4. 版本升级
+
+```bash
+# Linux / macOS
+./scripts/update.sh
+# Windows
+.\scripts\update.ps1
+```
+
+脚本会：拉取 Gitee → 构建后端（注入版本号）→ 构建前端 → 重启服务。也可手工执行：
+
+```bash
+cd server
+go build -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=v1.0.0 \
+  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
+  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=$(date -u +%FT%TZ)" \
+  -o ../bin/modernchat-server ./cmd/server
+```
+
+版本号在设置页「关于」与 `/api/version` 可见。
+
+---
+
+## 5. 数据备份与恢复
+
+数据全在 MySQL（插件代码也存库），**备份即备份数据库**：
+
+```bash
+# 备份
+mysqldump -uroot -p --single-transaction --default-character-set=utf8mb4 modernchat > backup_$(date +%F).sql
+
+# 恢复
+mysql -uroot -p modernchat < backup_2026-10-25.sql
+```
+
+- 建议每日一次，保留 7–30 天
+- `users.avatar` 存的是头像的 data URL（每张约 20–40 KB），会占库空间；用户多时按需清理或改用文件存储
+- 升级前建议先备份一次（脚本不会动数据，但迁移 SQL 会改表结构）
+
+---
+
+## 6. 日志与监控
+
+- 结构化日志（JSON 行），默认写到 `server/logs/`（`LOG_DIR`），同时输出 stdout
+- 轮转与保留：`LOG_RETAIN_DAYS`（默认 15 天）
+- 关键事件：
+
+| 日志关键字 | 含义 |
+|---|---|
+| `mail sent` / `mail send failed` | 邮件发送结果 |
+| `password reset link` | 未配 SMTP 时重置链接只出现在这里（去日志里取） |
+| `ws slow consumer, closing conn` | 客户端消费过慢被断开 |
+| `ws disconnected` | 连接断开 |
+| `message recalled` | 撤回 |
+| `gorm` | SQL 警告（参数已脱敏，不打印参数值） |
+
+- 健康检查：`GET /api/health`（无需鉴权）
+- 版本信息：`GET /api/version`
+
+```bash
+# 看某个用户当天做了什么
+grep '"uid":12' server/logs/*.log | tail -50
+# 看限流与安全事件
+grep -E 'rate|ban|kick' server/logs/*.log | tail -30
+```
+
+---
+
+## 7. 常见问题（FAQ）
+
+**Q1：用户说没收到重置密码邮件**
+未配置 SMTP 时链接只写进服务端日志（`grep "password reset link" server/logs/*.log`）。要真正发信，需配置 `SMTP_HOST/PORT/USER/PASS/FROM`，其中 `SMTP_FROM` 必须与 `SMTP_USER` 一致。QQ / 163 用**授权码**。
+
+**Q2：WebSocket 连不上，控制台报 403**
+`FRONTEND_URL` 没包含实际访问的域名。浏览器的 Origin 必须与白名单**完全一致**（不带尾斜杠）。另外 nginx 的 `/ws` 必须配 `Upgrade` / `Connection` 头。
+
+**Q3：登录后立刻掉线 / 提示令牌失效**
+`JWT_SECRET` 每次重启都变（生产未设置会直接拒绝启动，开发模式会随机生成）。生产必须显式配置并保持不变。管理员重置密码会让 `token_version` 递增，所有端被强制下线。
+
+**Q4：注册提示"用户已存在"，换名字也不行**
+用户名唯一且不可修改（用于登录）。昵称可以重复。
+
+**Q5：提示 429 / 请求太频繁**
+触发了限流。登录、注册、发消息、忘记密码各有限流档位，等窗口结束即可。**多实例部署时需配置 Redis**，否则各实例独立计数。
+
+**Q6：插件上传失败**
+检查 `PLUGIN_MAX_SIZE`（默认 1 MB）与 nginx 的 `client_max_body_size`（默认可能只有 1 MB，需同步调大）。同名文件再次上传视为**升级**。
+
+**Q7：想找回忘记的用户名**
+系统不提供用户名找回。站长可在后台为该用户重置密码，再线下告知。
+
+**Q8：后台进不去**
+`/admin` 需要 `role=admin`。只有**首个注册账号**是站长。若站长账号丢失，只能进库把 `users.role` 改为 `admin`。
+
+**Q9：跑集成测试全是 SKIP，却显示 ok**
+集成测试连不上 MySQL 时会 `t.Skip`，而 `go test` 对 SKIP 仍返回 `ok`——是**假通过**。正确做法：设置 `DB_DSN` 指向测试库（库需存在：`CREATE DATABASE modernchat_test`），并用 `scripts/coverage.ps1` / `coverage.sh`，脚本会检测 SKIP 并告警。
+
+**Q10：升级后页面还是旧的**
+nginx 若缓存了静态资源，检查 `dist/assets` 的文件名哈希是否更新；浏览器强制刷新（Ctrl+F5）。前端是纯静态资源，重启后端不会刷新页面。
+
+**Q11：头像存哪了，会不会把库撑爆**
+存 `users.avatar`（data URL，256×256 webp，约 20–40 KB/张）。当前规模没问题；用户上千后建议改为文件存储 + URL。
+
+**Q12：找回密码邮件里的链接打不开**
+链接域名取自 `FRONTEND_URL`。生产环境务必改成真实域名，否则用户点开是 `localhost`。
+
+**Q13：插件面板在聊天区不显示**
+插件需在「插件管理」里处于**启用**状态；被站长全局下架的插件即使启用也不下发。
+
+---
+
+## 8. 上线前检查清单
+
+- [ ] `JWT_SECRET` 已设置且 ≥32 字节（生产未设置会拒绝启动）
+- [ ] `GIN_MODE=release`
+- [ ] `FRONTEND_URL` 包含真实域名且无尾随空格
+- [ ] `TRUSTED_PROXIES` 按实际反代网段配置（不确定就留默认回环）
+- [ ] `SMTP_*` 已配置并**实测过一封邮件**
+- [ ] nginx `/ws` 已配 Upgrade 头
+- [ ] `MIGRATE=false`（生产用版本化 SQL），或确认迁移已执行
+- [ ] 防火墙只暴露 80/443，后端 8080 仅本机可达
+- [ ] 数据库已配置定时备份
+- [ ] `server/.env` 未被提交进版本库（`git check-ignore server/.env` 应有输出）
+
