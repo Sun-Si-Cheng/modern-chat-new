@@ -57,11 +57,11 @@
       'qs.stack': 'Tech stack',
       'footer.line': 'An open-source, frontend-backend separated, plugin-first web chat platform.',
       'docs.title': 'Docs — ModernChat',
-      'docs.zhNote': 'The docs are the Chinese Markdown files maintained in the project repository, kept in sync with the code.',
+      'docs.zhNote': 'Docs are maintained in the repository and kept in sync with the code. English translations live in assets/docs/en/.',
       'docs.loading': 'Loading…',
       'docs.notfound': 'Document not found.',
       'docs.prev': '← Previous', 'docs.next': 'Next →',
-      'docs.zhOriginal': 'Original document is written in Chinese; the English titles here are for navigation only.',
+      'docs.zhOriginal': 'English version not available yet — showing the Chinese original.',
       // demo script (English)
       'demo.m1': 'The plugin system just shipped 🎉',
       'demo.m2': 'Let me install the weather plugin.',
@@ -122,11 +122,11 @@
       'qs.stack': '技术栈',
       'footer.line': '前后端分离、插件优先的开源网页聊天平台。',
       'docs.title': '文档 — ModernChat',
-      'docs.zhNote': '文档原文为项目仓库中的中文 Markdown，与代码同步维护。',
+      'docs.zhNote': '文档与代码同仓库维护、保持同步；英文译本位于 assets/docs/en/。',
       'docs.loading': '加载中…',
       'docs.notfound': '文档不存在。',
       'docs.prev': '← 上一篇', 'docs.next': '下一篇 →',
-      'docs.zhOriginal': '本文档原文为中文。',
+      'docs.zhOriginal': '本文档暂无英文版，当前展示中文原文。',
       'demo.m1': '插件系统上线了 🎉',
       'demo.m2': '先装个天气插件试试。',
       'demo.via': '天气插件',
@@ -319,7 +319,7 @@
   /* ---------------- 文档页 ---------------- */
   var DOCS = [
     { group: true, zh: '入门', en: 'Getting started' },
-    { file: 'getting-started.md', zh: '项目总览（README）', en: 'Overview (README)', gzh: '入门', gen: 'Getting started', dzh: '定位、快速开始、插件开发与升级部署', den: 'Positioning, quick start, plugin dev, upgrades' },
+    { file: 'getting-started.md', zh: '项目总览（README）', en: 'Project overview', gzh: '入门', gen: 'Getting started', dzh: '定位、快速开始、插件开发与升级部署', den: 'Positioning, quick start, plugin dev, upgrades' },
     { file: 'changelog.md', zh: '更新日志', en: 'Changelog', gzh: '入门', gen: 'Getting started', dzh: '各版本新增、修复与性能变更记录', den: 'Features, fixes and perf changes per release' },
     { group: true, zh: '设计与架构', en: 'Design & architecture' },
     { file: 'design.md', zh: '设计文档', en: 'Design doc', gzh: '设计与架构', gen: 'Design & architecture', dzh: '产品定位、架构、数据库、WS 协议、插件系统', den: 'Product, architecture, DB, WS protocol, plugins' },
@@ -383,44 +383,56 @@
     docsCrumb.textContent = lang === 'zh' ? item.gzh : item.gen;
     var old = document.getElementById('docsLangNotice');
     if (old) old.remove();
-    if (lang === 'en') {
-      var notice = el('p', 'docs-desc');
-      notice.id = 'docsLangNotice';
-      notice.style.color = 'var(--ink-3)';
-      notice.style.fontSize = '13px';
-      notice.textContent = t('docs.zhOriginal');
-      docsDesc.insertAdjacentElement('afterend', notice);
-    }
-    docsBody.innerHTML = '<p class="docs-loading">' + t('docs.loading') + '</p>';
 
-    fetch('assets/docs/' + file)
-      .then(function (res) {
+    // 英文模式优先加载英文版文档；缺失时回退中文原文并提示
+    var zhPath = 'assets/docs/' + file;
+    var enPath = 'assets/docs/en/' + file;
+
+    function render(text, isFallback) {
+      text = text.replace(/^#\s+.+\r?\n/, ''); // 去掉文档自身的 H1（页面已有标题）
+      docsBody.innerHTML = marked.parse(text);
+      docsBody.querySelectorAll('a[href]').forEach(function (a) {
+        var href = a.getAttribute('href') || '';
+        if (/^https?:/i.test(href)) { a.target = '_blank'; a.rel = 'noopener'; return; }
+        var base = href.split('/').pop().split('#')[0];
+        if (LINK_MAP[base]) a.href = '#/' + LINK_MAP[base];
+        else {
+          a.href = 'javascript:void(0)';
+          a.style.opacity = '.55';
+          a.title = lang === 'zh' ? '该文件在仓库内，请前往 Gitee 查看' : 'Repository file — see Gitee';
+        }
+      });
+      if (isFallback) {
+        var notice = el('p', 'docs-desc');
+        notice.id = 'docsLangNotice';
+        notice.style.color = 'var(--ink-3)';
+        notice.style.fontSize = '13px';
+        notice.textContent = t('docs.zhOriginal');
+        docsDesc.insertAdjacentElement('afterend', notice);
+      }
+      docsBody.scrollTop = 0;
+      window.scrollTo({ top: 0 });
+      setPager(file);
+    }
+
+    function fetchText(path) {
+      return fetch(path).then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.text();
-      })
-      .then(function (text) {
-        // 去掉文档自身的 H1（页面已有标题）
-        text = text.replace(/^#\s+.+\r?\n/, '');
-        docsBody.innerHTML = marked.parse(text);
-        docsBody.querySelectorAll('a[href]').forEach(function (a) {
-          var href = a.getAttribute('href') || '';
-          if (/^https?:/i.test(href)) {
-            a.target = '_blank'; a.rel = 'noopener';
-            return;
-          }
-          var base = href.split('/').pop().split('#')[0];
-          if (LINK_MAP[base]) {
-            a.href = '#/' + LINK_MAP[base];
-          } else {
-            a.href = 'javascript:void(0)';
-            a.style.opacity = '.55';
-            a.title = lang === 'zh' ? '该文件在仓库内，请前往 Gitee 查看' : 'Repository file — see Gitee';
-          }
+      });
+    }
+
+    var promise;
+    if (lang === 'en') {
+      promise = fetchText(enPath).then(function (text) { return { text: text, fallback: false }; })
+        .catch(function () {
+          return fetchText(zhPath).then(function (text) { return { text: text, fallback: true }; });
         });
-        docsBody.scrollTop = 0;
-        window.scrollTo({ top: 0 });
-        setPager(file);
-      })
+    } else {
+      promise = fetchText(zhPath).then(function (text) { return { text: text, fallback: false }; });
+    }
+
+    promise.then(function (r) { render(r.text, r.fallback); })
       .catch(function () {
         docsBody.innerHTML = '<p class="docs-loading">' + t('docs.notfound') + '</p>';
       });

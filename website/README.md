@@ -7,7 +7,7 @@
 | 文件 | 说明 |
 |---|---|
 | `index.html` | 落地页：Hero 交互演示（纯文本消息 → 插件消息卡片 → 插件切换暗色主题）、功能特性、插件系统讲解（安全模型 + SDK 表）、快速开始（Docker / 手动 / 验证）、技术栈 |
-| `docs.html` | 文档阅读页：渲染 `assets/docs/` 下的 Markdown，侧边栏分组导航、上一篇/下一篇、仓库内相对链接自动路由 |
+| `docs.html` | 文档阅读页：渲染 `assets/docs/` 下的 Markdown，侧边栏分组导航、上一篇/下一篇、仓库内相对链接自动路由；英文模式自动切换到 `assets/docs/en/` 译本（缺失时回退中文并提示） |
 
 ## 目录
 
@@ -27,7 +27,8 @@ website/
         ├── frontend-guide.md    # ← docs/前端技术方案.md
         ├── ops-guide.md         # ← docs/运维手册.md
         ├── server-readme.md     # ← server/README.md
-        └── web-readme.md        # ← web/README.md
+        ├── web-readme.md        # ← web/README.md
+        └── en/                  # 上述 8 份文档的完整英文译本（同名文件）
 ```
 
 ## 本地预览
@@ -41,14 +42,15 @@ python -m http.server 8090    # 或 npx serve .
 ## 双语
 
 - 右上角按钮切换中 / 英文，偏好存 `localStorage.mc_site_lang`，默认跟随浏览器语言
-- 站点 UI 双语；**文档正文为仓库中文原文**，英文模式下侧边栏标题为英文、正文保持中文并显示提示
+- 站点 UI 双语；**文档正文双语**：中文模式读 `assets/docs/`，英文模式读 `assets/docs/en/` 译本；某份文档缺英文译本时回退中文原文并显示提示
+- 英文译本为人工对照翻译，非机翻；修改仓库文档后需同步更新两份副本
 
 ## 同步文档
 
 `assets/docs/` 是仓库文档的**副本**，修改 `docs/` 或 README 后需重新拷贝：
 
 ```bash
-# 在仓库根目录执行
+# 在仓库根目录执行（中文副本）
 cp README.md website/assets/docs/getting-started.md
 cp CHANGELOG.md website/assets/docs/changelog.md
 cp docs/设计文档.md website/assets/docs/design.md
@@ -57,6 +59,8 @@ cp docs/前端技术方案.md website/assets/docs/frontend-guide.md
 cp docs/运维手册.md website/assets/docs/ops-guide.md
 cp server/README.md website/assets/docs/server-readme.md
 cp web/README.md website/assets/docs/web-readme.md
+
+# 英文译本需同步人工修订 website/assets/docs/en/ 下的同名文件
 ```
 
 ## 部署（Nginx 示例）
