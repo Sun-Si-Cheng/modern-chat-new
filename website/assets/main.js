@@ -9,6 +9,7 @@
     en: {
       'site.title': 'ModernChat — The plugin-first web chat platform',
       'site.desc': 'Out of the box: accounts and plain-text chat. Images, emoji, themes, bots and mini-games all come from pluggable JS plugins. Go + Vue 3, open source, self-hosted.',
+      'nav.demo': 'Live demo',
       'nav.features': 'Features', 'nav.plugins': 'Plugins', 'nav.quickstart': 'Quick start', 'nav.docs': 'Docs',
       'hero.badge-open': 'Open source · Self-hosted',
       'hero.h1': 'The plugin-first<br>web chat platform',
@@ -69,11 +70,36 @@
       'demo.city': 'Hangzhou', 'demo.sky': 'Sunny', 'demo.refresh': 'Refresh',
       'demo.m3': 'And a theme plugin — dark mode in one click ✨',
       'demo.names': ['Alice', 'Bob', 'Bob', 'Carol'],
+      'pg.title': 'Live demo',
+      'pg.sub': 'No signup, no deployment — below is an interactive mini ModernChat: switch conversations, send messages, get auto-replies with read receipts, open the plugin side panel, and flip light/dark themes.',
+      'pg.dark': 'Dark', 'pg.light': 'Light', 'pg.reset': 'Reset',
+      'pg.note': 'Frontend-only simulation · nothing leaves your browser',
+      'pg.input': 'Type a message and press Enter…',
+      'pg.send': 'Send', 'pg.read': 'Read', 'pg.me': 'Me', 'pg.typing': 'typing…',
+      'pg.groupName': 'Product Chat', 'pg.groupSub': '12 members',
+      'pg.directName': 'Carol', 'pg.directSub': 'online',
+      'pg.pluginTitle': 'Weather',
+      'pg.pluginBy': 'Powered by the weather plugin · rendered via declarative UI',
+      'pg.names': ['Alice', 'Bob', 'Carol'],
+      'pg.bot': [
+        'Got it! The plugin system is really handy 🎉',
+        'Try installing the weather plugin!',
+        'Dark theme feels much better, right?',
+        'This demo is simulated entirely in your browser',
+        'Right — read receipts shipped in v1',
+        'All frames go through the same pipeline as the real app'
+      ],
+      'pg.seed1': 'The plugin system just shipped 🎉',
+      'pg.seed2': 'Just installed the weather plugin, works great.',
+      'pg.seed3': 'Dark mode in one click, love it ✨',
+      'pg.seedD1': 'Are you joining the weekend sync?',
+      'pg.seedD2': 'Yes, I will. See you Saturday!',
       'langNext': '中文'
     },
     zh: {
       'site.title': 'ModernChat — 插件优先的网页聊天平台',
       'site.desc': '开箱只有账号与纯文本聊天，图片、表情、主题、机器人、小游戏全部由可插拔的 JS 插件实现。前后端分离，Go + Vue 3，开源自托管。',
+      'nav.demo': '在线演示',
       'nav.features': '功能特性', 'nav.plugins': '插件系统', 'nav.quickstart': '快速开始', 'nav.docs': '文档',
       'hero.badge-open': '开源自托管',
       'hero.h1': '插件优先的<br>网页聊天平台',
@@ -133,6 +159,30 @@
       'demo.city': '杭州', 'demo.sky': '晴', 'demo.refresh': '刷新',
       'demo.m3': '主题插件也装了——一键换暗色 ✨',
       'demo.names': ['小明', '阿凯', '阿凯', '小柔'],
+      'pg.title': '在线演示',
+      'pg.sub': '不用注册、不用部署——下面是一个可交互的迷你 ModernChat：切换会话、发消息、收到自动回复与已读回执、打开插件侧栏面板、一键切换明暗主题。',
+      'pg.dark': '暗色', 'pg.light': '亮色', 'pg.reset': '重置',
+      'pg.note': '纯前端模拟 · 数据不离开浏览器',
+      'pg.input': '输入消息，回车发送…',
+      'pg.send': '发送', 'pg.read': '已读', 'pg.me': '我', 'pg.typing': '对方正在输入…',
+      'pg.groupName': '产品交流群', 'pg.groupSub': '12 人',
+      'pg.directName': '小柔', 'pg.directSub': '在线',
+      'pg.pluginTitle': '天气',
+      'pg.pluginBy': '由天气插件提供 · 描述式 UI 渲染',
+      'pg.names': ['小明', '阿凯', '小柔'],
+      'pg.bot': [
+        '收到！插件系统确实好用 🎉',
+        '要不要装个天气插件试试？',
+        '暗色主题看着舒服多了～',
+        '这个演示是纯前端模拟的哦',
+        '没错，一期就做了已读回执',
+        '所有帧都走和真实应用一样的管道'
+      ],
+      'pg.seed1': '插件系统上线了 🎉',
+      'pg.seed2': '刚装了天气插件，挺好用。',
+      'pg.seed3': '一键暗色，爱了 ✨',
+      'pg.seedD1': '周末同步会你来吗？',
+      'pg.seedD2': '来的，周六见！',
       'langNext': 'EN'
     }
   };
@@ -164,6 +214,7 @@
     applyLang();
     if (window.__mcDocsRerender) window.__mcDocsRerender();
     if (window.__mcDemoRerender) window.__mcDemoRerender();
+    if (window.__mcPgRerender) window.__mcPgRerender();
   }
 
   var toggle = document.getElementById('langToggle');
@@ -222,7 +273,7 @@
     return wrap;
   }
 
-  function weatherCard() {
+  function makeWeatherCard() {
     var temps = ['22', '21', '23', '20', '24'];
     var idx = 0;
     var card = el('div', 'demo-weather');
@@ -245,7 +296,6 @@
       idx = (idx + 1) % temps.length;
       card.querySelector('[data-w="temp"]').textContent = temps[idx];
     });
-    weatherCard.fill = fill;
     return card;
   }
 
@@ -274,7 +324,7 @@
       var bubble = msg.querySelector('.demo-bubble');
       bubble.style.padding = '6px';
       bubble.style.background = 'transparent';
-      bubble.appendChild(weatherCard());
+      bubble.appendChild(makeWeatherCard());
       demoBody.scrollTop = demoBody.scrollHeight;
     }, 3900));
     demoTimers.push(setTimeout(function () { demoBody.appendChild(addTyping(330)); }, 5200));
@@ -463,6 +513,179 @@
   };
 
   window.addEventListener('hashchange', routeDocs);
+
+  /* ---------------- 在线演示（Playground：可交互迷你聊天） ---------------- */
+  var pgAppEl = document.getElementById('pgApp');
+  var pgListEl = document.getElementById('pgList');
+  var pgMsgsEl = document.getElementById('pgMsgs');
+  var pgChatName = document.getElementById('pgChatName');
+  var pgChatSub = document.getElementById('pgChatSub');
+  var pgText = document.getElementById('pgText');
+  var pgPanelEl = document.getElementById('pgPanel');
+  var pgState = null;
+  var pgTimers = [];
+
+  function pgSeed() {
+    var names = t('pg.names');
+    return {
+      open: 0,
+      unread: [0, 1],
+      botCount: 0,
+      convs: [
+        { name: t('pg.groupName'), sub: t('pg.groupSub'),
+          msgs: [
+            { me: false, name: names[0], hue: 210, text: t('pg.seed1') },
+            { me: false, name: names[1], hue: 150, text: t('pg.seed2') },
+            { me: false, name: names[2], hue: 330, text: t('pg.seed3') }
+          ] },
+        { name: t('pg.directName'), sub: t('pg.directSub'),
+          msgs: [
+            { me: false, name: t('pg.directName'), hue: 330, text: t('pg.seedD1') },
+            { me: true, text: t('pg.seedD2') }
+          ] }
+      ]
+    };
+  }
+
+  function pgMsgNode(m, showRead) {
+    var row = el('div', 'pg-msg' + (m.me ? ' is-me' : ''));
+    var av = el('span', 'pg-msg-avatar' + (m.me ? ' is-me' : ''), m.me ? t('pg.me') : m.name.charAt(0));
+    if (!m.me) av.style.background = 'hsl(' + m.hue + ', 58%, 48%)';
+    var col = el('div', 'pg-msg-col');
+    if (!m.me) col.appendChild(el('span', 'pg-msg-name', m.name));
+    col.appendChild(el('div', 'pg-msg-bubble', m.text));
+    if (m.me && showRead) col.appendChild(el('span', 'pg-msg-read', t('pg.read')));
+    row.appendChild(av); row.appendChild(col);
+    return row;
+  }
+
+  function pgRenderMsgs() {
+    pgMsgsEl.innerHTML = '';
+    var msgs = pgState.convs[pgState.open].msgs;
+    var lastRead = -1;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].me && msgs[i].read) { lastRead = i; break; }
+    }
+    msgs.forEach(function (m, i) { pgMsgsEl.appendChild(pgMsgNode(m, i === lastRead)); });
+    pgMsgsEl.scrollTop = pgMsgsEl.scrollHeight;
+  }
+
+  function pgRenderList() {
+    pgListEl.innerHTML = '';
+    pgState.convs.forEach(function (c, i) {
+      var item = el('div', 'pg-conv' + (i === pgState.open ? ' is-open' : ''));
+      var av = el('span', 'pg-conv-avatar', c.name.charAt(0));
+      av.style.background = i === 0
+        ? 'linear-gradient(135deg, #2b6fff, var(--brand))'
+        : 'hsl(330, 55%, 52%)';
+      var meta = el('div', 'pg-conv-meta');
+      meta.appendChild(el('strong', null, c.name));
+      meta.appendChild(el('span', 'pg-conv-sub', c.sub));
+      item.appendChild(av); item.appendChild(meta);
+      if (pgState.unread[i] > 0) item.appendChild(el('span', 'pg-badge', String(pgState.unread[i])));
+      item.addEventListener('click', function () { pgOpenConv(i); });
+      pgListEl.appendChild(item);
+    });
+  }
+
+  function pgRenderHead() {
+    var c = pgState.convs[pgState.open];
+    pgChatName.textContent = c.name;
+    pgChatSub.textContent = c.sub;
+  }
+
+  function pgRenderAll() { pgRenderList(); pgRenderHead(); pgRenderMsgs(); }
+
+  function pgOpenConv(i) {
+    pgState.open = i;
+    pgState.unread[i] = 0;
+    pgRenderAll();
+  }
+
+  function pgSendMsg() {
+    if (!pgState) return;
+    var text = pgText.value.trim();
+    if (!text) return;
+    pgText.value = '';
+    pgTimers.forEach(clearTimeout); pgTimers = [];
+    var c = pgState.convs[pgState.open];
+    c.msgs.push({ me: true, text: text });
+    pgRenderMsgs();
+
+    // "对方正在输入…"
+    var typing = el('div', 'pg-typing');
+    var bub = el('div', 'pg-typing-bubble');
+    bub.appendChild(el('i')); bub.appendChild(el('i')); bub.appendChild(el('i'));
+    typing.appendChild(bub);
+    typing.appendChild(el('span', 'pg-typing-label', t('pg.typing')));
+    pgMsgsEl.appendChild(typing);
+    pgMsgsEl.scrollTop = pgMsgsEl.scrollHeight;
+
+    pgTimers.push(setTimeout(function () {
+      var pool = t('pg.bot');
+      var i = pgState.botCount++ % pool.length;
+      var names = t('pg.names');
+      var hues = [210, 150, 330];
+      var sender = pgState.open === 0
+        ? { name: names[i % names.length], hue: hues[i % hues.length] }
+        : { name: t('pg.directName'), hue: 330 };
+      c.msgs.push({ me: false, name: sender.name, hue: sender.hue, text: pool[i] });
+      for (var k = 0; k < c.msgs.length; k++) { if (c.msgs[k].me) c.msgs[k].read = true; }
+      pgRenderMsgs();
+    }, 1500));
+  }
+
+  function pgSetPanel(open) {
+    pgPanelEl.hidden = !open;
+    pgAppEl.classList.toggle('has-panel', open);
+    var btn = document.getElementById('pgBtnPlugins');
+    if (btn) btn.classList.toggle('is-active', open);
+  }
+
+  function pgApplyThemeBtn() {
+    var dark = pgAppEl.classList.contains('is-dark');
+    var btn = document.getElementById('pgTheme');
+    if (btn) btn.innerHTML = (dark ? '☀️ ' : '🌙 ') + t(dark ? 'pg.light' : 'pg.dark');
+  }
+
+  function pgSetPlaceholder() { pgText.placeholder = t('pg.input'); }
+
+  if (pgAppEl) {
+    pgState = pgSeed();
+    pgRenderAll();
+    pgSetPlaceholder();
+    document.getElementById('pgMe').textContent = t('pg.me');
+
+    document.getElementById('pgSendBtn').addEventListener('click', pgSendMsg);
+    pgText.addEventListener('keydown', function (e) { if (e.key === 'Enter') pgSendMsg(); });
+
+    document.getElementById('pgBtnPlugins').addEventListener('click', function () {
+      pgSetPanel(!pgAppEl.classList.contains('has-panel'));
+    });
+    document.getElementById('pgPanelClose').addEventListener('click', function () { pgSetPanel(false); });
+    document.getElementById('pgPanelBody').appendChild(makeWeatherCard());
+
+    document.getElementById('pgTheme').addEventListener('click', function () {
+      pgAppEl.classList.toggle('is-dark');
+      pgApplyThemeBtn();
+    });
+    document.getElementById('pgReset').addEventListener('click', function () {
+      pgTimers.forEach(clearTimeout); pgTimers = [];
+      pgState = pgSeed();
+      pgRenderAll();
+      pgSetPlaceholder();
+    });
+  }
+
+  window.__mcPgRerender = function () {
+    if (!pgAppEl) return;
+    pgState = pgSeed();
+    pgRenderAll();
+    pgSetPlaceholder();
+    pgApplyThemeBtn();
+    var meEl = document.getElementById('pgMe');
+    if (meEl) meEl.textContent = t('pg.me');
+  };
 
   /* ---------------- 启动 ---------------- */
   applyLang();
