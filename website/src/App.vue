@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { computed, watchEffect } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { Button as TButton } from 'tdesign-vue-next'
 
 import { toggleLang } from './i18n'
+import { isDark, toggleTheme } from './theme'
 
 const { t } = useI18n()
 const route = useRoute()
+
+const dark = ref(isDark())
+
+function onToggleTheme() {
+  toggleTheme()
+  dark.value = isDark()
+}
+
+function openRepo() {
+  window.open('https://gitee.com/Sun-Si-Cheng/modern-chat-new', '_blank', 'noopener')
+}
 
 const isDocs = computed(() => route.name === 'docs')
 const isPlugins = computed(() => route.name === 'plugins')
@@ -60,14 +72,15 @@ watchEffect(() => {
       </nav>
 
       <div class="nav-actions">
-        <a
-          class="btn btn-ghost btn-sm"
-          href="https://gitee.com/Sun-Si-Cheng/modern-chat-new"
-          target="_blank"
-          rel="noopener"
+        <TButton variant="text" size="small" @click="openRepo">Gitee</TButton>
+        <TButton
+          variant="text"
+          size="small"
+          :aria-label="dark ? t('nav.themeLight') : t('nav.themeDark')"
+          @click="onToggleTheme"
         >
-          Gitee
-        </a>
+          {{ dark ? '☀️' : '🌙' }}
+        </TButton>
         <TButton variant="text" size="small" @click="toggleLang">{{ t('langNext') }}</TButton>
       </div>
     </div>

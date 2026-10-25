@@ -81,6 +81,21 @@ location / {
 }
 ```
 
+## 与主站视觉保持一致
+
+官网与产品界面（`web/`）共用同一套设计语言，改样式时请遵守：
+
+| 项 | 约定 |
+|---|---|
+| 颜色 | 一律走令牌：`src/styles/site.css` 顶部的 `--brand` / `--ink` / `--ink-2` / `--ink-3` / `--line` / `--bg` / `--bg-alt` 已全部映射到 TDesign 的 `--td-*`，**不要在组件里写死色值** |
+| 主题 | 与主站共用 `localStorage.mc_theme` 与 `<html theme-mode>`：支持亮 / 暗 / 跟随系统，导航右上角可切换；在应用里选过暗色的用户，打开官网也是暗色 |
+| 字体 | `'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial`（与主站一致） |
+| 圆角 | 卡片 `12px`（`--radius`）、控件 `8px`（`--radius-sm`） |
+| 表面 | 纯色 + 1px 细描边，**不用大面积渐变**（主站也是纯色；渐变在暗色下会与文字色冲突） |
+| 代码块 | 固定深色（`--code-bg`），不随主题变化 |
+
+> 排查暗色问题的经验：如果某块内容在暗色下"看不见"，通常是这里写了硬编码的浅色背景或深色文字。把它换成 `var(--bg)` / `var(--bg-alt)` / `var(--ink*)` 即可。
+
 ## 说明
 
 - **路由用 history 模式**：首页的 `#features` 等页内锚点才能正常工作；代价是需要上面的 nginx fallback。若只能纯静态托管（无 rewrite），把 `src/router.ts` 的 `createWebHistory` 改为 `createWebHashHistory`，同时 `vite.config.ts` 的 `base` 可保持 `'./'`。
