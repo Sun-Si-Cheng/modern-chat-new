@@ -12,6 +12,20 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='19' rx='6' fill='%230052d9'/%3E%3Cpath d='M11 24l-3 5 7-5z' fill='%230052d9'/%3E%3Ccircle cx='11' cy='14.5' r='2' fill='%23fff'/%3E%3Ccircle cx='16' cy='14.5' r='2' fill='%23fff'/%3E%3Ccircle cx='21' cy='14.5' r='2' fill='%23fff'/%3E%3C/svg%3E"
     />
+    <script>
+      // 首屏防闪烁：与主站共用 mc_theme，在任何样式生效前先定好主题
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('mc_theme') || 'auto'
+          var dark =
+            saved === 'dark' ||
+            (saved === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.setAttribute('theme-mode', dark ? 'dark' : 'light')
+        } catch (e) {
+          /* 隐私模式：保持默认 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
