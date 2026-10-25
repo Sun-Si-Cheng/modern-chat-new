@@ -152,7 +152,9 @@ async function uninstall(plugin: Plugin) {
 </script>
 
 <template>
-  <TDrawer v-model="visible" :header="t('plugin.title')" size="420px" :footer="false">
+  <!-- TDesign 的 Drawer 只有 visible prop（没有 modelValue），必须写全 v-model:visible，
+       否则值会被当作 HTML 属性落到 DOM 上，抽屉永远停在屏幕外 -->
+  <TDrawer v-model:visible="visible" :header="t('plugin.title')" size="420px" :footer="false">
     <div class="mc-plugins">
       <!-- 安装 -->
       <div class="mc-plugins__install">
