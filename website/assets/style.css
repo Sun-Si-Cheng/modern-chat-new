@@ -403,6 +403,7 @@ a { color: var(--brand); text-decoration: none; }
   color: var(--ink-2); font-size: 14px; font-weight: 500;
   border-left: 2.5px solid transparent;
   transition: all .15s;
+  overflow-wrap: anywhere; white-space: normal;
 }
 .docs-nav a:hover { background: #fff; color: var(--brand); }
 .docs-nav a.is-active {
