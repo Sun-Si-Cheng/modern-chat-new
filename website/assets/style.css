@@ -563,6 +563,87 @@ a { color: var(--brand); text-decoration: none; }
   .pg-app.is-dark.has-panel .pg-panel { background: #171d2b; }
 }
 
+/* ---------------- 插件市场页 ---------------- */
+.mkt-page { padding-top: 48px; padding-bottom: 72px; max-width: 1024px; }
+.mkt-head { text-align: center; margin-bottom: 34px; }
+.mkt-head h1 { font-size: clamp(30px, 4vw, 42px); font-weight: 800; margin-bottom: 14px; }
+.mkt-head p { color: var(--ink-2); max-width: 44em; margin: 0 auto; font-size: 15.5px; }
+
+.mkt-tools { display: flex; gap: 14px; align-items: center; margin-bottom: 28px; flex-wrap: wrap; }
+.mkt-search {
+  flex: 1; min-width: 220px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 16px; font-family: inherit; font-size: 14px;
+  background: #fff; color: var(--ink); outline: none; transition: border-color .18s;
+}
+.mkt-search:focus { border-color: var(--brand); }
+.mkt-cats { display: flex; gap: 8px; flex-wrap: wrap; }
+.mkt-cat {
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: var(--ink-2);
+  padding: 7px 16px; border-radius: 999px; transition: all .18s;
+}
+.mkt-cat:hover { color: var(--brand); border-color: rgba(0, 82, 217, .35); }
+.mkt-cat.is-active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+.mkt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.mkt-card {
+  display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px; transition: all .2s;
+}
+.mkt-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-sm); border-color: rgba(0, 82, 217, .3); }
+.mkt-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mkt-card-icon {
+  width: 40px; height: 40px; border-radius: 11px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; background: var(--brand-soft);
+}
+.mkt-card-name { font-size: 16.5px; }
+.mkt-official {
+  flex: none; font-size: 11px; font-weight: 700; color: var(--brand);
+  background: var(--brand-soft); border: 1px solid rgba(0, 82, 217, .25);
+  padding: 2px 9px; border-radius: 999px; margin-left: auto;
+}
+.mkt-card-desc { font-size: 13.5px; color: var(--ink-2); margin-bottom: 14px; flex: 1; }
+.mkt-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.mkt-card-chips .chip { font-size: 11px; padding: 2px 9px; }
+.mkt-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mkt-ver { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.mkt-card-btns { display: flex; gap: 8px; }
+.mkt-empty { text-align: center; color: var(--ink-3); padding: 44px 0; }
+
+.mkt-how { margin-top: 64px; }
+.mkt-how h2, .mkt-publish h2 { font-size: 22px; font-weight: 800; text-align: center; margin-bottom: 26px; }
+.mkt-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.mkt-step {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 24px 22px; position: relative;
+}
+.mkt-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-weight: 800; font-size: 14px;
+  margin-bottom: 12px;
+}
+.mkt-step h3 { font-size: 15.5px; margin-bottom: 7px; }
+.mkt-step p { font-size: 13.5px; color: var(--ink-2); }
+
+.mkt-publish {
+  margin-top: 56px; text-align: center;
+  background: var(--brand-soft); border: 1px dashed rgba(0, 82, 217, .35);
+  border-radius: var(--radius); padding: 36px 28px;
+}
+.mkt-publish p { max-width: 44em; margin: 0 auto 20px; font-size: 14px; color: var(--ink-2); }
+.mkt-publish code { font-family: var(--mono); font-size: 12.5px; background: rgba(0, 82, 217, .1); color: var(--brand); padding: 2px 7px; border-radius: 6px; }
+
+@media (max-width: 900px) {
+  .mkt-grid { grid-template-columns: repeat(2, 1fr); }
+  .mkt-steps { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .mkt-grid { grid-template-columns: 1fr; }
+}
+
 /* ---------------- 文档页 ---------------- */
 .docs-page { background: var(--bg-alt); }
 .docs-layout {

@@ -223,7 +223,11 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 
 ### 试一试示例插件
 
-仓库自带 [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js)：侧边栏天气面板 + 自定义 `weather` 消息类型。
+仓库自带三个示例插件（在官网「插件市场」页也可直接下载）：
+
+- [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js)：侧边栏天气面板 + 自定义 `weather` 消息类型
+- [`plugins/examples/dice.plugin.js`](plugins/examples/dice.plugin.js)：掷骰子面板 + 自定义 `dice` 消息类型
+- [`plugins/examples/word-count.plugin.js`](plugins/examples/word-count.plugin.js)：会话消息统计面板（`message:new` 事件 + storage 持久化）
 
 1. 登录后点击侧栏「插件」图标 → 上传该文件 → 确认权限清单并启用
 2. 右侧详情面板出现「天气（示例插件）」卡片：点「刷新数据」看面板更新，「发送到当前聊天」把天气发到当前会话
