@@ -223,7 +223,11 @@ UI descriptions only accept 8 components: `text / image / button / input / card 
 
 ### Try the example plugin
 
-The repo ships with [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js): a sidebar weather panel + a custom `weather` message type.
+The repo ships with three example plugins (also downloadable from the "Marketplace" page on the website):
+
+- [`plugins/examples/weather.plugin.js`](plugins/examples/weather.plugin.js): sidebar weather panel + custom `weather` message type
+- [`plugins/examples/dice.plugin.js`](plugins/examples/dice.plugin.js): dice roller panel + custom `dice` message type
+- [`plugins/examples/word-count.plugin.js`](plugins/examples/word-count.plugin.js): conversation stats panel (`message:new` event + storage persistence)
 
 1. After login, click the "Plugins" icon in the sidebar → upload the file → confirm the permission list and enable it
 2. The right detail panel shows a "Weather (example plugin)" card: click "Refresh data" to see the panel update, and "Send to current chat" to send it to the open conversation
