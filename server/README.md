@@ -1,6 +1,6 @@
 # ModernChat Server
 
-Go 后端（Gin + GORM + MySQL + gorilla/websocket）。接口契约见 [docs/后端需求规格.md](../docs/后端需求规格.md)。
+Go 后端（Gin + GORM + MySQL + gorilla/websocket）。接口契约见 [docs/后端需求规格.md](../docs/后端需求规格.md)；部署、备份与排障 FAQ 见 [docs/运维手册.md](../docs/运维手册.md)。
 
 ## 依赖
 
