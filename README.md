@@ -64,6 +64,7 @@
 modernchat-new/
 ├── docs/                       # 设计文档 / 后端规格 / 前端方案 / 运维手册 / 协议正文
 ├── deploy/                     # nginx 配置示例（裸机 / compose 两版）
+├── website/                    # 官网（Vue 3 + Vite + TDesign）：落地页 / 文档站 / 插件市场
 ├── plugins/examples/           # 示例插件（可直接上传试用）
 ├── scripts/                    # update.sh / update.ps1（Gitee 升级）+ coverage.sh / coverage.ps1（覆盖率）
 ├── server/                     # Go 后端

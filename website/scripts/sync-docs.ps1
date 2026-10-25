@@ -1,5 +1,5 @@
 # ============================================================
-# 同步仓库文档 → website/assets/docs/（中文副本）
+# 同步仓库文档 → website/public/docs/（中文副本，Vite 会原样拷进 dist）
 # 用法：在仓库根目录执行  .\website\scripts\sync-docs.ps1
 # - 中文副本直接覆盖拷贝（仓库文档是唯一真源）
 # - 英文译本无法自动生成：若中文源比 en/ 译本新，仅提示需要人工修订
@@ -19,7 +19,7 @@ $map = [ordered]@{
   'web/README.md'        = 'web-readme.md'
 }
 
-$dst = 'website/assets/docs'
+$dst = 'website/public/docs'
 $en  = Join-Path $dst 'en'
 New-Item -ItemType Directory -Force -Path $en | Out-Null
 

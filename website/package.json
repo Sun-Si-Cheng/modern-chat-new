@@ -1,0 +1,28 @@
+{
+  "name": "modernchat-website",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "description": "ModernChat 官网：落地页 / 文档站 / 插件市场",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "marked": "^15.0.12",
+    "tdesign-icons-vue-next": "^0.4.11",
+    "tdesign-vue-next": "^1.20.10",
+    "vue": "^3.5.42",
+    "vue-i18n": "^11.4.16",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "typescript": "~6.0.0",
+    "vite": "^8.2.2",
+    "vue-tsc": "^3.3.11"
+  }
+}
