@@ -47,21 +47,22 @@ python -m http.server 8090    # 或 npx serve .
 
 ## 同步文档
 
-`assets/docs/` 是仓库文档的**副本**，修改 `docs/` 或 README 后需重新拷贝：
+版本约定：**中文原文 1 份（`assets/docs/`，与仓库文档同步）+ 英文译本 1 份（`assets/docs/en/`）**，仓库中文文档是唯一真源。
+
+修改仓库文档后，在仓库根目录执行一键同步：
 
 ```bash
-# 在仓库根目录执行（中文副本）
-cp README.md website/assets/docs/getting-started.md
-cp CHANGELOG.md website/assets/docs/changelog.md
-cp docs/设计文档.md website/assets/docs/design.md
-cp docs/后端需求规格.md website/assets/docs/api-spec.md
-cp docs/前端技术方案.md website/assets/docs/frontend-guide.md
-cp docs/运维手册.md website/assets/docs/ops-guide.md
-cp server/README.md website/assets/docs/server-readme.md
-cp web/README.md website/assets/docs/web-readme.md
+# Linux / macOS / Git Bash
+bash website/scripts/sync-docs.sh
 
-# 英文译本需同步人工修订 website/assets/docs/en/ 下的同名文件
+# Windows PowerShell
+.\website\scripts\sync-docs.ps1
 ```
+
+脚本行为：
+- 自动把 8 份中文文档覆盖拷贝到 `assets/docs/`（对应关系见脚本内映射表）
+- 英文译本无法自动生成：若检测到某份 en/ 译本缺失或比中文源旧，会列出清单提醒人工修订
+- 修订 en/ 下同名文件后随代码一起提交
 
 ## 部署（Nginx 示例）
 
