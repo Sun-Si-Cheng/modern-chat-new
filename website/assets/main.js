@@ -10,6 +10,7 @@
       'site.title': 'ModernChat — The plugin-first web chat platform',
       'site.desc': 'Out of the box: accounts and plain-text chat. Images, emoji, themes, bots and mini-games all come from pluggable JS plugins. Go + Vue 3, open source, self-hosted.',
       'nav.demo': 'Live demo',
+      'nav.market': 'Marketplace',
       'nav.features': 'Features', 'nav.plugins': 'Plugins', 'nav.quickstart': 'Quick start', 'nav.docs': 'Docs',
       'hero.badge-open': 'Open source · Self-hosted',
       'hero.h1': 'The plugin-first<br>web chat platform',
@@ -94,12 +95,32 @@
       'pg.seed3': 'Dark mode in one click, love it ✨',
       'pg.seedD1': 'Are you joining the weekend sync?',
       'pg.seedD2': 'Yes, I will. See you Saturday!',
+      'mkt.title': 'Marketplace — ModernChat',
+      'mkt.desc': 'Browse the ModernChat plugin catalog: download a JS file and upload it to your instance. Every plugin runs in a sandbox, gets no JWT, and is enabled only after you confirm its permissions.',
+      'mkt.h1': 'Marketplace',
+      'mkt.sub': 'Download a plugin JS file and upload it to your instance to install. Every plugin runs in a sandboxed iframe — no JWT, no DOM access, enabled only after you confirm the permission list.',
+      'mkt.search': 'Search plugins…',
+      'cat.all': 'All', 'cat.tools': 'Utilities', 'cat.fun': 'Fun',
+      'mkt.download': 'Download JS', 'mkt.source': 'Source',
+      'mkt.official': 'Official', 'mkt.perms': 'Permissions',
+      'mkt.empty': 'No plugins match. Try another keyword or category.',
+      'mkt.how-title': 'Install in three steps',
+      'mkt.step1-t': 'Download',
+      'mkt.step1-d': 'Click "Download JS" on a card to get a plugin file (≤1MB).',
+      'mkt.step2-t': 'Upload',
+      'mkt.step2-d': 'Chat page → "Plugins" in the sidebar → upload the file; uploading the same plugin again upgrades it.',
+      'mkt.step3-t': 'Confirm & enable',
+      'mkt.step3-d': 'Review the permission list and confirm — it goes live immediately. Uninstall to return to plain text.',
+      'mkt.pub-title': 'Publish your plugin',
+      'mkt.pub-d': 'Write one JS file declaring a manifest and its permissions to get listed here. See the <a href="docs.html#/getting-started.md">plugin development guide</a>, then submit a PR to <code>plugins/examples/</code> in the repo — accepted plugins appear on this page.',
+      'mkt.pub-btn': 'Browse plugin sources on Gitee',
       'langNext': '中文'
     },
     zh: {
       'site.title': 'ModernChat — 插件优先的网页聊天平台',
       'site.desc': '开箱只有账号与纯文本聊天，图片、表情、主题、机器人、小游戏全部由可插拔的 JS 插件实现。前后端分离，Go + Vue 3，开源自托管。',
       'nav.demo': '在线演示',
+      'nav.market': '插件市场',
       'nav.features': '功能特性', 'nav.plugins': '插件系统', 'nav.quickstart': '快速开始', 'nav.docs': '文档',
       'hero.badge-open': '开源自托管',
       'hero.h1': '插件优先的<br>网页聊天平台',
@@ -183,6 +204,25 @@
       'pg.seed3': '一键暗色，爱了 ✨',
       'pg.seedD1': '周末同步会你来吗？',
       'pg.seedD2': '来的，周六见！',
+      'mkt.title': '插件市场 — ModernChat',
+      'mkt.desc': '浏览 ModernChat 插件目录：下载 JS 文件，上传到你的实例即可安装。每个插件都跑在沙箱里，拿不到 JWT、碰不到 DOM，权限清单确认后才启用。',
+      'mkt.h1': '插件市场',
+      'mkt.sub': '下载插件 JS 文件，在你的实例里上传即装。每个插件都运行在沙箱 iframe 中，拿不到 JWT、碰不到 DOM，权限清单确认后才启用。',
+      'mkt.search': '搜索插件…',
+      'cat.all': '全部', 'cat.tools': '工具', 'cat.fun': '趣味',
+      'mkt.download': '下载 JS', 'mkt.source': '源码',
+      'mkt.official': '官方', 'mkt.perms': '所需权限',
+      'mkt.empty': '没有匹配的插件，换个关键词或分类试试。',
+      'mkt.how-title': '三步安装',
+      'mkt.step1-t': '下载插件',
+      'mkt.step1-d': '点击卡片上的「下载 JS」，得到一个 ≤1MB 的插件文件。',
+      'mkt.step2-t': '上传安装',
+      'mkt.step2-d': '聊天页 → 侧栏「插件」→ 上传文件；同一插件再次上传即升级。',
+      'mkt.step3-t': '确认权限并启用',
+      'mkt.step3-d': '查看权限清单，确认后启用，立即生效。卸载即回到纯文本。',
+      'mkt.pub-title': '提交你的插件',
+      'mkt.pub-d': '写一个 JS 文件，声明 manifest 与所需权限，即可发布到这里。开发指南见<a href="docs.html#/getting-started.md">插件开发文档</a>，向仓库 <code>plugins/examples/</code> 目录提交 PR，收录后展示在本页。',
+      'mkt.pub-btn': '在 Gitee 查看插件源码',
       'langNext': 'EN'
     }
   };
@@ -215,6 +255,7 @@
     if (window.__mcDocsRerender) window.__mcDocsRerender();
     if (window.__mcDemoRerender) window.__mcDemoRerender();
     if (window.__mcPgRerender) window.__mcPgRerender();
+    if (window.__mcMarketRerender) window.__mcMarketRerender();
   }
 
   var toggle = document.getElementById('langToggle');
@@ -686,6 +727,115 @@
     var meEl = document.getElementById('pgMe');
     if (meEl) meEl.textContent = t('pg.me');
   };
+
+  /* ---------------- 插件市场页 ---------------- */
+  var MARKET = [
+    {
+      id: 'weather-demo', cat: 'tools', file: 'weather.plugin.js', ver: '1.0.0',
+      icon: '🌤️', official: true, size: '3.4 KB',
+      perms: ['message:read', 'message:send', 'message:render', 'ui:panel', 'storage'],
+      zh: { name: '天气面板', desc: '侧边栏天气面板，可一键把天气卡片发到当前聊天；演示 storage 持久化与自定义消息类型渲染。' },
+      en: { name: 'Weather panel', desc: 'Sidebar weather panel; send a weather card to the open chat in one click. Demonstrates storage persistence and custom message rendering.' }
+    },
+    {
+      id: 'dice', cat: 'fun', file: 'dice.plugin.js', ver: '1.0.0',
+      icon: '🎲', official: true, size: '2.1 KB',
+      perms: ['message:read', 'message:send', 'message:render', 'ui:panel'],
+      zh: { name: '掷骰子', desc: '在当前会话掷一个 1d20，结果以自定义 dice 消息卡片展示；极简的 message:send + message:render 示例。' },
+      en: { name: 'Dice roller', desc: 'Roll 1d20 into the open conversation; the result renders as a custom dice card. A minimal message:send + message:render example.' }
+    },
+    {
+      id: 'word-count', cat: 'tools', file: 'word-count.plugin.js', ver: '1.0.0',
+      icon: '📊', official: true, size: '2.1 KB',
+      perms: ['message:read', 'ui:panel', 'storage'],
+      zh: { name: '会话统计', desc: '统计启用后收到的新消息数与累计字数，计数持久化；演示 message:new 事件与最小权限面。' },
+      en: { name: 'Conversation stats', desc: 'Counts messages and characters received since enable, persisted via storage. Demonstrates the message:new event with a minimal permission footprint.' }
+    }
+  ];
+
+  var mktGrid = document.getElementById('mktGrid');
+  var mktState = { q: '', cat: 'all' };
+
+  function mktCard(p) {
+    var L = lang === 'zh' ? p.zh : p.en;
+    var card = el('div', 'mkt-card');
+    var head = el('div', 'mkt-card-head');
+    head.appendChild(el('span', 'mkt-card-icon', p.icon));
+    head.appendChild(el('strong', 'mkt-card-name', L.name));
+    if (p.official) head.appendChild(el('span', 'mkt-official', t('mkt.official')));
+    card.appendChild(head);
+    card.appendChild(el('p', 'mkt-card-desc', L.desc));
+
+    var chips = el('div', 'mkt-card-chips');
+    p.perms.forEach(function (pm) { chips.appendChild(el('span', 'chip', pm)); });
+    card.appendChild(chips);
+
+    var foot = el('div', 'mkt-card-foot');
+    foot.appendChild(el('span', 'mkt-ver', 'v' + p.ver + ' · ' + p.size));
+    var btns = el('div', 'mkt-card-btns');
+    var dl = el('a', 'btn btn-primary btn-sm', t('mkt.download'));
+    dl.href = 'assets/plugins/' + p.file;
+    dl.setAttribute('download', p.file);
+    var src = el('a', 'btn btn-ghost btn-sm', t('mkt.source'));
+    src.href = 'https://gitee.com/Sun-Si-Cheng/modern-chat-new/blob/master/plugins/examples/' + p.file;
+    src.target = '_blank'; src.rel = 'noopener';
+    btns.appendChild(dl); btns.appendChild(src);
+    foot.appendChild(btns);
+    card.appendChild(foot);
+    return card;
+  }
+
+  function mktRenderCats() {
+    var wrap = document.getElementById('mktCats');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    ['all', 'tools', 'fun'].forEach(function (c) {
+      var chip = el('button', 'mkt-cat' + (mktState.cat === c ? ' is-active' : ''), t('cat.' + c));
+      chip.type = 'button';
+      chip.addEventListener('click', function () {
+        mktState.cat = c;
+        mktRenderCats(); mktRender();
+      });
+      wrap.appendChild(chip);
+    });
+  }
+
+  function mktRender() {
+    if (!mktGrid) return;
+    var q = mktState.q.toLowerCase();
+    var list = MARKET.filter(function (p) {
+      if (mktState.cat !== 'all' && p.cat !== mktState.cat) return false;
+      if (!q) return true;
+      var hay = (p.id + ' ' + p.zh.name + ' ' + p.zh.desc + ' ' + p.en.name + ' ' + p.en.desc + ' ' + p.perms.join(' ')).toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+    mktGrid.innerHTML = '';
+    list.forEach(function (p) { mktGrid.appendChild(mktCard(p)); });
+    var empty = document.getElementById('mktEmpty');
+    if (empty) {
+      empty.textContent = t('mkt.empty');
+      empty.hidden = list.length > 0;
+    }
+  }
+
+  window.__mcMarketRerender = function () {
+    if (!mktGrid) return;
+    mktRenderCats();
+    mktRender();
+    var search = document.getElementById('mktSearch');
+    if (search) search.placeholder = t('mkt.search');
+  };
+
+  if (mktGrid) {
+    mktRenderCats();
+    mktRender();
+    var mktSearch = document.getElementById('mktSearch');
+    mktSearch.placeholder = t('mkt.search');
+    mktSearch.addEventListener('input', function () {
+      mktState.q = mktSearch.value.trim();
+      mktRender();
+    });
+  }
 
   /* ---------------- 启动 ---------------- */
   applyLang();
