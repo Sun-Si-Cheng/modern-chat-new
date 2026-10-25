@@ -5,9 +5,9 @@ import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // devtools 仅开发启用：生产构建不应包含它（体积与运行时开销）
-  plugins: [vue(), { ...vueDevTools(), apply: 'serve' }],
+  plugins: [vue(), ...(mode === 'development' ? [vueDevTools()] : [])],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -34,4 +34,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
