@@ -125,7 +125,13 @@ onBeforeUnmount(() => {
     attach="body"
   >
     <div class="add-friend">
-      <TInput ref="inputRef" v-model="keyword" :placeholder="t('friends.searchPlaceholder')" clearable />
+      <TInput
+        ref="inputRef"
+        v-model="keyword"
+        size="large"
+        :placeholder="t('friends.searchPlaceholder')"
+        clearable
+      />
 
       <ul v-if="results.length" class="add-friend__list">
         <li v-for="u in results" :key="u.id" class="add-friend__item">
@@ -162,7 +168,7 @@ onBeforeUnmount(() => {
 .add-friend {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .add-friend__list {
@@ -171,24 +177,23 @@ onBeforeUnmount(() => {
   padding: 0;
   max-height: 360px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .add-friend__item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 6px;
-  border-radius: 8px;
+  padding: 10px 8px;
+  border-radius: var(--mc-radius-md);
   transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
   animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out) both;
 }
 
 .add-friend__item:hover {
   background: var(--td-bg-color-secondarycontainer);
-}
-
-.add-friend__item + .add-friend__item {
-  border-top: 1px solid var(--mc-hairline);
 }
 
 .add-friend__meta {
@@ -219,17 +224,21 @@ onBeforeUnmount(() => {
 
 .add-friend__tag {
   flex-shrink: 0;
-  padding: 2px 8px;
-  border: 1px solid var(--mc-hairline);
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 12px;
-  color: var(--td-text-color-placeholder);
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: 11.5px;
+  color: var(--td-text-color-secondary);
 }
 
 .add-friend__state {
+  min-height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 28px 8px;
   text-align: center;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.6;
   animation: mc-fade-in var(--mc-dur-base) var(--mc-ease-out);
 }

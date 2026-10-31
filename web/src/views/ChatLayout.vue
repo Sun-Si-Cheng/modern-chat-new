@@ -286,13 +286,20 @@ onUnmounted(() => {
   background-color: transparent;
 }
 
-/* 空会话页承担产品门面：身份、一句定位、两个可直接执行的动作 */
+/* 空会话页承担产品门面：身份、一句定位、两个可直接执行的动作。
+ * 收进一块轻卡片，避免在自定义背景图/纹理上直接读文字。 */
 .mc-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 340px;
+  width: 360px;
+  max-width: 100%;
+  padding: 36px 32px 32px;
   text-align: center;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-lg);
+  box-shadow: var(--mc-shadow-1);
 }
 
 /* 空状态逐层入场：标记 → 标题 → 定位语 → 提示 → 动作 */
@@ -321,20 +328,21 @@ onUnmounted(() => {
 }
 
 .mc-empty__mark {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: var(--mc-radius-lg);
   background: var(--td-brand-color-1, rgba(0, 82, 217, 0.1));
   color: var(--td-brand-color);
 }
 
 .mc-empty__title {
   margin: 16px 0 0;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.3;
 }
 

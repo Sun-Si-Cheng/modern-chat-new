@@ -98,6 +98,12 @@ function onKeydown(e: KeyboardEvent) {
   z-index: 5;
   /* 扩大命中区域（视觉上仍是细条） */
   touch-action: none;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-resizer:hover,
+.mc-resizer.is-dragging {
+  background: var(--mc-selection);
 }
 
 .mc-resizer::before {
@@ -107,12 +113,14 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .mc-resizer__grip {
-  width: 2px;
-  height: 28px;
-  border-radius: 2px;
-  background: var(--mc-hairline);
+  width: 3px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--td-component-border);
   opacity: 0;
-  transition: opacity var(--mc-dur-fast, 120ms) ease;
+  transition:
+    opacity var(--mc-dur-fast) var(--mc-ease-out),
+    background-color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-resizer:hover .mc-resizer__grip,

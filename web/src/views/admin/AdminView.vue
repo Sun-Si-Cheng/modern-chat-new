@@ -775,7 +775,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin__ban {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 /* 表头回归数据本身：无色带、12px 常规灰字 */
@@ -926,16 +926,18 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 .mc-admin__detail-grid dd {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .mc-admin__detail-ban {
   margin: 16px 0 0;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: var(--mc-radius-sm);
   background: var(--td-error-color-1, #fff0ed);
   color: var(--td-error-color, #d54941);
   font-size: 13px;
+  line-height: 1.6;
 }
 
 @media (max-width: 900px) {

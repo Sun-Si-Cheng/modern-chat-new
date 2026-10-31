@@ -198,10 +198,11 @@ function backToStep1() {
   z-index: 2;
   display: flex;
   align-items: center;
-  padding: 2px 4px;
-  border-radius: 8px;
+  padding: 3px 5px;
+  border-radius: var(--mc-radius-sm);
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .auth-card {
@@ -209,18 +210,20 @@ function backToStep1() {
   z-index: 1;
   width: 420px;
   max-width: 100%;
-  padding: 36px 34px 28px;
+  padding: 34px 32px 26px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
-  border-radius: 12px;
+  border-radius: var(--mc-radius-lg);
   box-shadow: 0 12px 40px rgba(6, 18, 34, 0.22);
 }
 
+/* 与登录页一致：品牌块与标题、表单同轴居中 */
 .auth-card__brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
 }
 
 /* 产品图标：ico 原图 32px，按 1:1 显示最清晰；1px 描边避免深色卡片上糊成一块 */
@@ -263,7 +266,7 @@ function backToStep1() {
 .auth-steps {
   display: flex;
   gap: 8px;
-  margin: 22px 0 0;
+  margin: 18px 0 0;
   padding: 0;
   list-style: none;
   font-size: 13px;
@@ -274,13 +277,16 @@ function backToStep1() {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border-radius: var(--mc-radius-sm);
   background: var(--td-bg-color-secondarycontainer);
   color: var(--mc-text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .auth-steps__num {
@@ -321,9 +327,9 @@ function backToStep1() {
 .auth-card__form {
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 18px;
   margin-top: 24px;
-  animation: auth-form-in 0.16s ease-out;
+  animation: auth-form-in var(--mc-dur-base) var(--mc-ease-out);
 }
 
 .auth-card__form :deep(.t-form__item) {
@@ -352,15 +358,16 @@ function backToStep1() {
 }
 
 .auth-card__links {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--td-component-border);
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--mc-hairline);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 16px;
   font-size: 14px;
+  color: var(--td-text-color-secondary);
 }
 
 .auth-card__link-btn {

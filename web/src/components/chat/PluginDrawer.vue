@@ -209,16 +209,17 @@ async function uninstall(plugin: Plugin) {
 .mc-plugins {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .mc-plugins__install {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px;
   border: 1px dashed var(--td-component-border);
-  border-radius: 8px;
+  border-radius: var(--mc-radius-lg);
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .mc-plugins__upload input {
@@ -231,35 +232,50 @@ async function uninstall(plugin: Plugin) {
 }
 
 .mc-plugins__item {
-  border: 1px solid var(--td-component-border);
-  border-radius: 8px;
-  padding: 12px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  padding: 14px;
+  transition:
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-plugins__item:hover {
+  border-color: var(--td-component-border);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .mc-plugins__head {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .mc-plugins__name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .mc-plugins__desc {
-  font-size: 13px;
-  margin: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 8px 0;
   white-space: pre-wrap;
 }
 
 .mc-plugins__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .mc-plugins__ops {
-  margin-top: 8px;
+  margin-top: 10px;
   text-align: right;
 }
 
@@ -269,8 +285,13 @@ async function uninstall(plugin: Plugin) {
   cursor: pointer;
 }
 
+.mc-plugins__remove:hover {
+  text-decoration: underline;
+}
+
 .mc-plugins__empty {
   text-align: center;
-  padding: 32px 0;
+  padding: 48px 0;
+  font-size: 13px;
 }
 </style>

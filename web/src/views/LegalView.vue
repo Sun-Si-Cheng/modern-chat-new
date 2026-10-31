@@ -105,13 +105,18 @@ function goBack() {
   border-bottom: 1px solid var(--td-component-border);
 }
 
+/* 长文放在一块浅色纸面上，背景图 / 纹理不会干扰阅读 */
 .legal-doc {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 32px 24px 0;
+  max-width: 800px;
+  margin: 24px auto;
+  padding: 36px 40px 28px;
   color: var(--td-text-color-primary);
   font-size: 14px;
   line-height: 1.75;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-lg);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .legal-doc__title {
@@ -131,10 +136,10 @@ function goBack() {
   font-size: 12px;
   line-height: 1.6;
   color: var(--td-text-color-secondary);
-  background: var(--td-bg-color-container);
-  border: 1px solid var(--td-component-border);
-  border-left: 3px solid var(--mc-link);
-  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  border: 1px solid var(--mc-hairline);
+  border-left: 3px solid var(--td-brand-color);
+  border-radius: var(--mc-radius-sm);
 }
 
 .legal-doc__section {
@@ -166,7 +171,19 @@ function goBack() {
   gap: 16px;
   margin-top: 48px;
   padding-top: 16px;
-  border-top: 1px solid var(--td-component-border);
+  border-top: 1px solid var(--mc-hairline);
   font-size: 13px;
+  color: var(--td-text-color-secondary);
+}
+
+@media (max-width: 720px) {
+  .legal-doc {
+    padding: 24px 20px 20px;
+    margin: 16px 12px;
+  }
+
+  .legal-doc__title {
+    font-size: 22px;
+  }
 }
 </style>

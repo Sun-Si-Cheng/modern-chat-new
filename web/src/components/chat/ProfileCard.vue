@@ -135,14 +135,14 @@ function goSettings() {
 
 <style scoped>
 .profile-card {
-  width: 240px;
-  padding: 16px 14px 8px;
+  width: 248px;
+  padding: 18px 16px 10px;
 }
 
 .profile-card__head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 /* 头像：hover 显示相机遮罩，点击选图 */
@@ -163,7 +163,7 @@ function goSettings() {
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
   opacity: 0;
-  transition: opacity 0.14s ease-out;
+  transition: opacity var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .profile-card__avatar:hover .profile-card__cam,
@@ -188,8 +188,9 @@ function goSettings() {
 }
 
 .profile-card__name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -197,22 +198,26 @@ function goSettings() {
 
 .profile-card__edit {
   flex-shrink: 0;
-  padding: 2px;
+  padding: 4px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--mc-radius-sm);
   background: none;
   color: var(--mc-text-faint);
   cursor: pointer;
   line-height: 0;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .profile-card__edit:hover {
+  background: var(--td-bg-color-secondarycontainer);
   color: var(--td-brand-color);
 }
 
 .profile-card__username {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 12px;
   color: var(--mc-text-faint);
   overflow: hidden;
@@ -226,23 +231,26 @@ function goSettings() {
 
 .profile-card__menu {
   list-style: none;
-  margin: 12px 0 0;
-  padding: 8px 0 0;
+  margin: 14px 0 0;
+  padding: 10px 0 0;
   border-top: 1px solid var(--mc-hairline);
 }
 
 .profile-card__menu button {
   display: block;
   width: 100%;
-  padding: 8px 6px;
+  padding: 9px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: none;
   font: inherit;
   font-size: 13px;
   text-align: left;
   color: var(--td-text-color-primary);
   cursor: pointer;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .profile-card__menu button:hover {
@@ -251,5 +259,9 @@ function goSettings() {
 
 .profile-card__menu button.is-danger {
   color: var(--td-error-color, #d54941);
+}
+
+.profile-card__menu button.is-danger:hover {
+  background: var(--td-error-color-1, rgba(213, 73, 65, 0.08));
 }
 </style>

@@ -111,21 +111,21 @@ onBeforeUnmount(() => {
 .mc-ctx {
   position: fixed;
   z-index: 3000;
-  min-width: 132px;
-  padding: 4px;
-  border-radius: 10px;
+  min-width: 148px;
+  padding: 6px;
+  border-radius: var(--mc-radius-md);
   border: 1px solid var(--mc-hairline, rgba(0, 0, 0, 0.08));
   background: var(--td-bg-color-container);
-  box-shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--mc-shadow-2);
   transform-origin: top left;
 }
 
 .mc-ctx__item {
   display: block;
   width: 100%;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: transparent;
   color: var(--td-text-color-primary);
   font: inherit;
@@ -133,15 +133,21 @@ onBeforeUnmount(() => {
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--mc-dur-fast, 120ms) ease;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-ctx__item:hover:not(.is-disabled) {
-  background: var(--td-bg-color-container-hover);
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .mc-ctx__item.is-danger {
   color: var(--td-error-color);
+}
+
+.mc-ctx__item.is-danger:hover:not(.is-disabled) {
+  background: var(--td-error-color-1, rgba(213, 73, 65, 0.08));
 }
 
 .mc-ctx__item.is-disabled {
@@ -150,9 +156,9 @@ onBeforeUnmount(() => {
 }
 
 .mc-ctx__item.has-divider {
-  margin-top: 4px;
+  margin-top: 6px;
   border-top: 1px solid var(--mc-hairline, rgba(0, 0, 0, 0.08));
-  padding-top: 9px;
+  padding-top: 10px;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
@@ -166,8 +172,8 @@ onBeforeUnmount(() => {
 .mc-ctx-enter-active,
 .mc-ctx-leave-active {
   transition:
-    opacity var(--mc-dur-fast, 120ms) ease,
-    transform var(--mc-dur-fast, 120ms) var(--mc-ease-out, ease-out);
+    opacity var(--mc-dur-fast) var(--mc-ease-out),
+    transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-ctx-enter-from,

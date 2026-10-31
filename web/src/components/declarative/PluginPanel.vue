@@ -30,22 +30,24 @@ function toMutable(body: unknown): UIDescNode[] {
 .mc-plugin-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 16px;
   min-width: 0;
   overflow-y: auto;
 }
 
 .mc-plugin-panel__card {
   background: var(--td-bg-color-container);
-  border: 1px solid var(--td-component-border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  padding: 12px 14px;
+  box-shadow: var(--mc-shadow-1);
 }
 
 .mc-plugin-panel__title {
+  font-size: 13.5px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   color: var(--td-text-color-primary);
 }
 </style>
