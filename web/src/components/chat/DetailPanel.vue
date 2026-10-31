@@ -299,14 +299,15 @@ async function leave() {
 }
 
 .mc-detail__section {
-  padding: 14px;
+  padding: 16px;
   border-bottom: 1px solid var(--td-component-border);
 }
 
 .mc-detail__title {
   font-weight: 600;
   font-size: 15px;
-  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+  margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -342,10 +343,10 @@ async function leave() {
   align-items: center;
   gap: 8px;
   /* 用负 margin + 内边距让 hover 背景延伸到面板边缘，成员行不再是一条条裸文字 */
-  padding: 6px 8px;
+  padding: 7px 8px;
   margin: 0 -8px;
-  border-radius: 8px;
-  transition: background-color var(--mc-dur-fast, 120ms) ease;
+  border-radius: var(--mc-radius-sm);
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-detail__member:hover {
@@ -366,6 +367,6 @@ async function leave() {
 }
 
 .mc-detail__footer {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 </style>

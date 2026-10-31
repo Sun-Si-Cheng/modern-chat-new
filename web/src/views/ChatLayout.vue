@@ -283,7 +283,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--td-bg-color-page);
+  background-color: transparent;
 }
 
 /* 空会话页承担产品门面：身份、一句定位、两个可直接执行的动作 */

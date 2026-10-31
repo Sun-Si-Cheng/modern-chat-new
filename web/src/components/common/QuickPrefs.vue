@@ -145,10 +145,16 @@ function onColorInput(e: Event) {
   width: 26px;
   height: 26px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: var(--mc-radius-sm);
   border: 1px solid rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  transition: box-shadow 0.12s ease-out;
+  transition:
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out),
+    transform var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.scene-swatch:hover {
+  transform: scale(1.06);
 }
 
 .scene-swatch.is-active {
@@ -190,6 +196,10 @@ function onColorInput(e: Event) {
   background: var(--td-bg-color-container);
   color: var(--td-text-color-secondary);
   cursor: pointer;
+  transition:
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .scene-effect:hover {

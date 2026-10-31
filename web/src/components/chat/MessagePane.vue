@@ -7,6 +7,7 @@ import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
+import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
@@ -306,6 +307,9 @@ const senderAvatar = (m: Message) => {
           </span>
         </div>
       </template>
+      <div class="mc-msgpane__bg">
+        <AppBackgroundPicker compact />
+      </div>
     </header>
 
     <DynamicScroller
@@ -413,7 +417,8 @@ const senderAvatar = (m: Message) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--td-bg-color-page);
+  /* 透出 body 上的全站背景（颜色 + 纹理） */
+  background: transparent;
 }
 
 .mc-msgpane__header {
@@ -421,7 +426,7 @@ const senderAvatar = (m: Message) => {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
 }
@@ -429,6 +434,7 @@ const senderAvatar = (m: Message) => {
 .mc-msgpane__title {
   font-weight: 600;
   font-size: 16px;
+  letter-spacing: -0.01em;
 }
 
 .mc-msgpane__sub {
@@ -443,6 +449,13 @@ const senderAvatar = (m: Message) => {
   margin-right: 4px;
 }
 
+/* 背景入口：靠右，低干扰图标按钮 */
+.mc-msgpane__bg {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
 @media (max-width: 768px) {
   .mc-msgpane__back {
     display: inline-flex;
@@ -452,7 +465,7 @@ const senderAvatar = (m: Message) => {
 .mc-msgpane__list {
   flex: 1;
   min-height: 0;
-  padding: 12px 16px;
+  padding: 16px 20px;
 }
 
 .mc-msgpane__loading {
@@ -461,15 +474,27 @@ const senderAvatar = (m: Message) => {
   font-size: 12px;
 }
 
+/* 日期分隔：文字居中 + 两侧细线，和消息流拉开层次 */
 .mc-msgpane__date {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 6px;
   font-size: 12px;
-  padding: 10px 0 4px;
+  color: var(--mc-text-faint);
+}
+
+.mc-msgpane__date::before,
+.mc-msgpane__date::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--mc-hairline);
 }
 
 .mc-msg {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   /* 气泡之间的呼吸感：上下各 11px，相邻两条合计 22px（原为 12px） */
   margin: 11px 0;
 }
@@ -479,7 +504,7 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msg__body {
-  max-width: 62%;
+  max-width: 64%;
   display: flex;
   flex-direction: column;
 }
@@ -496,14 +521,16 @@ const senderAvatar = (m: Message) => {
 .mc-msg__bubble {
   position: relative;
   background: var(--td-bg-color-container);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  padding: 9px 13px;
   word-break: break-word;
   white-space: pre-wrap;
 }
 
 .mc-msg.mine .mc-msg__bubble {
   background: var(--td-brand-color);
+  border-color: transparent;
   color: #fff;
 }
 
@@ -519,6 +546,7 @@ const senderAvatar = (m: Message) => {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
   background: transparent;
+  border-color: transparent;
   box-shadow: none;
   padding: 2px 0;
 }
@@ -573,15 +601,16 @@ const senderAvatar = (m: Message) => {
 
 .mc-msg__meta {
   font-size: 11.5px;
-  margin-top: 3px;
+  margin-top: 4px;
   user-select: none;
   letter-spacing: 0.01em;
+  opacity: 0.9;
 }
 
 .mc-msgpane__typing {
   height: 22px;
   flex-shrink: 0;
-  padding: 0 16px;
+  padding: 0 20px;
   font-size: 12px;
 }
 </style>

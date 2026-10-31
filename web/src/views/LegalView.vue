@@ -88,7 +88,8 @@ function goBack() {
 <style scoped>
 .legal-page {
   min-height: 100%;
-  background: var(--td-bg-color-page);
+  /* 透出 body 上的全站背景 */
+  background: transparent;
   padding-bottom: 64px;
 }
 

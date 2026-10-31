@@ -94,18 +94,19 @@ function onKeydown(e: KeyboardEvent) {
   flex-shrink: 0;
   border-top: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
-  padding: 10px 16px 14px;
+  padding: 12px 20px 16px;
 }
 
 /* 输入区做成一块完整的输入面板，聚焦时整块响应，而不是只给底边变色 */
 .mc-composer__box {
   border: 1px solid var(--td-component-border);
-  border-radius: 12px;
+  border-radius: var(--mc-radius-lg);
   background: var(--td-bg-color-container);
-  padding: 10px 12px 8px;
+  padding: 12px 14px 10px;
+  box-shadow: var(--mc-shadow-1);
   transition:
-    border-color 0.15s ease-out,
-    box-shadow 0.15s ease-out;
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-composer__box:focus-within {
@@ -139,7 +140,7 @@ function onKeydown(e: KeyboardEvent) {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 12px;
 }
 
@@ -170,7 +171,7 @@ function onKeydown(e: KeyboardEvent) {
 
 @media (max-width: 768px) {
   .mc-composer {
-    padding: 8px 10px 10px;
+    padding: 10px 12px 12px;
   }
 
   .mc-composer__hint {

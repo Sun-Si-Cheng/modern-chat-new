@@ -14,7 +14,12 @@ body {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: var(--td-text-color-primary);
-  background: var(--td-bg-color-page);
+  /* 页面底色 + 全站背景（纹理 / 颜色 / 图片的层叠由 prefs.applyAppBg 生成） */
+  background-color: var(--td-bg-color-page);
+  background-image: var(--mc-app-bg-stack, none);
+  background-size: var(--mc-app-bg-size, auto);
+  background-repeat: var(--mc-app-bg-repeat, repeat);
+  background-position: var(--mc-app-bg-position, center);
 }
 
 * {
@@ -34,6 +39,28 @@ a {
   --mc-selection: rgba(0, 82, 217, 0.16);
   /* 卡片/分组的细描边：比组件边框更淡，暗色下不会形成"重框" */
   --mc-hairline: rgba(0, 0, 0, 0.08);
+  /* 全站背景纹理的线/点颜色（普通页面 / 深色认证场景） */
+  --mc-app-pattern: rgba(15, 23, 42, 0.07);
+  --mc-app-pattern-scene: rgba(255, 255, 255, 0.09);
+  /* 背景图上的柔化层：普通页面跟随亮暗主题，认证场景固定压暗 */
+  --mc-app-image-scrim: rgba(255, 255, 255, 0.72);
+  --mc-auth-image-scrim: rgba(4, 10, 18, 0.45);
+
+  /* 动效令牌：组件里的过渡与入场动画统一从这里取值 */
+  --mc-dur-fast: 120ms;
+  --mc-dur-base: 180ms;
+  --mc-dur-slow: 240ms;
+  --mc-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --mc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* 圆角：6 控件 / 10 行与按钮 / 14 卡片 */
+  --mc-radius-sm: 6px;
+  --mc-radius-md: 10px;
+  --mc-radius-lg: 14px;
+
+  /* 极轻的两级阴影：只拉开层次，不做装饰 */
+  --mc-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px -2px rgba(15, 23, 42, 0.06);
+  --mc-shadow-2: 0 12px 32px -16px rgba(15, 23, 42, 0.24);
 }
 
 :root[theme-mode='dark'] {
@@ -41,6 +68,10 @@ a {
   --mc-link: #7cb8ff;
   --mc-selection: rgba(110, 168, 255, 0.28);
   --mc-hairline: rgba(255, 255, 255, 0.08);
+  --mc-app-pattern: rgba(255, 255, 255, 0.09);
+  --mc-app-image-scrim: rgba(17, 17, 17, 0.72);
+  --mc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 8px -2px rgba(0, 0, 0, 0.28);
+  --mc-shadow-2: 0 12px 32px -16px rgba(0, 0, 0, 0.5);
 }
 
 /* 浏览器表面主题化（craft floor） */
@@ -80,7 +111,59 @@ a {
   height: 6px;
 }
 
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 ::-webkit-scrollbar-thumb {
   background: var(--td-scrollbar-color, rgba(0, 0, 0, 0.2));
-  border-radius: 3px;
+  border-radius: 999px;
+}
+
+/* 背景纹理 / 背景图的具体层叠由 stores/prefs.ts 的 applyAppBg 生成，
+ * 这里只提供纹理与柔化层的颜色令牌。 */
+
+/* ===== 共用动效 =====
+ * 组件里引用的 mc-fade-up / mc-fade-in / mc-pop-in 统一在这里定义，
+ * 避免各处 var(--mc-dur-*) 因未定义而让整条 transition/animation 失效。 */
+@keyframes mc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mc-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 系统开启「减少动态效果」时统一收敛，避免各组件逐处漏配 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

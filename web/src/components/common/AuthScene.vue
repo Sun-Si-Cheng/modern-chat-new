@@ -45,7 +45,13 @@ const prefs = usePrefsStore()
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: var(--mc-scene-color, #123a5c);
+  background-color: var(--mc-scene-color, #123a5c);
+  /* 全站背景同样叠加在认证场景上（层叠由 prefs.applyAppBg 生成）；
+   * 存在 login-bg.jpg 时会被自定义图片层覆盖。 */
+  background-image: var(--mc-scene-bg-stack, none);
+  background-size: var(--mc-scene-bg-size, auto);
+  background-repeat: var(--mc-scene-bg-repeat, repeat);
+  background-position: var(--mc-scene-bg-position, center);
 }
 
 /* 自定义图片：放在 web/public/login-bg.jpg 即覆盖基色（404 时无副作用） */

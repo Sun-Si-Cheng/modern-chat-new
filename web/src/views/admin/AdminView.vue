@@ -699,16 +699,24 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 <style scoped>
 .mc-admin {
-  max-width: 960px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 24px 48px;
 }
 
 .mc-admin__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.mc-admin__header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .mc-admin__header-right {
@@ -717,8 +725,13 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   gap: 12px;
 }
 
+/* 构建版本做成一枚元信息胶囊，不再是一条游离的长文本 */
 .mc-admin__build {
-  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .mc-admin__user {
@@ -729,7 +742,13 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 .mc-admin__ops {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.mc-admin__ops a {
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .mc-admin__tabs {
@@ -763,21 +782,26 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin :deep(.t-table__header th) {
   background: transparent;
   color: var(--mc-text-faint);
-  font-weight: 400;
+  font-weight: 500;
   font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .mc-admin :deep(.t-table td) {
   font-variant-numeric: tabular-nums;
 }
 
+.mc-admin :deep(.t-table__row--hover:hover > td) {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
 /* ===== 概览统计 ===== */
 .mc-admin__stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 18px;
-  transition: opacity var(--mc-dur-fast, 120ms) ease;
+  transition: opacity var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-admin__stats.is-loading {
@@ -787,11 +811,19 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin__stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
+  gap: 3px;
+  padding: 14px 16px;
   border: 1px solid var(--mc-hairline);
-  border-radius: 10px;
+  border-radius: var(--mc-radius-lg);
   background: var(--td-bg-color-container);
+  transition:
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-admin__stat:hover {
+  border-color: var(--td-component-border);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .mc-admin__stat-label {
@@ -800,9 +832,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 }
 
 .mc-admin__stat-value {
-  font-size: 22px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -830,8 +862,17 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin__announce {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-lg);
+  background: var(--td-bg-color-container);
+}
+
+.mc-admin__announce > :first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ===== 危险操作链接 ===== */

@@ -22,6 +22,8 @@
           if (scene && /^#[0-9a-fA-F]{6}$/.test(scene)) {
             document.documentElement.style.setProperty('--mc-scene-color', scene)
           }
+
+          // 全站背景（颜色 / 纹理 / 图片）由 Pinia prefs.init() 在挂载前生成 CSS 变量
         } catch (e) {
           /* 隐私模式下 localStorage 不可用：保持默认 */
         }

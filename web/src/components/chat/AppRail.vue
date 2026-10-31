@@ -138,8 +138,8 @@ function setView(v: 'chats' | 'contacts') {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 12px 0 10px;
+  gap: 8px;
+  padding: 12px 0 12px;
   background: var(--td-bg-color-container);
   border-right: 1px solid var(--td-component-border);
 }
@@ -158,6 +158,13 @@ function setView(v: 'chats' | 'contacts') {
   margin-top: 6px;
 }
 
+/* 底部设置入口与高频区之间加一条极淡分隔，避免「设置」看起来像第三个导航项 */
+.app-rail__bottom {
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--mc-hairline);
+}
+
 .app-rail__avatar {
   padding: 0;
   border: none;
@@ -165,6 +172,11 @@ function setView(v: 'chats' | 'contacts') {
   border-radius: 50%;
   cursor: pointer;
   line-height: 0;
+  transition: box-shadow var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.app-rail__avatar:hover {
+  box-shadow: 0 0 0 2px var(--mc-selection);
 }
 
 .app-rail__avatar:focus-visible {
@@ -180,16 +192,16 @@ function setView(v: 'chats' | 'contacts') {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--mc-radius-md);
   background: transparent;
   /* 未激活图标用 primary + 降不透明度：比 secondary 更清晰（暗色下 secondary 几乎糊在背景里） */
   color: var(--td-text-color-primary);
   opacity: 0.72;
   cursor: pointer;
   transition:
-    opacity var(--mc-dur-fast, 120ms) ease,
-    background-color var(--mc-dur-fast, 120ms) ease,
-    color var(--mc-dur-fast, 120ms) ease;
+    opacity var(--mc-dur-fast) var(--mc-ease-out),
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .app-rail__btn:hover {

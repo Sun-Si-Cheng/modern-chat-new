@@ -60,6 +60,9 @@ watch(
   justify-content: center;
   font-weight: 600;
   user-select: none;
+  transition:
+    transform var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-avatar.is-clickable:focus-visible {

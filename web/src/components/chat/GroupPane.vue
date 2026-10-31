@@ -56,7 +56,7 @@ const items = computed(() => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 8px;
+  padding: 12px 8px;
   background: var(--td-bg-color-secondarycontainer);
   border-right: 1px solid var(--td-component-border);
   overflow-y: auto;
@@ -65,8 +65,9 @@ const items = computed(() => {
 .group-pane__title {
   font-size: 12px;
   font-weight: 500;
-  color: var(--td-text-color-placeholder);
-  padding: 6px 10px 10px;
+  letter-spacing: 0.02em;
+  color: var(--mc-text-faint);
+  padding: 4px 10px 10px;
 }
 
 .group-pane__list {
@@ -75,7 +76,7 @@ const items = computed(() => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .group-pane__item {
@@ -83,10 +84,10 @@ const items = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 7px 10px;
+  gap: 8px;
+  padding: 8px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: transparent;
   font: inherit;
   font-size: 13px;
@@ -96,20 +97,20 @@ const items = computed(() => {
   transition:
     background-color var(--mc-dur-fast) var(--mc-ease-out),
     color var(--mc-dur-fast) var(--mc-ease-out),
-    transform var(--mc-dur-fast) var(--mc-ease-out);
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .group-pane__item:hover {
   background: var(--td-bg-color-container);
-  transform: translateX(2px);
 }
 
-/* 选中态：中性底色 + 品牌色文字。
+/* 选中态：中性底色 + 品牌色文字，再用左侧细线明确「当前筛选」。
    只靠底色在暗色下与栏背景几乎同色（--td-bg-color-container 贴近页面色），看不出选中的是哪一项。 */
 .group-pane__item.is-active {
   background: var(--td-bg-color-container);
   font-weight: 600;
   color: var(--td-brand-color);
+  box-shadow: inset 2px 0 0 var(--td-brand-color);
 }
 
 .group-pane__item:focus-visible {
@@ -117,12 +118,22 @@ const items = computed(() => {
   outline-offset: 1px;
 }
 
+/* 计数做成小胶囊，和列表项文字拉开层次 */
 .group-pane__count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--td-bg-color-container);
   font-size: 11px;
   color: var(--mc-text-faint);
 }
 
 .group-pane__item.is-active .group-pane__count {
+  background: var(--td-brand-color-1, var(--td-bg-color-container));
   color: var(--td-brand-color);
 }
 </style>

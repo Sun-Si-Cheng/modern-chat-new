@@ -479,8 +479,8 @@ const sortedConvs = computed(() => {
 .mc-sidebar__search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px 8px;
+  gap: 8px;
+  padding: 12px 12px 10px;
   background: var(--td-bg-color-container);
   border-bottom: 1px solid var(--mc-hairline);
 }
@@ -491,6 +491,7 @@ const sortedConvs = computed(() => {
   height: 32px;
   padding: 0;
   flex-shrink: 0;
+  border-radius: var(--mc-radius-sm);
 }
 
 .mc-sidebar__new-menu {
@@ -505,13 +506,14 @@ const sortedConvs = computed(() => {
   width: 100%;
   padding: 8px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: none;
   font: inherit;
   font-size: 13px;
   text-align: left;
   color: var(--td-text-color-primary);
   cursor: pointer;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-sidebar__new-menu button:hover {
@@ -522,31 +524,38 @@ const sortedConvs = computed(() => {
 .mc-sidebar__list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 8px 12px;
+  padding: 6px 8px 12px;
   animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out);
 }
 
 .mc-sidebar__group-label {
   font-size: 12px;
-  color: var(--td-text-color-placeholder);
-  padding: 10px 8px 4px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--mc-text-faint);
+  padding: 14px 8px 6px;
 }
 
 .mc-sidebar__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 40px 20px;
+  gap: 10px;
+  padding: 44px 20px;
   color: var(--mc-text-faint);
   text-align: center;
   animation: mc-fade-up var(--mc-dur-slow) var(--mc-ease-out);
 }
 
+/* 空态图标收进一个浅底圆形，避免裸图标在列表里显得单薄 */
 .mc-sidebar__empty svg {
-  width: 28px;
-  height: 28px;
-  opacity: 0.7;
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  border-radius: 50%;
+  background: var(--td-bg-color-secondarycontainer);
+  opacity: 0.85;
+  box-sizing: border-box;
 }
 
 .mc-sidebar__empty p {
@@ -558,15 +567,16 @@ const sortedConvs = computed(() => {
 .mc-sidebar__add-friend {
   display: flex;
   gap: 6px;
-  padding: 4px 8px 8px;
+  padding: 6px 8px 10px;
 }
 
 .mc-sidebar__result-item {
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
   animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out) both;
 }
 
@@ -584,10 +594,10 @@ const sortedConvs = computed(() => {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 12px;
+  padding: 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--mc-radius-md);
   background: transparent;
   box-sizing: border-box;
   color: inherit;
@@ -596,7 +606,8 @@ const sortedConvs = computed(() => {
   cursor: pointer;
   transition:
     background-color var(--mc-dur-fast) var(--mc-ease-out),
-    color var(--mc-dur-fast) var(--mc-ease-out);
+    color var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-conv-item:hover {
@@ -607,9 +618,13 @@ const sortedConvs = computed(() => {
   transform: scale(1.04);
 }
 
-/* 选中态用中性灰阶，品牌色留给未读数据 */
+/* 选中态用中性灰阶，品牌色留给未读数据；头像加一圈弱高亮作为第二重提示 */
 .mc-conv-item.active {
   background: var(--td-bg-color-container-active, #ebebeb);
+}
+
+.mc-conv-item.active :deep(.mc-avatar) {
+  box-shadow: 0 0 0 2px var(--mc-selection);
 }
 
 /* 置顶：左侧一条品牌色细线。
@@ -667,9 +682,9 @@ const sortedConvs = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  transition: background 0.12s ease-out;
+  padding: 8px 10px;
+  border-radius: var(--mc-radius-md);
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-friend-item:hover {

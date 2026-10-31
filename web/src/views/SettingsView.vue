@@ -10,6 +10,7 @@ import {
 } from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
+import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -176,6 +177,13 @@ function goBack() {
           </div>
         </div>
 
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.appBackground') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.appBackgroundHint') }}</span>
+          </div>
+          <AppBackgroundPicker />
+        </div>
       </section>
 
       <!-- 账号 -->
@@ -305,7 +313,8 @@ function goBack() {
 <style scoped>
 .settings-page {
   min-height: 100%;
-  background: var(--td-bg-color-page);
+  /* 透出 body 上的全站背景 */
+  background: transparent;
   padding-bottom: 48px;
 }
 
@@ -332,25 +341,27 @@ function goBack() {
 }
 
 .settings-body {
-  max-width: 860px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 24px 20px 0;
+  padding: 28px 20px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .settings-card {
   background: var(--td-bg-color-container);
   border: 1px solid var(--mc-hairline);
-  border-radius: 12px;
-  padding: 6px 20px 8px;
+  border-radius: var(--mc-radius-lg);
+  padding: 20px 20px 10px;
+  box-shadow: var(--mc-shadow-1);
 }
 
 .settings-card__title {
-  margin: 14px 0 4px;
-  font-size: 15px;
+  margin: 0 0 4px;
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* 行：左标签右控件，底部细分隔线 */
@@ -359,11 +370,16 @@ function goBack() {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 13px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--mc-hairline);
 }
 
 .settings-row--last {
+  border-bottom: none;
+}
+
+/* 卡片内最后一行不再保留分隔线，避免底部悬挂一条断线 */
+.settings-card > :last-child {
   border-bottom: none;
 }
 
@@ -418,29 +434,34 @@ function goBack() {
 /* 分段控件 */
 .settings-seg {
   display: inline-flex;
-  padding: 2px;
-  border-radius: 8px;
+  padding: 3px;
+  border-radius: var(--mc-radius-md);
   background: var(--td-bg-color-secondarycontainer);
   flex-wrap: wrap;
+  gap: 2px;
 }
 
 .settings-seg button {
   padding: 5px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: transparent;
   font: inherit;
   font-size: 13px;
   color: var(--td-text-color-secondary);
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out),
+    box-shadow var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .settings-seg button.is-active {
   background: var(--td-bg-color-container);
   color: var(--td-text-color-primary);
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .settings-seg button:focus-visible {
@@ -452,8 +473,8 @@ function goBack() {
 .settings-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 0;
+  gap: 8px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--mc-hairline);
 }
 
@@ -467,7 +488,7 @@ function goBack() {
 }
 
 .settings-actions {
-  padding: 14px 0;
+  padding: 16px 0;
   display: flex;
   justify-content: flex-end;
   border-bottom: 1px solid var(--mc-hairline);

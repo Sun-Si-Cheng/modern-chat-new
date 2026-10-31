@@ -208,10 +208,11 @@ function switchMode(m: 'login' | 'register') {
   z-index: 2;
   display: flex;
   align-items: center;
-  padding: 2px 4px;
-  border-radius: 8px;
+  padding: 3px 5px;
+  border-radius: var(--mc-radius-sm);
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
+  box-shadow: var(--mc-shadow-1);
 }
 
 /* ===== 卡片 ===== */
@@ -220,19 +221,21 @@ function switchMode(m: 'login' | 'register') {
   z-index: 1;
   width: 420px;
   max-width: 100%;
-  padding: 36px 34px 28px;
+  padding: 34px 32px 26px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
-  border-radius: 12px;
+  border-radius: var(--mc-radius-lg);
   /* 浮于场景之上，允许一层柔和阴影 */
   box-shadow: 0 12px 40px rgba(6, 18, 34, 0.22);
 }
 
+/* 品牌块居中，与居中的标题、表单形成同一条轴 */
 .auth-card__brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
 }
 
 /* 产品图标：ico 原图 32px，按 1:1 显示最清晰；1px 描边避免深色卡片上糊成一块 */
@@ -268,9 +271,9 @@ function switchMode(m: 'login' | 'register') {
 .auth-card__form {
   display: flex;
   flex-direction: column;
-  gap: 26px;
-  margin-top: 26px;
-  animation: auth-form-in 0.16s ease-out;
+  gap: 18px;
+  margin-top: 24px;
+  animation: auth-form-in var(--mc-dur-base) var(--mc-ease-out);
 }
 
 .auth-card__form :deep(.t-form__item) {
@@ -311,15 +314,16 @@ function switchMode(m: 'login' | 'register') {
 }
 
 .auth-card__links {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--td-component-border);
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--mc-hairline);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 16px;
   font-size: 14px;
+  color: var(--td-text-color-secondary);
 }
 
 /* 切换模式是动作而非跳转，用按钮保持语义与键盘可达 */
