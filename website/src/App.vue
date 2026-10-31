@@ -46,14 +46,10 @@ watchEffect(() => {
   <header class="nav">
     <div class="container nav-inner">
       <RouterLink class="brand" to="/">
+        <!-- 直接用产品图标（白底蓝气泡），外套品牌蓝圆角底衬：
+             图标本身是白底，不套衬直接放深色导航上会是个突兀的白方块。 -->
         <span class="brand-logo" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="22" height="22">
-            <rect x="3" y="5" width="26" height="19" rx="6" fill="#fff" />
-            <path d="M11 24l-3 5 7-5z" fill="#fff" />
-            <circle cx="11" cy="14.5" r="2" fill="#0052d9" />
-            <circle cx="16" cy="14.5" r="2" fill="#0052d9" />
-            <circle cx="21" cy="14.5" r="2" fill="#0052d9" />
-          </svg>
+          <img src="/favicon.ico" alt="" width="32" height="32" />
         </span>
         ModernChat
       </RouterLink>

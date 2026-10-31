@@ -86,7 +86,6 @@ func (s *FriendStore) PendingToUser(userID uint) ([]model.FriendRequestView, err
 }
 
 // list 按 status 查我的关系（双向），other=对端用户。
-// 同意后双方各有一条 status=1 记录，这里按对端去重，保证同一好友只出现一次。
 func (s *FriendStore) list(userID uint, status int8, _ bool) ([]model.FriendItemView, error) {
 	var rows []model.Friend
 	err := s.db.Where("status = ? AND (user_id = ? OR friend_id = ?)", status, userID, userID).
@@ -107,16 +106,13 @@ func (s *FriendStore) list(userID uint, status int8, _ bool) ([]model.FriendItem
 		return nil, err
 	}
 	out := make([]model.FriendItemView, 0, len(rows))
-	seen := make(map[uint]struct{}, len(rows))
 	for _, f := range rows {
 		other := f.FriendID
-		if f.UserID != userID {
+		if f.UserID == userID {
+			other = f.FriendID
+		} else {
 			other = f.UserID
 		}
-		if _, ok := seen[other]; ok {
-			continue
-		}
-		seen[other] = struct{}{}
 		out = append(out, model.FriendItemView{
 			ID:        f.ID,
 			Friend:    users[other],

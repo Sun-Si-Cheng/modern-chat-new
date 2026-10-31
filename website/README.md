@@ -93,7 +93,7 @@ location / {
 | 圆角 | 卡片 `12px`（`--radius`）、控件 `8px`（`--radius-sm`） |
 | 表面 | 纯色 + 1px 细描边，**不用大面积渐变**（主站也是纯色；渐变在暗色下会与文字色冲突） |
 | 代码块 | 固定深色（`--code-bg`），不随主题变化 |
-| 图标 | `public/favicon.ico` 是 `web/public/favicon.ico` 的副本，**换图标时两处一起换**（`copy web/public/favicon.ico website/public/favicon.ico`）；导航栏的品牌块仍用内联 SVG（图标 ico 是白底，直接放深色导航会糊成白方块） |
+| 图标 | `public/favicon.ico` 是 `web/public/favicon.ico` 的副本，**换图标时两处一起换**（`copy web/public/favicon.ico website/public/favicon.ico`）；导航品牌块直接内嵌这张图片，外面套一层品牌蓝圆角底衬（`padding: 3px`）—— 图标是白底，不套衬直接放深色导航上会是一个突兀的白方块 |
 
 > 排查暗色问题的经验：如果某块内容在暗色下"看不见"，通常是这里写了硬编码的浅色背景或深色文字。把它换成 `var(--bg)` / `var(--bg-alt)` / `var(--ink*)` 即可。
 

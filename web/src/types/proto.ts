@@ -127,13 +127,6 @@ export type ServerFrame =
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }
-  | {
-      type: 'user_change'
-      userId: number
-      nickname: string
-      avatar: string
-      avatarColor: string
-    }
   | { type: 'conv_change'; convId: number }
   | { type: 'kicked'; reason: string }
   | { type: 'pong' }

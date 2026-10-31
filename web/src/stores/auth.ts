@@ -39,28 +39,11 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = await authApi.updateMe(body)
   }
 
-  /** 其他端修改资料后由 WS 推送就地更新，无需重新拉取 */
-  function patchProfile(patch: Pick<User, 'nickname' | 'avatar' | 'avatarColor'>) {
-    if (!user.value) return
-    user.value = { ...user.value, ...patch }
-  }
-
   function logout() {
     token.value = ''
     user.value = null
     setToken('')
   }
 
-  return {
-    token,
-    user,
-    isLoggedIn,
-    isAdmin,
-    login,
-    register,
-    fetchMe,
-    updateMe,
-    patchProfile,
-    logout,
-  }
+  return { token, user, isLoggedIn, isAdmin, login, register, fetchMe, updateMe, logout }
 })
