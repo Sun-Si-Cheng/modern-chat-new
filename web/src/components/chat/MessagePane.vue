@@ -7,7 +7,6 @@ import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
-import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
@@ -316,9 +315,6 @@ const senderAvatar = (m: Message) => {
           </span>
         </div>
       </div>
-      <div class="mc-msgpane__bg">
-        <AppBackgroundPicker compact />
-      </div>
     </header>
 
     <DynamicScroller
@@ -484,12 +480,6 @@ const senderAvatar = (m: Message) => {
 }
 
 /* 背景入口：靠右，低干扰图标按钮 */
-.mc-msgpane__bg {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-}
-
 @media (max-width: 768px) {
   .mc-msgpane__back {
     display: inline-flex;
