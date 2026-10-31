@@ -288,7 +288,8 @@ async function leave() {
 
 <style scoped>
 .mc-detail {
-  width: 280px;
+  /* 宽度由布局 store 提供（可拖拽调整），默认值与历史实现一致 */
+  width: var(--mc-w-detail, 280px);
   flex-shrink: 0;
   border-left: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);

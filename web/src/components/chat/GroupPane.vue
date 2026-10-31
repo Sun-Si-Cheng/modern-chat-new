@@ -51,7 +51,8 @@ const items = computed(() => {
 
 <style scoped>
 .group-pane {
-  width: 148px;
+  /* 宽度由布局 store 提供（可拖拽调整），默认值与历史实现一致 */
+  width: var(--mc-w-group, 148px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

@@ -466,7 +466,8 @@ const sortedConvs = computed(() => {
 
 <style scoped>
 .mc-sidebar {
-  width: 300px;
+  /* 宽度由布局 store 提供（可拖拽调整），默认值与历史实现一致 */
+  width: var(--mc-w-conv, 300px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

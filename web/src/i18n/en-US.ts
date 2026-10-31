@@ -357,6 +357,12 @@ export default {
     disabledTag: 'Disabled',
     globalNormal: 'Active',
   },
+  layout: {
+    resizeGroup: 'Drag to resize the group pane',
+    resizeConv: 'Drag to resize the conversation list',
+    resizeDetail: 'Drag to resize the detail panel',
+    openDetail: 'Open conversation details',
+  },
   prefs: {
     language: 'Language',
     theme: 'Theme',
@@ -388,6 +394,16 @@ export default {
     back: 'Back',
     appearance: 'Appearance',
     account: 'Account',
+    // Layout
+    layout: 'Layout',
+    layoutHint:
+      'Drag the dividers between chat areas to resize them; double-click a divider to turn that area into a drawer (overlay, takes no space).',
+    layoutGroup: 'Group pane',
+    layoutConv: 'Conversation list',
+    layoutDetail: 'Detail panel',
+    docked: 'Docked',
+    drawer: 'Drawer',
+    resetLayout: 'Reset layout',
     plugins: 'Plugins',
     pluginsLabel: 'Plugin management',
     pluginsHint: 'Install, enable or remove plugins; the panel opens on the chat page',

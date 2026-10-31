@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button as TButton, DialogPlugin, Input as TInput, MessagePlugin } from 'tdesign-vue-next'
+import {
+  Button as TButton,
+  DialogPlugin,
+  Input as TInput,
+  MessagePlugin,
+  Slider as TSlider,
+} from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -9,6 +15,7 @@ import { systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { PANE_LIMITS, useLayoutStore, type PaneKey } from '@/stores/layout'
 import { usePrefsStore, type Theme } from '@/stores/prefs'
 import { useWsStore } from '@/stores/ws'
 
@@ -17,8 +24,23 @@ const prefs = usePrefsStore()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const layout = useLayoutStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
+
+// ===== 布局（宽度可调 / 区域可改抽屉形态）=====
+
+const layoutPanes = computed(() => [
+  { key: 'group' as PaneKey, label: t('settings.layoutGroup') },
+  { key: 'conv' as PaneKey, label: t('settings.layoutConv') },
+  { key: 'detail' as PaneKey, label: t('settings.layoutDetail') },
+])
+
+/** TSlider 单值模式回调 number，区间模式是 number[]，这里统一处理 */
+function onWidthChange(key: PaneKey, v: unknown) {
+  const n = Array.isArray(v) ? Number(v[0]) : Number(v)
+  if (Number.isFinite(n)) layout.setWidth(key, n)
+}
 
 // ===== 插件 / 站长（低频入口，按信息架构 L3 收在这里）=====
 
@@ -201,6 +223,43 @@ function goBack() {
         </p>
       </section>
 
+      <!-- 布局 -->
+      <section class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.layout') }}</h2>
+        <p class="settings-card__hint text-placeholder">{{ t('settings.layoutHint') }}</p>
+        <div v-for="p in layoutPanes" :key="p.key" class="settings-layout">
+          <div class="settings-layout__head">
+            <span class="settings-row__label">{{ p.label }}</span>
+            <span class="settings-row__value num">{{ layout.panes[p.key].width }}px</span>
+          </div>
+          <TSlider
+            :model-value="layout.panes[p.key].width"
+            :min="PANE_LIMITS[p.key].min"
+            :max="PANE_LIMITS[p.key].max"
+            @change="onWidthChange(p.key, $event)"
+          />
+          <div class="settings-seg settings-layout__seg" role="group" :aria-label="p.label">
+            <button
+              type="button"
+              :class="{ 'is-active': !layout.panes[p.key].drawer }"
+              @click="layout.setDrawer(p.key, false)"
+            >
+              {{ t('settings.docked') }}
+            </button>
+            <button
+              type="button"
+              :class="{ 'is-active': layout.panes[p.key].drawer }"
+              @click="layout.setDrawer(p.key, true)"
+            >
+              {{ t('settings.drawer') }}
+            </button>
+          </div>
+        </div>
+        <TButton class="settings-layout__reset" variant="outline" size="small" @click="layout.reset()">
+          {{ t('settings.resetLayout') }}
+        </TButton>
+      </section>
+
       <!-- 插件 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.plugins') }}</h2>
@@ -327,6 +386,33 @@ function goBack() {
 .settings-row__hint {
   font-size: 12px;
   line-height: 1.4;
+}
+
+/* ===== 布局分区 ===== */
+.settings-card__hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-layout {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.settings-layout__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.settings-layout__seg {
+  margin-top: 10px;
+}
+
+.settings-layout__reset {
+  margin-top: 14px;
 }
 
 /* 分段控件 */

@@ -356,6 +356,12 @@ export default {
     disabledTag: '已下架',
     globalNormal: '正常',
   },
+  layout: {
+    resizeGroup: '拖动调整分组栏宽度',
+    resizeConv: '拖动调整会话列表宽度',
+    resizeDetail: '拖动调整详情面板宽度',
+    openDetail: '打开会话详情',
+  },
   prefs: {
     language: '语言',
     theme: '主题',
@@ -387,6 +393,16 @@ export default {
     back: '返回',
     appearance: '外观',
     account: '账号',
+    // 布局
+    layout: '布局',
+    layoutHint:
+      '拖动聊天页区域之间的分隔条可调整宽度；双击分隔条可把该区域改成抽屉（浮层，不占空间）。',
+    layoutGroup: '分组栏',
+    layoutConv: '会话列表',
+    layoutDetail: '详情面板',
+    docked: '常驻',
+    drawer: '抽屉',
+    resetLayout: '恢复默认布局',
     plugins: '插件',
     pluginsLabel: '插件管理',
     pluginsHint: '安装、启用或移除插件；插件面板在聊天页右侧展开',

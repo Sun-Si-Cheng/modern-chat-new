@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button as TButton, MessagePlugin } from 'tdesign-vue-next'
-import { ChatDoubleFilledIcon } from 'tdesign-icons-vue-next'
+import { ChatDoubleFilledIcon, UsergroupIcon } from 'tdesign-icons-vue-next'
 
 import AddFriendDialog from '@/components/chat/AddFriendDialog.vue'
 import AppRail from '@/components/chat/AppRail.vue'
@@ -11,17 +11,20 @@ import DetailPanel from '@/components/chat/DetailPanel.vue'
 import GroupPane from '@/components/chat/GroupPane.vue'
 import MessagePane from '@/components/chat/MessagePane.vue'
 import PluginDrawer from '@/components/chat/PluginDrawer.vue'
+import PaneResizer from '@/components/common/PaneResizer.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { PANE_LIMITS, useLayoutStore, type PaneKey } from '@/stores/layout'
 import { usePluginsStore } from '@/stores/plugins'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const layout = useLayoutStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
 const pluginsStore = usePluginsStore()
@@ -32,6 +35,25 @@ const { t, te } = useAppI18n()
 const paneView = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
 const addFriendVisible = ref(false)
+
+/** 详情面板是否显示（依赖当前会话） */
+const showDetail = computed(() => !!convStore.currentConv)
+/** 是否有抽屉处于展开状态（决定遮罩显示与 Esc 行为） */
+const hasOpenDrawer = computed(() => layout.opened.group || layout.opened.conv || layout.opened.detail)
+
+/** Esc 收起当前展开的抽屉 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && hasOpenDrawer.value) layout.closeAll()
+}
+
+/**
+ * 双击分隔条：在「常驻 / 抽屉」之间切换。
+ * 切成抽屉时立即展开 —— 否则该区域会凭空消失，用户会以为功能丢了。
+ */
+function togglePane(key: PaneKey) {
+  layout.toggleDrawer(key)
+  if (layout.panes[key].drawer) layout.open(key)
+}
 
 function openAddFriend() {
   addFriendVisible.value = true
@@ -61,20 +83,56 @@ onMounted(async () => {
     pluginDrawerVisible.value = true
     void router.replace({ path: '/chat' })
   }
+  window.addEventListener('keydown', onKeydown)
 })
 
 // 离开聊天页（登出 / 切到设置或后台 / 被踢）：停掉插件宿主并卸载 iframe 与监听器
 onUnmounted(() => {
   host.stop()
   pluginsStore.reset()
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
-  <div class="mc-layout" :class="{ 'has-conv': !!convStore.currentConv }">
+  <div class="mc-layout" :style="layout.vars" :class="{ 'has-conv': !!convStore.currentConv }">
     <AppRail v-model:view="paneView" />
-    <GroupPane v-if="paneView === 'chats'" />
-    <ConvSidebar :view="paneView" @open-add-friend="openAddFriend" />
+
+    <!-- 分组栏：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->
+    <template v-if="paneView === 'chats'">
+      <GroupPane
+        v-if="!layout.hidden('group')"
+        class="mc-pane mc-pane--left"
+        :class="{ 'is-drawer': layout.panes.group.drawer }"
+      />
+      <PaneResizer
+        v-if="!layout.panes.group.drawer"
+        :model-value="layout.panes.group.width"
+        :min="PANE_LIMITS.group.min"
+        :max="PANE_LIMITS.group.max"
+        :label="t('layout.resizeGroup')"
+        @update:model-value="layout.setWidth('group', $event)"
+        @dblclick="togglePane('group')"
+      />
+    </template>
+
+    <!-- 会话列表 -->
+    <ConvSidebar
+      v-if="!layout.hidden('conv')"
+      class="mc-pane mc-pane--left"
+      :class="{ 'is-drawer': layout.panes.conv.drawer }"
+      :view="paneView"
+      @open-add-friend="openAddFriend"
+    />
+    <PaneResizer
+      v-if="!layout.panes.conv.drawer"
+      :model-value="layout.panes.conv.width"
+      :min="PANE_LIMITS.conv.min"
+      :max="PANE_LIMITS.conv.max"
+      :label="t('layout.resizeConv')"
+      @update:model-value="layout.setWidth('conv', $event)"
+      @dblclick="togglePane('conv')"
+    />
     <div class="mc-layout__main">
       <Transition name="mc-swap" mode="out-in">
         <MessagePane v-if="convStore.currentConv" :key="convStore.currentConv.id" />
@@ -100,10 +158,41 @@ onUnmounted(() => {
           </div>
         </div>
       </Transition>
+      <!-- 详情抽屉形态下的入口按钮（浮在主区右上角） -->
+      <TButton
+        v-if="showDetail && layout.panes.detail.drawer"
+        class="mc-layout__detail-toggle"
+        variant="text"
+        size="small"
+        :aria-label="t('layout.openDetail')"
+        :title="t('layout.openDetail')"
+        @click="layout.open('detail')"
+      >
+        <UsergroupIcon size="16px" />
+      </TButton>
     </div>
-    <DetailPanel v-if="convStore.currentConv" />
+
+    <!-- 详情面板：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->
+    <PaneResizer
+      v-if="showDetail && !layout.panes.detail.drawer"
+      :model-value="layout.panes.detail.width"
+      :min="PANE_LIMITS.detail.min"
+      :max="PANE_LIMITS.detail.max"
+      invert
+      :label="t('layout.resizeDetail')"
+      @update:model-value="layout.setWidth('detail', $event)"
+      @dblclick="togglePane('detail')"
+    />
+    <DetailPanel
+      v-if="showDetail && !layout.hidden('detail')"
+      class="mc-pane mc-pane--right"
+      :class="{ 'is-drawer': layout.panes.detail.drawer }"
+    />
     <PluginDrawer v-model="pluginDrawerVisible" />
     <AddFriendDialog v-model:visible="addFriendVisible" />
+
+    <!-- 抽屉遮罩：点击空白处收起 -->
+    <div v-if="hasOpenDrawer" class="mc-layout__scrim" @click="layout.closeAll()" />
   </div>
 </template>
 
@@ -112,6 +201,73 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   overflow: hidden;
+  /* 抽屉浮层的定位上下文 */
+  position: relative;
+}
+
+/* ===== 布局：可拖拽宽度 + 抽屉形态 ===== */
+
+/* 抽屉形态：脱离 flex 流，浮在主区上方（不挤压消息区） */
+.mc-pane.is-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  box-shadow: 0 16px 48px -16px rgba(0, 0, 0, 0.38);
+  animation: mc-drawer-in 160ms ease-out;
+}
+
+.mc-pane--left.is-drawer {
+  left: 56px; /* 贴着图标栏右侧 */
+}
+
+.mc-pane--right.is-drawer {
+  right: 0;
+  animation-name: mc-drawer-in-right;
+}
+
+/* 抽屉遮罩：点击空白处收起 */
+.mc-layout__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+/* 详情抽屉的入口（浮在主区右上角） */
+.mc-layout__detail-toggle {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 12;
+}
+
+@keyframes mc-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mc-drawer-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-pane.is-drawer {
+    animation: none;
+  }
 }
 
 /* 会话区固定占位：切换会话/空态时只做淡入淡出，不推动右侧详情栏 */

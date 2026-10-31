@@ -10,6 +10,7 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { useLayoutStore } from '@/stores/layout'
 import { useWsStore } from '@/stores/ws'
 
 /**
@@ -26,6 +27,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const layout = useLayoutStore()
 const ws = useWsStore()
 const { t } = useAppI18n()
 
@@ -51,6 +53,9 @@ function confirmLogout() {
 
 function setView(v: 'chats' | 'contacts') {
   emit('update:view', v)
+  // 会话列表被设成抽屉形态时，图标栏的点击改为展开/收起该抽屉
+  // （此时列表不占位，否则用户点了图标会「什么都没发生」）
+  if (layout.panes.conv.drawer) layout.open('conv')
 }
 </script>
 
