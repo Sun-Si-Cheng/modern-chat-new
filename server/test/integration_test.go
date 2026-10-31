@@ -5,6 +5,7 @@
 package tests
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -573,5 +574,79 @@ function __mcActivate(api) { /* v1.1.0 */ }`
 	defer codeResp2.Body.Close()
 	if codeResp2.StatusCode != 403 {
 		t.Fatalf("下架后代码下发应 403，got %d", codeResp2.StatusCode)
+	}
+}
+
+// TestGzipCompression REST 响应压缩（设计文档 §9.2）：
+// 请求声明 Accept-Encoding: gzip 且响应超过阈值时才压缩；
+// 未声明时不压缩，小于阈值（1KB）时不压缩（gzip 头会让小响应反而变大）。
+func TestGzipCompression(t *testing.T) {
+	e := setup(t)
+	token, admin := register(t, e, "gzip-admin")
+	if admin.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", admin.Role)
+	}
+	// 造数据：让 /api/admin/users 的响应体明显超过 1KB
+	for i := 0; i < 25; i++ {
+		register(t, e, fmt.Sprintf("gzipuser%02d", i))
+	}
+
+	// 必须关闭自动解压，否则 Transport 会吃掉 Content-Encoding
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+	fetch := func(path, acceptEncoding string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, e.ts.URL+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("request %s: %v", path, err)
+		}
+		return resp
+	}
+
+	// 1) 大响应 + 声明 gzip → 应压缩，且解压后是合法 JSON
+	resp := fetch("/api/admin/users?page=1&pageSize=50", "gzip")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("大响应应被 gzip 压缩，Content-Encoding = %q", got)
+	}
+	zr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	defer func() { _ = zr.Close() }()
+	var payload struct {
+		Users []map[string]any `json:"users"`
+		Total int              `json:"total"`
+	}
+	if err := json.NewDecoder(zr).Decode(&payload); err != nil {
+		t.Fatalf("解压后应为合法 JSON: %v", err)
+	}
+	if len(payload.Users) == 0 || payload.Total == 0 {
+		t.Fatalf("解压后用户列表不应为空：users=%d total=%d", len(payload.Users), payload.Total)
+	}
+
+	// 2) 未声明 Accept-Encoding → 不压缩
+	plain := fetch("/api/admin/users?page=1&pageSize=50", "")
+	defer func() { _ = plain.Body.Close() }()
+	if got := plain.Header.Get("Content-Encoding"); got != "" {
+		t.Fatalf("未声明 Accept-Encoding 时不应压缩，got %q", got)
+	}
+
+	// 3) 小响应（< 1KB）即使声明 gzip 也不压缩
+	small := fetch("/api/health", "gzip")
+	defer func() { _ = small.Body.Close() }()
+	if got := small.Header.Get("Content-Encoding"); got != "" {
+		t.Fatalf("小响应不应压缩（MinLength=1024），got %q", got)
 	}
 }
