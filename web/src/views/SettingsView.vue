@@ -20,6 +20,17 @@ const friendsStore = useFriendsStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
+// ===== 插件 / 站长（低频入口，按信息架构 L3 收在这里）=====
+
+/** 插件面板属于聊天页，带参数回去由 ChatLayout 自动展开 */
+function openPlugins() {
+  void router.push({ path: '/chat', query: { panel: 'plugins' } })
+}
+
+function openAdmin() {
+  void router.push('/admin')
+}
+
 // ===== 外观 =====
 
 const themeOptions: Array<{ value: Theme; label: string }> = [
@@ -190,6 +201,34 @@ function goBack() {
         </p>
       </section>
 
+      <!-- 插件 -->
+      <section class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.plugins') }}</h2>
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.pluginsLabel') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.pluginsHint') }}</span>
+          </div>
+          <TButton variant="outline" size="small" @click="openPlugins">
+            {{ t('settings.openPlugins') }}
+          </TButton>
+        </div>
+      </section>
+
+      <!-- 站长后台（仅站长可见） -->
+      <section v-if="auth.isAdmin" class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.admin') }}</h2>
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.adminLabel') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.adminHint') }}</span>
+          </div>
+          <TButton variant="outline" size="small" @click="openAdmin">
+            {{ t('settings.openAdmin') }}
+          </TButton>
+        </div>
+      </section>
+
       <!-- 关于 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.about') }}</h2>
@@ -275,6 +314,19 @@ function goBack() {
 
 .settings-row__value {
   font-size: 13px;
+}
+
+/* 左侧「标题 + 说明」两行结构（插件 / 站长分区用） */
+.settings-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row__hint {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* 分段控件 */

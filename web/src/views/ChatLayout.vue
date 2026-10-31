@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Button as TButton, MessagePlugin } from 'tdesign-vue-next'
 import { ChatDoubleFilledIcon } from 'tdesign-icons-vue-next'
 
@@ -20,6 +20,7 @@ import { useFriendsStore } from '@/stores/friends'
 import { usePluginsStore } from '@/stores/plugins'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
@@ -55,6 +56,11 @@ onMounted(async () => {
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
+  // 设置页的「插件」入口通过 ?panel=plugins 回到聊天页并直接打开面板
+  if (route.query.panel === 'plugins') {
+    pluginDrawerVisible.value = true
+    void router.replace({ path: '/chat' })
+  }
 })
 
 // 离开聊天页（登出 / 切到设置或后台 / 被踢）：停掉插件宿主并卸载 iframe 与监听器
@@ -66,11 +72,7 @@ onUnmounted(() => {
 
 <template>
   <div class="mc-layout" :class="{ 'has-conv': !!convStore.currentConv }">
-    <AppRail
-      v-model:view="paneView"
-      @open-plugins="pluginDrawerVisible = true"
-      @open-add-friend="openAddFriend"
-    />
+    <AppRail v-model:view="paneView" />
     <GroupPane v-if="paneView === 'chats'" />
     <ConvSidebar :view="paneView" @open-add-friend="openAddFriend" />
     <div class="mc-layout__main">
@@ -85,11 +87,15 @@ onUnmounted(() => {
             <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
             <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
             <p class="mc-empty__hint">{{ t('chat.emptyPane') }}</p>
+            <!-- 主区只留一个主行动（加好友）。插件属于低频配置，入口在设置页，
+                 这里用一行文字链接兜住「新用户不知道有插件」的发现路径。 -->
             <div class="mc-empty__actions">
               <TButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
                 {{ t('chat.emptyAddFriend') }}
               </TButton>
-              <TButton variant="outline" @click="pluginDrawerVisible = true">{{ t('chat.emptyPlugins') }}</TButton>
+              <button type="button" class="mc-empty__link" @click="pluginDrawerVisible = true">
+                {{ t('chat.emptyPlugins') }}
+              </button>
             </div>
           </div>
         </div>
@@ -193,9 +199,29 @@ onUnmounted(() => {
 .mc-empty__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 14px;
   margin-top: 20px;
+}
+
+/* 次要入口：文字链接，不与主按钮争夺注意力 */
+.mc-empty__link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--mc-link, var(--td-brand-color));
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: transparent;
+  transition: text-decoration-color var(--mc-dur-fast, 120ms) ease;
+}
+
+.mc-empty__link:hover {
+  text-decoration-color: currentcolor;
 }
 
 /* 平板：收起详情面板与分组栏 */

@@ -1,48 +1,35 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Dialog as TDialog,
-  DialogPlugin,
-  Input as TInput,
-  MessagePlugin,
-  Popup as TPopup,
-} from 'tdesign-vue-next'
-import {
-  ChatIcon,
-  DashboardIcon,
-  ExtensionIcon,
-  SettingIcon,
-  UserCircleIcon,
-} from 'tdesign-icons-vue-next'
+import { DialogPlugin, Popup as TPopup } from 'tdesign-vue-next'
+import { ChatIcon, SettingIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ProfileCard from './ProfileCard.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
 import { useWsStore } from '@/stores/ws'
 
 /**
- * 最左侧图标栏（飞书式）：
- * 头像(资料卡) + 新建菜单 + 功能导航(消息/联系人/插件/后台) + 底部设置
+ * 最左侧图标栏（信息架构 L1，只放高频）：
+ * 头像(资料卡) + 视图切换(消息/联系人) + 底部设置。
+ *
+ * 低频与配置类入口不在此处：「插件管理」「站长后台」统一收进设置页；
+ * 「加好友 / 新建群聊」是高频动作，常驻在列表栏顶部的「+」里，不藏二级菜单。
  */
 defineProps<{ view: 'chats' | 'contacts' }>()
-const emit = defineEmits<{ 'update:view': [v: 'chats' | 'contacts']; 'open-plugins': [] }>()
+const emit = defineEmits<{ 'update:view': [v: 'chats' | 'contacts'] }>()
 
 const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
 const ws = useWsStore()
-const { t, te } = useAppI18n()
+const { t } = useAppI18n()
 
 const profileVisible = ref(false)
-const moreVisible = ref(false)
-const createGroupVisible = ref(false)
-const groupName = ref('')
 
 const hasUnread = computed(() => convStore.conversations.some((c) => c.unreadCount > 0))
 
@@ -62,38 +49,8 @@ function confirmLogout() {
   })
 }
 
-function menuNewGroup() {
-  moreVisible.value = false
-  createGroupVisible.value = true
-}
-
-function menuAddFriend() {
-  moreVisible.value = false
-  emit('update:view', 'contacts')
-}
-
-function menuSearchUser() {
-  moreVisible.value = false
-  emit('update:view', 'chats')
-}
-
 function setView(v: 'chats' | 'contacts') {
   emit('update:view', v)
-}
-
-async function doCreateGroup() {
-  const name = groupName.value.trim()
-  if (!name) return
-  try {
-    const conv = await convApi.createGroup(name)
-    createGroupVisible.value = false
-    groupName.value = ''
-    await convStore.loadConversations()
-    await convStore.openConversation(conv.id)
-    void MessagePlugin.success(t('chat.createGroupOk'))
-  } catch (e) {
-    void MessagePlugin.error(te(e))
-  }
 }
 </script>
 
@@ -121,36 +78,6 @@ async function doCreateGroup() {
         </template>
       </TPopup>
 
-      <!-- 新建菜单 -->
-      <TPopup
-        v-model:visible="moreVisible"
-        trigger="click"
-        placement="right-bottom"
-        :show-arrow="false"
-        attach="body"
-      >
-        <button type="button" class="app-rail__btn" :aria-label="t('chat.moreMenu')" :title="t('chat.moreMenu')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M11 11V8a1 1 0 1 1 2 0v3h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3H8a1 1 0 1 1 0-2h3Zm1 10a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
-        <template #content>
-          <ul class="app-rail__menu">
-            <li>
-              <button type="button" @click="menuSearchUser">{{ t('chat.menuSearch') }}</button>
-            </li>
-            <li>
-              <button type="button" @click="menuAddFriend">{{ t('chat.menuFriend') }}</button>
-            </li>
-            <li>
-              <button type="button" @click="menuNewGroup">{{ t('chat.menuGroup') }}</button>
-            </li>
-          </ul>
-        </template>
-      </TPopup>
     </div>
 
     <div class="app-rail__nav">
@@ -182,26 +109,6 @@ async function doCreateGroup() {
         </span>
       </button>
 
-      <button
-        type="button"
-        class="app-rail__btn"
-        :aria-label="t('plugin.title')"
-        :title="t('plugin.title')"
-        @click="emit('open-plugins')"
-      >
-        <span class="app-rail__icon"><ExtensionIcon /></span>
-      </button>
-
-      <button
-        v-if="auth.isAdmin"
-        type="button"
-        class="app-rail__btn"
-        :aria-label="t('admin.title')"
-        :title="t('admin.title')"
-        @click="router.push('/admin')"
-      >
-        <span class="app-rail__icon"><DashboardIcon /></span>
-      </button>
     </div>
 
     <div class="app-rail__bottom">
@@ -216,15 +123,6 @@ async function doCreateGroup() {
       </button>
     </div>
 
-    <!-- 建群弹窗 -->
-    <TDialog
-      v-model:visible="createGroupVisible"
-      :header="t('chat.createGroupTitle')"
-      :confirm-btn="{ content: t('chat.createGroup'), theme: 'primary' }"
-      @confirm="doCreateGroup"
-    >
-      <TInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
-    </TDialog>
   </nav>
 </template>
 
@@ -325,31 +223,5 @@ async function doCreateGroup() {
   height: 8px;
   border-radius: 50%;
   background: var(--td-error-color, #d54941);
-}
-
-/* 新建菜单 */
-.app-rail__menu {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  min-width: 128px;
-}
-
-.app-rail__menu button {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  color: var(--td-text-color-primary);
-  cursor: pointer;
-}
-
-.app-rail__menu button:hover {
-  background: var(--td-bg-color-secondarycontainer);
 }
 </style>

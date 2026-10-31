@@ -3,13 +3,15 @@ import { computed, ref } from 'vue'
 import {
   Badge as TBadge,
   Button as TButton,
+  Dialog as TDialog,
   DialogPlugin,
   Input as TInput,
   List as TList,
   ListItem as TListItem,
   MessagePlugin,
+  Popup as TPopup,
 } from 'tdesign-vue-next'
-import { ChatIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
+import { AddIcon, ChatIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
@@ -167,6 +169,42 @@ function fmtTime(ts: string | null): string {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+// ===== 新建（加好友 / 建群）=====
+// 信息架构：这两个是高频动作，常驻列表栏顶部，不再藏进图标栏的二级菜单。
+const newMenuVisible = ref(false)
+const createGroupVisible = ref(false)
+const groupName = ref('')
+const creatingGroup = ref(false)
+
+function menuAddFriend() {
+  newMenuVisible.value = false
+  emit('open-add-friend')
+}
+
+function menuNewGroup() {
+  newMenuVisible.value = false
+  groupName.value = ''
+  createGroupVisible.value = true
+}
+
+async function doCreateGroup() {
+  const name = groupName.value.trim()
+  if (!name || creatingGroup.value) return
+  creatingGroup.value = true
+  try {
+    const conv = await convApi.createGroup(name)
+    createGroupVisible.value = false
+    groupName.value = ''
+    await convStore.loadConversations()
+    await convStore.openConversation(conv.id)
+    void MessagePlugin.success(t('chat.createGroupOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    creatingGroup.value = false
+  }
+}
+
 // ===== 会话右键菜单 =====
 
 const convMenuVisible = ref(false)
@@ -251,6 +289,33 @@ const sortedConvs = computed(() => {
         @change="onSearch"
         @enter="onSearch"
       />
+      <!-- 新建：加好友 / 建群（高频动作，一层可达） -->
+      <TPopup
+        v-model:visible="newMenuVisible"
+        trigger="click"
+        placement="bottom-right"
+        :show-arrow="false"
+        attach="body"
+      >
+        <TButton
+          class="mc-sidebar__new"
+          variant="outline"
+          :aria-label="t('chat.moreMenu')"
+          :title="t('chat.moreMenu')"
+        >
+          <AddIcon />
+        </TButton>
+        <template #content>
+          <ul class="mc-sidebar__new-menu">
+            <li>
+              <button type="button" @click="menuAddFriend">{{ t('chat.menuFriend') }}</button>
+            </li>
+            <li>
+              <button type="button" @click="menuNewGroup">{{ t('chat.menuGroup') }}</button>
+            </li>
+          </ul>
+        </template>
+      </TPopup>
     </div>
 
     <div v-if="kw.trim()" class="mc-sidebar__results">
@@ -385,6 +450,17 @@ const sortedConvs = computed(() => {
       :items="convMenuItems"
       @select="onConvMenuSelect"
     />
+
+    <!-- 新建群聊 -->
+    <TDialog
+      v-model:visible="createGroupVisible"
+      :header="t('chat.createGroupTitle')"
+      :confirm-btn="{ content: t('chat.createGroup'), theme: 'primary' }"
+      :confirm-btn-loading="creatingGroup"
+      @confirm="doCreateGroup"
+    >
+      <TInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
+    </TDialog>
   </aside>
 </template>
 
@@ -401,10 +477,44 @@ const sortedConvs = computed(() => {
 
 .mc-sidebar__search {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 10px 12px 8px;
   background: var(--td-bg-color-container);
   border-bottom: 1px solid var(--mc-hairline);
+}
+
+/* 新建按钮：与搜索框等高，不抢视觉重心 */
+.mc-sidebar__new {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.mc-sidebar__new-menu {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 132px;
+}
+
+.mc-sidebar__new-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+}
+
+.mc-sidebar__new-menu button:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .mc-sidebar__results,
