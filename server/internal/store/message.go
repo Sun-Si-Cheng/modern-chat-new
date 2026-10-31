@@ -57,9 +57,16 @@ func (s *MessageStore) PageBefore(convID uint, beforeID uint64, limit int) ([]mo
 	return rows, hasMore, nil
 }
 
-// MarkRecalled 撤回软标记。
-func (s *MessageStore) MarkRecalled(id uint) error {
-	return s.db.Model(&model.Message{}).Where("id = ?", id).Update("is_recalled", true).Error
+// MarkRecalled 撤回软标记。返回本次是否真的由「未撤回」变为「已撤回」。
+//
+// 幂等性很关键：调用方据此决定是否回退未读数与广播 recall 帧。
+// 原实现无条件 UPDATE，重复撤回（连点、重发帧）会让 RecallUnreadAdjust
+// 对同一消息再扣一次未读，把接收方其它消息的未读计数吃掉。
+func (s *MessageStore) MarkRecalled(id uint) (bool, error) {
+	res := s.db.Model(&model.Message{}).
+		Where("id = ? AND is_recalled = ?", id, false).
+		Update("is_recalled", true)
+	return res.RowsAffected > 0, res.Error
 }
 
 // UpsertInbox 批量更新收件箱行的 last_message_*（新成员行不存在则插入，unread 保持初始值）。

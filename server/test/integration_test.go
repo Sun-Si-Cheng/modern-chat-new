@@ -365,6 +365,33 @@ func TestFullChatFlow(t *testing.T) {
 		t.Fatalf("B 未读应为 1，got %v", unread)
 	}
 
+	// 重复撤回同一消息必须幂等：第二次不应再广播 recall 帧。
+	// 原实现无条件 UPDATE：重复撤回会再次 RecallUnreadAdjust，
+	// 把接收方「其它未读消息」的计数扣掉（红点凭空消失）。
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"33333333-3333-4333-8333-333333333333","content":"第三条"}`, convID))); err != nil {
+		t.Fatalf("ws send3: %v", err)
+	}
+	echo := readFrame(t, connA, "message")
+	msg3ID := uint64(echo["id"].(float64))
+	// 第一次撤回：B 应收到 recall 帧
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"recall","messageId":%d}`, msg3ID))); err != nil {
+		t.Fatalf("ws recall first: %v", err)
+	}
+	if f := readFrame(t, connB, "recall"); uint64(f["messageId"].(float64)) != msg3ID {
+		t.Fatalf("首次撤回帧异常: %v", f)
+	}
+	// 第二次撤回同一条：不应再有 recall 帧
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"recall","messageId":%d}`, msg3ID))); err != nil {
+		t.Fatalf("ws recall second: %v", err)
+	}
+	expectSilence(t, connB, 800*time.Millisecond, "recall")
+	// 读超时会废掉连接，后续断言改用新连接
+	_ = connB.Close()
+	connB = wsDial(t, e, tokenB)
+
 	// A 改昵称 → 好友 B 与其本人连接都收到 user_change（实时同步头像/昵称）
 	if code, _ := apiJSON(t, e, "PATCH", "/api/me", tokenA, `{"nickname":"A新昵称"}`); code != 200 {
 		t.Fatalf("改昵称应 200，got %d", code)

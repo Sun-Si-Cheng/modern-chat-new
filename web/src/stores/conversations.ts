@@ -181,6 +181,34 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   // ===== 发送 =====
 
+  /**
+   * 发送确认超时。WS 帧可能在「连接看似正常」时丢失（服务端挂起 / 链路抖动），
+   * 此时既收不到回显也收不到 error 帧，消息会永远停在 pending（转圈且没有重发入口）。
+   * 超时后标记 failed，让用户能看到并重发。
+   */
+  const PENDING_TIMEOUT = 8000
+  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  function clearPendingTimer(clientMsgId: string) {
+    const t = pendingTimers.get(clientMsgId)
+    if (t !== undefined) {
+      clearTimeout(t)
+      pendingTimers.delete(clientMsgId)
+    }
+  }
+
+  function armPendingTimer(msg: Message) {
+    clearPendingTimer(msg.clientMsgId)
+    const timer = setTimeout(() => {
+      pendingTimers.delete(msg.clientMsgId)
+      if (msg.pending) {
+        msg.pending = false
+        msg.failed = true
+      }
+    }, PENDING_TIMEOUT)
+    pendingTimers.set(msg.clientMsgId, timer)
+  }
+
   function sendText(convId: number, content: string) {
     const trimmed = content.trim()
     if (!trimmed || trimmed.length > 1000) return
@@ -202,8 +230,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (!sent) {
       optimistic.pending = false
       optimistic.failed = true
+      return
     }
-  }
+    armPendingTimer(optimistic)
+    }
 
   function resend(msg: Message) {
     msg.pending = true
@@ -217,8 +247,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (!sent) {
       msg.pending = false
       msg.failed = true
+      return
     }
-  }
+    armPendingTimer(msg)
+    }
 
   function sendTyping(convId: number) {
     sendFrame({ type: 'typing', convId })
@@ -336,6 +368,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         isRecalled: false,
         createdAt: frame.createdAt,
       }
+      if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
       if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
       else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
       // 自己发出的消息本身就是已读位置：记住该会话的上报水位，避免重复上报
@@ -375,6 +408,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
     for (const k of Object.keys(readByConv)) delete readByConv[Number(k)]
     for (const k of Object.keys(drafts)) delete drafts[Number(k)]
+    for (const t of pendingTimers.values()) clearTimeout(t)
+    pendingTimers.clear()
     lastReportedReadByConv.clear()
   }
 

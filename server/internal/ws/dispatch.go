@@ -208,8 +208,13 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 		h.sendError(c, "超过 2 分钟，无法撤回")
 		return
 	}
-	if err := h.deps.Messages.MarkRecalled(msg.ID); err != nil {
+	// 幂等：已经撤回过的直接返回，既不重复扣未读、也不重复广播
+	changed, err := h.deps.Messages.MarkRecalled(msg.ID)
+	if err != nil {
 		slog.Error("ws recall", "err", err.Error())
+		return
+	}
+	if !changed {
 		return
 	}
 	if err := h.deps.Messages.RecallUnreadAdjust(msg.ConversationID, c.UserID, uint64(msg.ID)); err != nil {
