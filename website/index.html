@@ -8,10 +8,11 @@
       name="description"
       content="开箱只有账号与纯文本聊天，图片、表情、主题、机器人、小游戏全部由可插拔的 JS 插件实现。前后端分离，Go + Vue 3，开源自托管。"
     />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='19' rx='6' fill='%230052d9'/%3E%3Cpath d='M11 24l-3 5 7-5z' fill='%230052d9'/%3E%3Ccircle cx='11' cy='14.5' r='2' fill='%23fff'/%3E%3Ccircle cx='16' cy='14.5' r='2' fill='%23fff'/%3E%3Ccircle cx='21' cy='14.5' r='2' fill='%23fff'/%3E%3C/svg%3E"
-    />
+    <!-- 与产品站（web/）使用同一枚图标：web/public/favicon.ico 的副本 -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <!-- 移动端地址栏配色随主题切换（与产品站一致） -->
+    <meta name="theme-color" content="#0052d9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#17191c" media="(prefers-color-scheme: dark)" />
     <script>
       // 首屏防闪烁：与主站共用 mc_theme，在任何样式生效前先定好主题
       ;(function () {
