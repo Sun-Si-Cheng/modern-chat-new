@@ -7,6 +7,7 @@ import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
+import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -136,6 +137,63 @@ function canRecall(m: Message): boolean {
 function recall(m: Message) {
   convStore.recallMessage(m.id)
   void MessagePlugin.success(t('message.recallOk'))
+}
+
+// ===== 消息右键菜单 =====
+
+const menuVisible = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+const menuTarget = ref<Message | null>(null)
+
+/** 已撤回、尚未落库（pending）的消息不弹菜单：没有可执行的操作 */
+function openMenu(e: MouseEvent, m: Message) {
+  if (m.isRecalled || m.id <= 0) return
+  menuTarget.value = m
+  menuX.value = e.clientX
+  menuY.value = e.clientY
+  menuVisible.value = true
+}
+
+const menuItems = computed<ContextMenuItem[]>(() => {
+  const m = menuTarget.value
+  if (!m) return []
+  const items: ContextMenuItem[] = []
+  if (m.msgType === 'text' && m.content) {
+    items.push({ key: 'copy', label: t('message.copy') })
+  }
+  if (canRecall(m)) {
+    items.push({ key: 'recall', label: t('message.recall'), danger: true, dividerBefore: items.length > 0 })
+  }
+  return items
+})
+
+async function copyMessage(m: Message) {
+  const text = m.content ?? ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    void MessagePlugin.success(t('message.copied'))
+  } catch {
+    // 非安全上下文（http）下 clipboard 不可用，退回 execCommand
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    if (ok) void MessagePlugin.success(t('message.copied'))
+    else void MessagePlugin.error(t('message.copyFailed'))
+  }
+}
+
+function onMenuSelect(key: string) {
+  const m = menuTarget.value
+  if (!m) return
+  if (key === 'copy') void copyMessage(m)
+  if (key === 'recall') recall(m)
 }
 
 // ===== 已读回执（单聊） =====
@@ -274,7 +332,11 @@ const senderAvatar = (m: Message) => {
             <div class="mc-msgpane__date text-placeholder">{{ item.label }}</div>
           </template>
           <template v-else-if="item.msg">
-            <div class="mc-msg" :class="{ mine: senderOf(item.msg) }">
+            <div
+              class="mc-msg"
+              :class="{ mine: senderOf(item.msg) }"
+              @contextmenu.prevent="openMenu($event, item.msg)"
+            >
               <AvatarBadge
                 v-if="!senderOf(item.msg)"
                 :name="conv?.type === 1 ? conv.peer?.nickname ?? '?' : memberName(item.msg.senderId)"
@@ -333,6 +395,15 @@ const senderAvatar = (m: Message) => {
     </div>
 
     <MessageComposer v-if="conv" />
+
+    <!-- 消息右键菜单 -->
+    <ContextMenu
+      v-model:visible="menuVisible"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      @select="onMenuSelect"
+    />
   </section>
 </template>
 
