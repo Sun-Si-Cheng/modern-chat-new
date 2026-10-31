@@ -56,7 +56,16 @@ async function onSearch() {
   }
 }
 
+/**
+ * 正在处理的条目（`single-3` / `join-5` / `req-7`）。
+ * 这些操作都在列表项上单击触发，连续点两下会发两次请求：
+ * 加群第二次必然报「已在群中」、同意好友第二次报「已处理」——对用户就是莫名报错。
+ */
+const busyKey = ref('')
+
 async function startSingle(u: User) {
+  if (busyKey.value) return
+  busyKey.value = `single-${u.id}`
   try {
     const conv = await convApi.createSingle(u.id)
     convStore.upsertConversation(conv)
@@ -65,10 +74,14 @@ async function startSingle(u: User) {
     userResults.value = []
   } catch (e) {
     void MessagePlugin.error(te(e))
+  } finally {
+    busyKey.value = ''
   }
 }
 
 async function joinGroup(g: Conversation) {
+  if (busyKey.value) return
+  busyKey.value = `join-${g.id}`
   try {
     await convApi.join(g.id)
     await convStore.loadConversations()
@@ -78,17 +91,23 @@ async function joinGroup(g: Conversation) {
     void MessagePlugin.success(t('chat.joinedGroup', { name: g.name ?? '' }))
   } catch (e) {
     void MessagePlugin.error(te(e))
+  } finally {
+    busyKey.value = ''
   }
 }
 
 // ===== 好友 =====
 
 async function handleRequest(id: number, accept: boolean) {
+  if (busyKey.value) return
+  busyKey.value = `req-${id}`
   try {
     await friendsStore.handle(id, accept)
     void MessagePlugin.success(accept ? t('friends.acceptOk') : t('friends.rejectOk'))
   } catch (e) {
     void MessagePlugin.error(te(e))
+  } finally {
+    busyKey.value = ''
   }
 }
 
@@ -176,7 +195,13 @@ const sortedConvs = computed(() => {
     <div v-if="kw.trim()" class="mc-sidebar__results">
       <div v-if="userResults.length" class="mc-sidebar__group-label">{{ t('chat.groupUsers') }}</div>
       <TList v-if="userResults.length">
-        <TListItem v-for="u in userResults" :key="u.id" class="mc-sidebar__result-item" @click="startSingle(u)">
+        <TListItem
+          v-for="u in userResults"
+          :key="u.id"
+          class="mc-sidebar__result-item"
+          :class="{ 'is-busy': busyKey === `single-${u.id}` }"
+          @click="startSingle(u)"
+        >
           <AvatarBadge :name="u.nickname" :src="u.avatar" :color="u.avatarColor" :size="32" />
           <span class="mc-sidebar__result-name">{{ u.nickname }}</span>
           <span class="text-placeholder">@{{ u.username }}</span>
@@ -184,7 +209,13 @@ const sortedConvs = computed(() => {
       </TList>
       <div v-if="groupResults.length" class="mc-sidebar__group-label">{{ t('chat.groupChats') }}</div>
       <TList v-if="groupResults.length">
-        <TListItem v-for="g in groupResults" :key="g.id" class="mc-sidebar__result-item" @click="joinGroup(g)">
+        <TListItem
+          v-for="g in groupResults"
+          :key="g.id"
+          class="mc-sidebar__result-item"
+          :class="{ 'is-busy': busyKey === `join-${g.id}` }"
+          @click="joinGroup(g)"
+        >
           <AvatarBadge :name="g.name ?? '#'" color="#2ba471" :size="32" />
           <span class="mc-sidebar__result-name">{{ g.name }}</span>
           <span class="text-placeholder num">{{ t('chat.membersCount', { n: g.memberCount }) }}</span>
@@ -239,10 +270,24 @@ const sortedConvs = computed(() => {
           <AvatarBadge :name="r.from.nickname" :src="r.from.avatar" :color="r.from.avatarColor" :size="32" />
           <span class="mc-conv-item__name">{{ r.from.nickname }}</span>
           <div class="mc-friend-item__actions">
-            <TButton size="small" theme="primary" variant="text" @click="handleRequest(r.id, true)">
+            <TButton
+              size="small"
+              theme="primary"
+              variant="text"
+              :loading="busyKey === `req-${r.id}`"
+              :disabled="!!busyKey && busyKey !== `req-${r.id}`"
+              @click="handleRequest(r.id, true)"
+            >
               {{ t('friends.accept') }}
             </TButton>
-            <TButton size="small" variant="text" @click="handleRequest(r.id, false)">{{ t('friends.reject') }}</TButton>
+            <TButton
+              size="small"
+              variant="text"
+              :disabled="!!busyKey && busyKey !== `req-${r.id}`"
+              @click="handleRequest(r.id, false)"
+            >
+              {{ t('friends.reject') }}
+            </TButton>
           </div>
         </div>
       </template>
@@ -341,6 +386,12 @@ const sortedConvs = computed(() => {
   align-items: center;
   gap: 8px;
   animation: mc-fade-up var(--mc-dur-base) var(--mc-ease-out) both;
+}
+
+/* 正在处理（发起会话 / 加群）：给出进行中文案之外的视觉反馈，并挡掉重复点击 */
+.mc-sidebar__result-item.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .mc-sidebar__result-name {

@@ -8,7 +8,8 @@ import { useConversationsStore } from '@/stores/conversations'
 const convStore = useConversationsStore()
 const { t } = useAppI18n()
 
-const text = ref('')
+// 从草稿恢复：切换会话回来时，之前打了一半的内容还在
+const text = ref(convStore.currentConvId ? convStore.draftOf(convStore.currentConvId) : '')
 const lastTypingAt = ref(0)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 /** 中文输入法组合期间按 Enter 是选词，不应发送 */
@@ -23,8 +24,10 @@ function resize() {
   el.style.height = `${Math.min(el.scrollHeight, MAX_ROWS_HEIGHT)}px`
 }
 
-watch(text, () => {
+watch(text, (v) => {
   void nextTick(resize)
+  // 输入即写草稿；发送后 text 被清空，草稿随之删除
+  if (convStore.currentConvId) convStore.setDraft(convStore.currentConvId, v)
 })
 
 onMounted(resize)

@@ -12,7 +12,24 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   const conversations = ref<Conversation[]>([])
   const currentConvId = ref<number | null>(null)
+  /**
+   * 各会话的未发送草稿。
+   * 切换会话时 MessagePane 会随 :key 重建，输入框组件被销毁；
+   * 若不把内容提到 store，用户打了一半的话会静默丢失。
+   */
+  const drafts = reactive<Record<number, string>>({})
   const messagesByConv = reactive<Record<number, Message[]>>({})
+
+  /** 记录/清除草稿（空串即清除） */
+  function setDraft(convId: number, text: string) {
+    if (text) drafts[convId] = text
+    else delete drafts[convId]
+  }
+
+  /** 读回草稿 */
+  function draftOf(convId: number): string {
+    return drafts[convId] ?? ''
+  }
   const loadingMessages = ref(false)
   const hasMoreByConv = reactive<Record<number, boolean>>({})
   /** convId -> userId -> typing 过期时间戳 */
@@ -326,6 +343,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     for (const k of Object.keys(messagesByConv)) delete messagesByConv[Number(k)]
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
     for (const k of Object.keys(readByConv)) delete readByConv[Number(k)]
+    for (const k of Object.keys(drafts)) delete drafts[Number(k)]
     lastReportedReadByConv.clear()
   }
 
@@ -333,6 +351,9 @@ export const useConversationsStore = defineStore('conversations', () => {
     conversations,
     currentConvId,
     currentConv,
+    drafts,
+    setDraft,
+    draftOf,
     messagesByConv,
     currentMessages,
     loadingMessages,

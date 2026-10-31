@@ -58,8 +58,13 @@ const memberOptions = computed(() =>
     .map((m) => ({ label: m.user.nickname, value: m.userId })),
 )
 
+// 弹窗的确认按钮可重复点击（改名/转让都是重操作），用 busy 挡住第二次提交并给出加载反馈
+const renaming = ref(false)
+const transferring = ref(false)
+
 async function doRename() {
-  if (!conv.value || !newName.value.trim()) return
+  if (!conv.value || !newName.value.trim() || renaming.value) return
+  renaming.value = true
   try {
     await convApi.rename(conv.value.id, newName.value.trim())
     await convStore.loadConversations()
@@ -67,6 +72,8 @@ async function doRename() {
     void MessagePlugin.success(t('group.renameOk'))
   } catch (e) {
     void MessagePlugin.error(te(e))
+  } finally {
+    renaming.value = false
   }
 }
 
@@ -91,7 +98,8 @@ function kick(userId: number, nickname: string) {
 }
 
 async function doTransfer() {
-  if (!conv.value || !transferTarget.value) return
+  if (!conv.value || !transferTarget.value || transferring.value) return
+  transferring.value = true
   try {
     await convApi.transfer(conv.value.id, transferTarget.value)
     transferVisible.value = false
@@ -99,6 +107,8 @@ async function doTransfer() {
     void MessagePlugin.success(t('group.transferOk'))
   } catch (e) {
     void MessagePlugin.error(te(e))
+  } finally {
+    transferring.value = false
   }
 }
 
@@ -197,12 +207,22 @@ async function leave() {
   </div>
 
   <!-- 改群名 -->
-  <TDialog v-model:visible="renameVisible" :header="t('group.renameTitle')" @confirm="doRename">
+  <TDialog
+    v-model:visible="renameVisible"
+    :header="t('group.renameTitle')"
+    :confirm-btn-loading="renaming"
+    @confirm="doRename"
+  >
     <TInput v-model="newName" :placeholder="t('group.newName')" clearable @enter="doRename" />
   </TDialog>
 
   <!-- 转让群主 -->
-  <TDialog v-model:visible="transferVisible" :header="t('group.transferTitle')" @confirm="doTransfer">
+  <TDialog
+    v-model:visible="transferVisible"
+    :header="t('group.transferTitle')"
+    :confirm-btn-loading="transferring"
+    @confirm="doTransfer"
+  >
     <TSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
   </TDialog>
 </template>
