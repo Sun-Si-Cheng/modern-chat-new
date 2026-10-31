@@ -11,7 +11,7 @@ import {
   MessagePlugin,
   Popup as TPopup,
 } from 'tdesign-vue-next'
-import { AddIcon, ChatIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
+import { AddIcon, ChatIcon, SearchIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
@@ -288,7 +288,9 @@ const sortedConvs = computed(() => {
         clearable
         @change="onSearch"
         @enter="onSearch"
-      />
+      >
+        <template #prefix-icon><SearchIcon /></template>
+      </TInput>
       <!-- 新建：加好友 / 建群（高频动作，一层可达） -->
       <TPopup
         v-model:visible="newMenuVisible"

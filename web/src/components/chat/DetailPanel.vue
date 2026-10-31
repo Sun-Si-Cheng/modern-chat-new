@@ -196,7 +196,12 @@ async function leave() {
     <template v-if="conv">
       <div v-if="isGroup" class="mc-detail__section">
         <div class="mc-detail__title">
-          {{ t('group.info') }}
+          <span class="mc-detail__heading">
+            {{ t('group.info') }}
+            <span class="mc-detail__count num">
+              {{ t('chat.membersCount', { n: members.length || conv.memberCount }) }}
+            </span>
+          </span>
           <span v-if="isOwner" class="mc-detail__actions">
             <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
             <a @click="transferVisible = true">{{ t('group.transfer') }}</a>
@@ -217,9 +222,9 @@ async function leave() {
             :online="ws.onlineUsers.has(m.userId)"
           />
           <span class="mc-detail__member-name">
-            {{ m.user.nickname }}
-            <span v-if="m.role === 'owner'" class="text-placeholder">{{ t('group.owner') }}</span>
-            <span v-if="m.userId === auth.user?.id" class="text-placeholder">{{ t('group.me') }}</span>
+            <span class="mc-detail__member-nick">{{ m.user.nickname }}</span>
+            <span v-if="m.role === 'owner'" class="mc-detail__badge is-owner">{{ t('group.owner') }}</span>
+            <span v-if="m.userId === auth.user?.id" class="mc-detail__badge">{{ t('group.me') }}</span>
           </span>
           <span v-if="isOwner && m.userId !== auth.user?.id" class="mc-detail__member-ops">
             <a @click="kick(m.userId, m.user.nickname)">{{ t('group.kick') }}</a>
@@ -311,6 +316,21 @@ async function leave() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+.mc-detail__heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mc-detail__count {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--mc-text-faint);
+  white-space: nowrap;
 }
 
 .mc-detail__actions {
@@ -356,9 +376,33 @@ async function leave() {
 .mc-detail__member-name {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.mc-detail__member-nick {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-detail__badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+}
+
+.mc-detail__badge.is-owner {
+  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.08));
+  color: var(--td-brand-color);
 }
 
 .mc-detail__member-ops a {

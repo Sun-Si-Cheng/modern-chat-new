@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin, Button as TButton } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
-import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
+import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -293,9 +293,18 @@ const senderAvatar = (m: Message) => {
       >
         <template #icon><ArrowLeftIcon /></template>
       </TButton>
-      <template v-if="conv">
+      <div v-if="conv" class="mc-msgpane__identity">
+        <AvatarBadge
+          :name="conv.type === 1 ? (conv.peer?.nickname ?? '?') : (conv.name ?? '#')"
+          :src="conv.type === 1 ? conv.peer?.avatar : undefined"
+          :color="conv.type === 1 ? (conv.peer?.avatarColor ?? '#0052d9') : '#2ba471'"
+          :online="conv.type === 1 && conv.peer ? ws.onlineUsers.has(conv.peer.id) : false"
+          :size="32"
+        />
         <div class="mc-msgpane__title">
-          {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
+          <span class="mc-msgpane__name">
+            {{ conv.type === 1 ? conv.peer?.nickname : conv.name }}
+          </span>
           <span class="text-placeholder mc-msgpane__sub">
             {{
               conv.type === 1
@@ -306,14 +315,14 @@ const senderAvatar = (m: Message) => {
             }}
           </span>
         </div>
-      </template>
+      </div>
       <div class="mc-msgpane__bg">
         <AppBackgroundPicker compact />
       </div>
     </header>
 
     <DynamicScroller
-      v-if="conv"
+      v-if="conv && (messages.length || convStore.loadingMessages)"
       ref="scrollerRef"
       class="mc-msgpane__list"
       :items="displayItems"
@@ -394,6 +403,12 @@ const senderAvatar = (m: Message) => {
       </template>
     </DynamicScroller>
 
+    <!-- 新会话 / 空会话：给一个明确的开始提示，而不是一片空白 -->
+    <div v-else-if="conv" class="mc-msgpane__empty">
+      <span class="mc-msgpane__empty-icon" aria-hidden="true"><ChatIcon /></span>
+      <p>{{ t('message.emptyChat') }}</p>
+    </div>
+
     <div v-if="typingNames.length" class="mc-msgpane__typing text-placeholder">
       {{ t('message.typingOnly', { names: typingNames.join(', ') }) }}
     </div>
@@ -431,16 +446,35 @@ const senderAvatar = (m: Message) => {
   background: var(--td-bg-color-container);
 }
 
+.mc-msgpane__identity {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .mc-msgpane__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   font-weight: 600;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.mc-msgpane__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mc-msgpane__sub {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 400;
-  margin-left: 8px;
+  line-height: 1.3;
 }
 
 /* 返回按钮：仅窄屏（单面板模式）显示 */
@@ -528,9 +562,15 @@ const senderAvatar = (m: Message) => {
   white-space: pre-wrap;
 }
 
+/* 气泡朝头像方向收一个角，弱化方向感，不额外画尾巴 */
+.mc-msg:not(.mine) .mc-msg__bubble {
+  border-top-left-radius: 4px;
+}
+
 .mc-msg.mine .mc-msg__bubble {
   background: var(--td-brand-color);
   border-color: transparent;
+  border-top-right-radius: 4px;
   color: #fff;
 }
 
@@ -605,6 +645,36 @@ const senderAvatar = (m: Message) => {
   user-select: none;
   letter-spacing: 0.01em;
   opacity: 0.9;
+}
+
+/* 新会话空态：图标 + 一句话，不铺满整块背景 */
+.mc-msgpane__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--mc-text-faint);
+}
+
+.mc-msgpane__empty-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+}
+
+.mc-msgpane__empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .mc-msgpane__typing {

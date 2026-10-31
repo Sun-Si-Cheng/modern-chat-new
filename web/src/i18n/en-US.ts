@@ -170,6 +170,7 @@ export default {
     recallAria: 'Recall message',
     typingOnly: '{names} is typing',
     noEarlier: 'No earlier messages',
+    emptyChat: 'No messages yet. Say hello!',
     unknownType: '[{type} message]',
     renderFailed: '[Plugin message could not be rendered]',
     rejectedComponent: '[Unknown component rejected]',

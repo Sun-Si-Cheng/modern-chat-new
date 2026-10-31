@@ -170,6 +170,7 @@ export default {
     copyFailed: '复制失败，请手动选择文本',
     typingOnly: '{names} 正在输入',
     noEarlier: '没有更早的消息了',
+    emptyChat: '还没有消息，发一条打个招呼吧',
     unknownType: '[{type} 消息]',
     renderFailed: '[无法渲染的插件消息]',
     rejectedComponent: '[已拒绝渲染未知组件]',
