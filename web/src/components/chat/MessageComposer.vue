@@ -72,7 +72,10 @@ function onKeydown(e: KeyboardEvent) {
         @compositionend="composing = false"
       />
       <div class="mc-composer__footer">
-        <span class="mc-composer__hint text-placeholder">{{ t('message.sendHint') }}</span>
+        <!-- 完整说明放 title，行内只留不会截断的短提示（面板窄时 "Enter 发送 · Shift..." 会断成两截） -->
+        <span class="mc-composer__hint text-placeholder" :title="t('message.sendHint')">
+          {{ t('message.sendHintShort') }}
+        </span>
         <div class="mc-composer__right">
           <span v-if="text.length" class="mc-composer__count text-placeholder num" :class="{ 'is-near-limit': text.length >= 900 }">
             {{ text.length }}/1000
@@ -141,8 +144,12 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .mc-composer__hint {
-  font-size: 11px;
+  font-size: 11.5px;
   white-space: nowrap;
+  /* 不允许被右侧「字数 + 发送」挤压截断（之前会显示成 "Enter 发送 · Sh..."） */
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mc-composer__right {

@@ -141,9 +141,10 @@ export default {
     removeOk: 'Removed',
   },
   message: {
-    composerPlaceholder: 'Type a message. Enter to send, Shift+Enter for a new line',
+    composerPlaceholder: 'Type a message…',
     send: 'Send',
     sendHint: 'Enter to send · Shift+Enter for a new line',
+    sendHintShort: 'Shift+Enter for a new line',
     recall: 'Recall',
     recalled: 'Message recalled',
     recalledPreview: 'Message recalled',

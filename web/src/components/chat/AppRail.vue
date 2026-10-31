@@ -279,18 +279,26 @@ async function doCreateGroup() {
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: var(--td-text-color-secondary);
+  /* 未激活图标用 primary + 降不透明度：比 secondary 更清晰（暗色下 secondary 几乎糊在背景里） */
+  color: var(--td-text-color-primary);
+  opacity: 0.72;
   cursor: pointer;
+  transition:
+    opacity var(--mc-dur-fast, 120ms) ease,
+    background-color var(--mc-dur-fast, 120ms) ease,
+    color var(--mc-dur-fast, 120ms) ease;
 }
 
 .app-rail__btn:hover {
   background: var(--td-bg-color-secondarycontainer);
   color: var(--td-text-color-primary);
+  opacity: 1;
 }
 
 .app-rail__btn.is-active {
   background: var(--td-brand-color-1, var(--td-brand-color));
   color: var(--td-brand-color);
+  opacity: 1;
 }
 
 .app-rail__btn:focus-visible {

@@ -141,9 +141,10 @@ export default {
     removeOk: '已删除',
   },
   message: {
-    composerPlaceholder: '输入消息，Enter 发送，Shift+Enter 换行',
+    composerPlaceholder: '输入消息…',
     send: '发送',
     sendHint: 'Enter 发送 · Shift+Enter 换行',
+    sendHintShort: 'Shift+Enter 换行',
     recall: '撤回',
     recalled: '消息已撤回',
     recalledPreview: '消息已撤回',

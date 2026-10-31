@@ -501,9 +501,10 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msg__meta {
-  font-size: 11px;
-  margin-top: 2px;
+  font-size: 11.5px;
+  margin-top: 3px;
   user-select: none;
+  letter-spacing: 0.01em;
 }
 
 .mc-msgpane__typing {

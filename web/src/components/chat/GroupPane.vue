@@ -103,10 +103,12 @@ const items = computed(() => {
   transform: translateX(2px);
 }
 
-/* 选中态用一块中性底色表达，不加阴影 */
+/* 选中态：中性底色 + 品牌色文字。
+   只靠底色在暗色下与栏背景几乎同色（--td-bg-color-container 贴近页面色），看不出选中的是哪一项。 */
 .group-pane__item.is-active {
   background: var(--td-bg-color-container);
   font-weight: 600;
+  color: var(--td-brand-color);
 }
 
 .group-pane__item:focus-visible {

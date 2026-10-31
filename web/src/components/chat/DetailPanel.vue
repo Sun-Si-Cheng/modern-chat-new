@@ -261,13 +261,35 @@ async function leave() {
 
 .mc-detail__actions a {
   cursor: pointer;
+  color: var(--td-brand-color);
+  border-radius: 4px;
+  padding: 1px 2px;
+  transition: background-color var(--mc-dur-fast, 120ms) ease;
+}
+
+.mc-detail__actions a:hover {
+  background: var(--td-brand-color-light, rgba(0, 82, 217, 0.08));
+  text-decoration: none;
+}
+
+.mc-detail__actions a:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 1px;
 }
 
 .mc-detail__member {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 0;
+  /* 用负 margin + 内边距让 hover 背景延伸到面板边缘，成员行不再是一条条裸文字 */
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  transition: background-color var(--mc-dur-fast, 120ms) ease;
+}
+
+.mc-detail__member:hover {
+  background: var(--td-bg-color-container-hover);
 }
 
 .mc-detail__member-name {
