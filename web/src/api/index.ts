@@ -122,16 +122,47 @@ export interface AdminUsersPage {
   pageSize: number
 }
 
+/** 后台用户列表筛选条件（空值表示不限） */
+export interface AdminUserFilter {
+  kw?: string
+  role?: '' | 'user' | 'admin'
+  status?: '' | 'active' | 'banned'
+}
+
 export const adminApi = {
-  users: (page = 1, pageSize = 20) => http.get<AdminUsersPage>('/admin/users', { page, pageSize }),
+  /** 概览统计 */
+  stats: () => http.get<AdminStats>('/admin/stats'),
+  users: (page = 1, pageSize = 20, filter?: AdminUserFilter) =>
+    http.get<AdminUsersPage>('/admin/users', { page, pageSize, ...filter }),
+  userDetail: (id: number) => http.get<AdminUserDetail>(`/admin/users/${id}`),
   ban: (id: number, days: number, reason: string) =>
     http.post<{ ok: true }>(`/admin/users/${id}/ban`, { days, reason }),
   unban: (id: number) => http.post<{ ok: true }>(`/admin/users/${id}/unban`),
+  /** 强制下线（不封禁）：断开连接，用户可立即重新登录 */
+  kick: (id: number) => http.post<{ ok: true; wasOnline: boolean }>(`/admin/users/${id}/kick`),
   resetPassword: (id: number) =>
     http.post<{ newPassword: string }>(`/admin/users/${id}/reset-password`),
   plugins: (page = 1, pageSize = 20) => http.get<AdminPluginsPage>('/admin/plugins', { page, pageSize }),
   setPluginGlobalDisabled: (name: string, disabled: boolean) =>
     http.post<{ ok: true; affected: number }>('/admin/plugins/global-disable', { name, disabled }),
+}
+
+/** 站长概览：用户 / 会话 / 消息 / 插件 / 在线 / 运行时长 */
+export interface AdminStats {
+  users: { total: number; today: number; banned: number; admins: number }
+  conversations: { single: number; group: number }
+  messages: { total: number; today: number }
+  plugins: { installed: number; enabled: number; disabled: number }
+  online: number
+  uptimeSeconds: number
+  goVersion: string
+}
+
+/** 站长视角：单个用户详情 */
+export interface AdminUserDetail {
+  user: AdminUserRow
+  stats: { conversations: number; messages: number; plugins: number }
+  online: boolean
 }
 
 // ===== 系统信息 =====

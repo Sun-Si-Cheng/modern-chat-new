@@ -269,3 +269,15 @@ func mustJSON(v any) []byte {
 
 // ginH 帧字面量类型（避免本包依赖 gin）。
 type ginH = map[string]any
+
+// OnlineCount 当前在线用户数（同一用户多端只计一次）。
+func (h *Hub) OnlineCount() int {
+	n := 0
+	for i := 0; i < ShardCount; i++ {
+		s := h.shards[i]
+		s.mu.RLock()
+		n += len(s.conns)
+		s.mu.RUnlock()
+	}
+	return n
+}

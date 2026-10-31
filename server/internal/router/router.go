@@ -69,7 +69,7 @@ func New(d Deps) *gin.Engine {
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
-	adminH := handler.NewAdminHandler(users, convs, plugins)
+	adminH := handler.NewAdminHandler(users, convs, msgs, plugins)
 
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
@@ -122,9 +122,12 @@ func New(d Deps) *gin.Engine {
 	// 站长
 	admin := api.Group("/admin", middleware.Auth(users, d.Cfg.JWTSecret), middleware.Ban(), middleware.Admin())
 	{
+		admin.GET("/stats", adminH.Stats)
 		admin.GET("/users", adminH.Users)
+		admin.GET("/users/:id", adminH.UserDetail)
 		admin.POST("/users/:id/ban", adminH.Ban)
 		admin.POST("/users/:id/unban", adminH.Unban)
+		admin.POST("/users/:id/kick", adminH.Kick)
 		admin.POST("/users/:id/reset-password", adminH.ResetPassword)
 
 		admin.GET("/plugins", adminH.Plugins)

@@ -124,3 +124,22 @@ func (s *PluginStore) GlobalDisabledByName(name string) (bool, error) {
 	// 无同名记录时 MAX 返回 NULL，视为未下架
 	return row.MaxDisabled != nil && *row.MaxDisabled != 0, nil
 }
+
+// AdminStats 插件安装行数 / 启用数 / 全局下架数（后台概览用）。
+func (s *PluginStore) AdminStats() (installed, enabled, disabled int64, err error) {
+	if err = s.db.Model(&model.Plugin{}).Count(&installed).Error; err != nil {
+		return
+	}
+	if err = s.db.Model(&model.Plugin{}).Where("enabled = ?", true).Count(&enabled).Error; err != nil {
+		return
+	}
+	err = s.db.Model(&model.Plugin{}).Where("global_disabled = ?", true).Count(&disabled).Error
+	return
+}
+
+// CountByUser 某用户安装的插件数。
+func (s *PluginStore) CountByUser(userID uint) (int64, error) {
+	var n int64
+	err := s.db.Model(&model.Plugin{}).Where("installed_by = ?", userID).Count(&n).Error
+	return n, err
+}

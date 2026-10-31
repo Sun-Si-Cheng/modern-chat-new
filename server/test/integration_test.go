@@ -650,3 +650,127 @@ func TestGzipCompression(t *testing.T) {
 		t.Fatalf("小响应不应压缩（MinLength=1024），got %q", got)
 	}
 }
+
+// TestAdminOverview 后台概览 / 用户筛选 / 用户详情 / 强制下线。
+func TestAdminOverview(t *testing.T) {
+	e := setup(t)
+	token, admin := register(t, e, "overview-admin")
+	if admin.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", admin.Role)
+	}
+	_, bob := register(t, e, "overview-bob")
+	register(t, e, "overview-carol")
+
+	call := func(method, path, asToken string) (int, map[string]any) {
+		t.Helper()
+		req, err := http.NewRequest(method, e.ts.URL+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		if asToken != "" {
+			req.Header.Set("Authorization", "Bearer "+asToken)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+
+	// 1) 概览：计数准确、各分组字段齐全
+	code, stats := call(http.MethodGet, "/api/admin/stats", token)
+	if code != http.StatusOK {
+		t.Fatalf("stats status = %d", code)
+	}
+	u, ok := stats["users"].(map[string]any)
+	if !ok {
+		t.Fatalf("stats.users 缺失：%v", stats)
+	}
+	if got := int(u["total"].(float64)); got != 3 {
+		t.Fatalf("用户总数应为 3，got %d", got)
+	}
+	if got := int(u["admins"].(float64)); got != 1 {
+		t.Fatalf("站长数应为 1，got %d", got)
+	}
+	if got := int(u["today"].(float64)); got != 3 {
+		t.Fatalf("今日新增应为 3，got %d", got)
+	}
+	if got := int(u["banned"].(float64)); got != 0 {
+		t.Fatalf("封禁数应为 0，got %d", got)
+	}
+	for _, key := range []string{"conversations", "messages", "plugins"} {
+		if _, ok := stats[key].(map[string]any); !ok {
+			t.Fatalf("stats.%s 缺失或结构不对", key)
+		}
+	}
+	if _, ok := stats["online"]; !ok {
+		t.Fatal("stats.online 缺失")
+	}
+	if _, ok := stats["uptimeSeconds"]; !ok {
+		t.Fatal("stats.uptimeSeconds 缺失")
+	}
+
+	// 2) 筛选：关键词 / 角色 / 状态
+	_, page := call(http.MethodGet, "/api/admin/users?kw=overview-bob", token)
+	list, _ := page["users"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("关键词筛选应命中 1 人，got %d", len(list))
+	}
+	if got := list[0].(map[string]any)["username"]; got != "overview-bob" {
+		t.Fatalf("命中的用户不对：%v", got)
+	}
+
+	_, pageAdmin := call(http.MethodGet, "/api/admin/users?role=admin", token)
+	if got := len(pageAdmin["users"].([]any)); got != 1 {
+		t.Fatalf("role=admin 应命中 1 人，got %d", got)
+	}
+
+	_, pageBanned := call(http.MethodGet, "/api/admin/users?status=banned", token)
+	if got := len(pageBanned["users"].([]any)); got != 0 {
+		t.Fatalf("status=banned 应为空，got %d", got)
+	}
+
+	_, pageActive := call(http.MethodGet, "/api/admin/users?status=active", token)
+	if got := len(pageActive["users"].([]any)); got != 3 {
+		t.Fatalf("status=active 应命中 3 人，got %d", got)
+	}
+
+	// 3) 详情
+	code, detail := call(http.MethodGet, fmt.Sprintf("/api/admin/users/%d", bob.ID), token)
+	if code != http.StatusOK {
+		t.Fatalf("detail status = %d", code)
+	}
+	if got := detail["user"].(map[string]any)["username"]; got != "overview-bob" {
+		t.Fatalf("详情用户不对：%v", got)
+	}
+	st, ok := detail["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("detail.stats 缺失：%v", detail)
+	}
+	for _, key := range []string{"conversations", "messages", "plugins"} {
+		if _, ok := st[key]; !ok {
+			t.Fatalf("detail.stats.%s 缺失", key)
+		}
+	}
+	if _, ok := detail["online"]; !ok {
+		t.Fatal("detail.online 缺失")
+	}
+
+	// 4) 强制下线：离线用户同样返回 200，wasOnline=false
+	code, kicked := call(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/kick", bob.ID), token)
+	if code != http.StatusOK {
+		t.Fatalf("kick status = %d", code)
+	}
+	if kicked["wasOnline"] != false {
+		t.Fatalf("离线用户 wasOnline 应为 false，got %v", kicked["wasOnline"])
+	}
+
+	// 5) 越权：未登录访问后台接口应 401
+	code, _ = call(http.MethodGet, "/api/admin/stats", "")
+	if code != http.StatusUnauthorized {
+		t.Fatalf("无 token 应 401，got %d", code)
+	}
+}

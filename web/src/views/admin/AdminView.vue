@@ -7,6 +7,7 @@ import {
   Input as TInput,
   InputNumber as TInputNumber,
   MessagePlugin,
+  Select as TSelect,
   TabPanel as TTabPanel,
   Tabs as TTabss,
   Table as TTable,
@@ -17,7 +18,15 @@ import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { adminApi, systemApi, type AdminPluginRow, type AdminUserRow, type VersionInfo } from '@/api'
+import {
+  adminApi,
+  systemApi,
+  type AdminPluginRow,
+  type AdminStats,
+  type AdminUserDetail,
+  type AdminUserRow,
+  type VersionInfo,
+} from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -38,6 +47,20 @@ const pluginPagination = ref({ current: 1, pageSize: 20, total: 0 })
 // 当前构建版本（升级后刷新本页即可确认是否生效）
 const buildInfo = ref<VersionInfo | null>(null)
 
+// ---- 概览统计 ----
+const stats = ref<AdminStats | null>(null)
+const statsLoading = ref(false)
+
+// ---- 用户筛选 ----
+const keyword = ref('')
+const roleFilter = ref<'' | 'user' | 'admin'>('')
+const statusFilter = ref<'' | 'active' | 'banned'>('')
+
+// ---- 用户详情 ----
+const detailVisible = ref(false)
+const detail = ref<AdminUserDetail | null>(null)
+const detailLoading = ref(false)
+
 // TDesign 的 TableProps['columns'] 递归类型过深（TS2589），此处放宽为宽松列定义
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const columns = ref<any[]>([])
@@ -50,7 +73,7 @@ function buildColumns() {
     { colKey: 'username', title: t('admin.colUsername') },
     { colKey: 'role', title: t('admin.colRole'), width: 90 },
     { colKey: 'status', title: t('admin.colStatus'), width: 160 },
-    { colKey: 'ops', title: t('admin.colOps'), width: 220 },
+    { colKey: 'ops', title: t('admin.colOps'), width: 300 },
   ]
   pluginColumns.value = [
     { colKey: 'name', title: t('admin.colPlugin'), width: 220 },
@@ -70,6 +93,7 @@ onMounted(() => {
   buildColumns()
   void fetchUsers()
   void fetchPlugins()
+  void fetchStats()
   systemApi
     .version()
     .then((v) => {
@@ -81,7 +105,11 @@ onMounted(() => {
 async function fetchUsers() {
   loading.value = true
   try {
-    const page = await adminApi.users(pagination.value.current, pagination.value.pageSize)
+    const page = await adminApi.users(pagination.value.current, pagination.value.pageSize, {
+      kw: keyword.value.trim(),
+      role: roleFilter.value,
+      status: statusFilter.value,
+    })
     users.value = page.users
     pagination.value.total = page.total
   } catch (e) {
@@ -95,6 +123,83 @@ function onPageChange(info: { current: number; pageSize: number }) {
   pagination.value.current = info.current
   pagination.value.pageSize = info.pageSize
   void fetchUsers()
+}
+
+// ---- 概览 ----
+
+async function fetchStats() {
+  statsLoading.value = true
+  try {
+    stats.value = await adminApi.stats()
+  } catch {
+    /* 概览失败不影响列表主流程 */
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+// ---- 筛选 ----
+
+function filterRoleOptions() {
+  return [
+    { label: t('admin.filterAll'), value: '' },
+    { label: t('admin.roleUser'), value: 'user' },
+    { label: t('admin.roleAdmin'), value: 'admin' },
+  ]
+}
+
+function filterStatusOptions() {
+  return [
+    { label: t('admin.filterAll'), value: '' },
+    { label: t('admin.filterActive'), value: 'active' },
+    { label: t('admin.filterBanned'), value: 'banned' },
+  ]
+}
+
+function applyFilter() {
+  pagination.value.current = 1
+  void fetchUsers()
+}
+
+function resetFilter() {
+  keyword.value = ''
+  roleFilter.value = ''
+  statusFilter.value = ''
+  applyFilter()
+}
+
+// ---- 详情 / 强制下线 ----
+
+async function openDetail(row: AdminUserRow) {
+  detailVisible.value = true
+  detailLoading.value = true
+  detail.value = null
+  try {
+    detail.value = await adminApi.userDetail(row.id)
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+    detailVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+async function kick(row: AdminUserRow) {
+  try {
+    const r = await adminApi.kick(row.id)
+    void MessagePlugin.success(r.wasOnline ? t('admin.kickOk') : t('admin.kickOffline'))
+    void fetchUsers()
+    void fetchStats()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString()
 }
 
 async function fetchPlugins() {
@@ -218,8 +323,76 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       </div>
     </header>
 
+    <!-- 概览统计 -->
+    <section class="mc-admin__stats" :class="{ 'is-loading': statsLoading }">
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statUsers') }}</span>
+        <strong class="mc-admin__stat-value num">{{ stats?.users.total ?? '—' }}</strong>
+        <span class="mc-admin__stat-sub">{{ t('admin.statToday', { n: stats?.users.today ?? 0 }) }}</span>
+      </div>
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statOnline') }}</span>
+        <strong class="mc-admin__stat-value num">{{ stats?.online ?? '—' }}</strong>
+        <span class="mc-admin__stat-sub">{{ t('admin.statOnlineSub') }}</span>
+      </div>
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statConvs') }}</span>
+        <strong class="mc-admin__stat-value num">
+          {{ stats ? stats.conversations.single + stats.conversations.group : '—' }}
+        </strong>
+        <span class="mc-admin__stat-sub">
+          {{ t('admin.statConvSub', { s: stats?.conversations.single ?? 0, g: stats?.conversations.group ?? 0 }) }}
+        </span>
+      </div>
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statMsgs') }}</span>
+        <strong class="mc-admin__stat-value num">{{ stats?.messages.total ?? '—' }}</strong>
+        <span class="mc-admin__stat-sub">{{ t('admin.statToday', { n: stats?.messages.today ?? 0 }) }}</span>
+      </div>
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statPlugins') }}</span>
+        <strong class="mc-admin__stat-value num">{{ stats?.plugins.installed ?? '—' }}</strong>
+        <span class="mc-admin__stat-sub">
+          {{ t('admin.statPluginSub', { n: stats?.plugins.enabled ?? 0 }) }}
+        </span>
+      </div>
+      <div class="mc-admin__stat">
+        <span class="mc-admin__stat-label">{{ t('admin.statBanned') }}</span>
+        <strong class="mc-admin__stat-value num">{{ stats?.users.banned ?? '—' }}</strong>
+        <span class="mc-admin__stat-sub">{{ t('admin.statAdminSub', { n: stats?.users.admins ?? 0 }) }}</span>
+      </div>
+    </section>
+
     <TTabss v-model="tab" class="mc-admin__tabs">
       <TTabPanel value="users" :label="t('admin.tabUsers')">
+        <div class="mc-admin__filters">
+          <TInput
+            v-model="keyword"
+            class="mc-admin__search"
+            :placeholder="t('admin.searchUser')"
+            clearable
+            @enter="applyFilter"
+            @clear="applyFilter"
+          />
+          <TSelect
+            v-model="roleFilter"
+            :options="filterRoleOptions()"
+            :placeholder="t('admin.filterRole')"
+            style="width: 130px"
+            @change="applyFilter"
+          />
+          <TSelect
+            v-model="statusFilter"
+            :options="filterStatusOptions()"
+            :placeholder="t('admin.filterStatus')"
+            style="width: 130px"
+            @change="applyFilter"
+          />
+          <TButton size="small" variant="outline" @click="resetFilter">
+            {{ t('admin.resetFilter') }}
+          </TButton>
+        </div>
+
         <TTable
           row-key="id"
           :data="users"
@@ -248,8 +421,10 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
           <template #ops="{ row }">
             <div class="mc-admin__ops">
+              <a @click="openDetail(row)">{{ t('admin.detail') }}</a>
               <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
               <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
+              <a @click="kick(row)">{{ t('admin.kick') }}</a>
               <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
             </div>
           </template>
@@ -298,6 +473,51 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         <TInputNumber v-model="banDays" :min="0" theme="column" :suffix="t('admin.daysSuffix')" style="width: 160px" />
         <p class="text-placeholder">{{ t('admin.banHint') }}</p>
         <TInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
+      </div>
+    </TDialog>
+
+    <!-- 用户详情 -->
+    <TDialog v-model:visible="detailVisible" :header="t('admin.detailTitle')" :footer="false" width="520px">
+      <p v-if="detailLoading" class="text-placeholder">{{ t('admin.loading') }}</p>
+      <div v-else-if="detail" class="mc-admin__detail">
+        <div class="mc-admin__detail-head">
+          <AvatarBadge
+            :name="detail.user.nickname"
+            :src="detail.user.avatar"
+            :color="detail.user.avatarColor"
+            :size="48"
+          />
+          <div class="mc-admin__detail-id">
+            <strong>{{ detail.user.nickname }}</strong>
+            <span class="text-placeholder">@{{ detail.user.username }}</span>
+          </div>
+          <TTag :theme="detail.online ? 'success' : 'default'" variant="light" size="small">
+            {{ detail.online ? t('admin.online') : t('admin.offline') }}
+          </TTag>
+        </div>
+
+        <dl class="mc-admin__detail-grid">
+          <div>
+            <dt>{{ t('admin.detailConvs') }}</dt>
+            <dd class="num">{{ detail.stats.conversations }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('admin.detailMsgs') }}</dt>
+            <dd class="num">{{ detail.stats.messages }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('admin.detailPlugins') }}</dt>
+            <dd class="num">{{ detail.stats.plugins }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('admin.detailJoined') }}</dt>
+            <dd>{{ formatDate(detail.user.createdAt) }}</dd>
+          </div>
+        </dl>
+
+        <p v-if="detail.user.bannedUntil" class="mc-admin__detail-ban">
+          {{ t('admin.detailBanned', { reason: detail.user.banReason || '—' }) }}
+        </p>
       </div>
     </TDialog>
   </div>
@@ -375,5 +595,124 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 .mc-admin :deep(.t-table td) {
   font-variant-numeric: tabular-nums;
+}
+
+/* ===== 概览统计 ===== */
+.mc-admin__stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+  transition: opacity var(--mc-dur-fast, 120ms) ease;
+}
+
+.mc-admin__stats.is-loading {
+  opacity: 0.55;
+}
+
+.mc-admin__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: 10px;
+  background: var(--td-bg-color-container);
+}
+
+.mc-admin__stat-label {
+  font-size: 12px;
+  color: var(--mc-text-faint);
+}
+
+.mc-admin__stat-value {
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-admin__stat-sub {
+  font-size: 11.5px;
+  color: var(--mc-text-faint);
+}
+
+/* ===== 筛选栏 ===== */
+.mc-admin__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mc-admin__search {
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+/* ===== 用户详情 ===== */
+.mc-admin__detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.mc-admin__detail-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-admin__detail-id strong {
+  font-size: 16px;
+}
+
+.mc-admin__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 16px 0 0;
+}
+
+.mc-admin__detail-grid dt {
+  font-size: 12px;
+  color: var(--mc-text-faint);
+  margin-bottom: 2px;
+}
+
+.mc-admin__detail-grid dd {
+  margin: 0;
+  font-size: 15px;
+}
+
+.mc-admin__detail-ban {
+  margin: 16px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--td-error-color-1, #fff0ed);
+  color: var(--td-error-color, #d54941);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .mc-admin__stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .mc-admin__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mc-admin__detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
