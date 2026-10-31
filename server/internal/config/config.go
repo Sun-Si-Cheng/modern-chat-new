@@ -38,6 +38,10 @@ func (r RedisConfig) Enabled() bool { return r.Addr != "" }
 // SMTPConfig 找回密码邮件发送；为空时打日志（开发期）。
 type SMTPConfig struct {
 	Host, Port, User, Pass, From string
+	// LogResetLink 未配置 SMTP 时，是否把完整的重置链接写进日志。
+	// 默认仅在非 release 模式开启：日志里出现可用令牌等于把账户接管入口
+	// 暴露给所有能看日志的人（含日志采集平台）。
+	LogResetLink bool
 }
 
 func (c SMTPConfig) Enabled() bool { return c.Host != "" }
@@ -67,6 +71,8 @@ func Load() (Config, error) {
 			User: os.Getenv("SMTP_USER"),
 			Pass: os.Getenv("SMTP_PASS"),
 			From: getv("SMTP_FROM", "modernchat@localhost"),
+			// 生产默认不把可用令牌写进日志；本地开发保留便利
+			LogResetLink: getBool("LOG_RESET_LINK", getv("GIN_MODE", "release") != "release"),
 		},
 	}
 	// 前端来源：逗号分隔，用于 WS Origin 白名单与找回密码链接。
@@ -119,6 +125,17 @@ func geti(key string, def int64) int64 {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
 		}
+	}
+	return def
+}
+
+// getBool 解析布尔环境变量；空值或无法识别时回退 def。
+func getBool(key string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
 	}
 	return def
 }

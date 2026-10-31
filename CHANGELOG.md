@@ -22,6 +22,13 @@
   - **角色调整**：设 / 取消站长，禁止降级最后一个站长，角色变更即时生效
   - **按插件名强制卸载**：物理删除安装记录（可限定某个用户），比全局下架更彻底
   - **操作审计**：新建 `admin_audits` 表，记录后台每一次写操作（操作人 / 动作 / 对象 / 详情 / 来源 IP），后台新增「审计」页签
+
+### 安全
+
+- **请求体大小限制**（CWE-770）：新增 `BodyLimit` 中间件（默认 1MB，插件上传按 `PLUGIN_MAX_SIZE` 放宽）。此前 `ShouldBindJSON` 会把请求体整块读入内存，一个超大 JSON 打到登录接口即可大幅占用内存；超限现在返回 **413**
+- **安全响应头**：新增 `SecurityHeaders` 中间件（`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`）；`deploy/nginx.*.conf` 同步补齐含 `Permissions-Policy`，并给出 CSP 模板（默认注释，因为插件沙箱靠 `srcdoc` 内联脚本，严格 CSP 会让插件系统失效）
+- **重置链接不再默认写入日志**：未配置 SMTP 时，`LOG_RESET_LINK` 在 release 模式下默认为 `false`（此前任何能读日志的人都能拿到可用重置令牌 = 账户接管入口）；需要排查时显式开启
+- **`/ws` 关闭 nginx 访问日志**：WebSocket token 只能走 query，默认 `access_log` 会记录完整 URI 从而泄露可用令牌（CWE-598）
 - 后端补齐设计文档 §9.2 的压缩能力：REST 走 `gin-contrib/gzip`（排除 `/ws`、<1KB 不压缩），WS 开启 `permessage-deflate`
 
 ---

@@ -41,6 +41,12 @@ func New(d Deps) *gin.Engine {
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(gin.Recovery(), middleware.Logger())
+	// 安全响应头 + 请求体上限（防超大 JSON 撑爆内存）。
+	// 插件上传是 octet-stream，按 PLUGIN_MAX_SIZE 单独放宽。
+	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.BodyLimit(1<<20, map[string]int64{
+		"/api/plugins/upload": d.Cfg.PluginMaxSize + 64*1024,
+	}))
 	// REST 响应压缩（设计文档 §9.2）。
 	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
 	// WS 侧用 permessage-deflate 单独压缩（见 internal/ws 的 upgraderFor）。

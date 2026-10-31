@@ -9,6 +9,18 @@ server {
     root /var/www/modernchat;
     index index.html;
 
+    # ===== 安全响应头（nginx 侧必须配，API 响应头由后端中间件负责）=====
+    # X-Frame-Options：禁止本站被 iframe 嵌套，防点击劫持（诱导站长点「封禁/删除」）
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+
+    # CSP 模板：**默认注释掉**。插件沙箱用 iframe srcdoc + 内联脚本运行插件代码，
+    # srcdoc 会继承父页面 CSP，若 script-src 不含 'unsafe-inline' 插件系统会整体失效。
+    # 修改插件运行机制（如改为外链沙箱页）之后再启用下面这行：
+    # add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
     # 前端静态资源（SPA history 路由回退）
     location / {
         try_files $uri $uri/ /index.html;
@@ -31,6 +43,11 @@ server {
 
     # WebSocket（/ws 握手 + 升级）
     location /ws {
+        # 浏览器无法为 WebSocket 自定义请求头，token 只能走 query（?token=...）。
+        # 若按默认 access_log 记录完整 URI，日志里会留下**可用令牌**（CWE-598）：
+        # 任何能读日志的人都能拿它劫持会话。因此关闭该路径的访问日志。
+        access_log off;
+
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

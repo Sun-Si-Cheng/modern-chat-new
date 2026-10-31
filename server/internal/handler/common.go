@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -28,6 +29,13 @@ func fail(c *gin.Context, status int, msg string) {
 // bind 解析 JSON 请求体，失败回 400。
 func bind(c *gin.Context, obj any) bool {
 	if err := c.ShouldBindJSON(obj); err != nil {
+		// 请求体超过中间件上限：返回 413 而不是笼统的 400，
+		// 便于客户端区分「格式错」与「太大」。
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			fail(c, http.StatusRequestEntityTooLarge, "请求体过大")
+			return false
+		}
 		fail(c, http.StatusBadRequest, "请求格式错误")
 		return false
 	}

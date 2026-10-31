@@ -32,7 +32,15 @@ func NewMailer(cfg config.SMTPConfig) *Mailer { return &Mailer{cfg: cfg} }
 //   - 587 / 25：明文连接后 STARTTLS 升级，再认证
 func (m *Mailer) SendResetLink(to, link string) {
 	if !m.cfg.Enabled() {
-		slog.Info("mail(log-only) password reset link", "to", to, "link", link)
+		// 日志里出现完整链接 = 把可用的重置令牌暴露给所有能读日志的人
+		//（日志平台、运维脚本、备份）。生产默认只记「未配置」，需要排查时
+		// 显式设置 LOG_RESET_LINK=true。
+		if m.cfg.LogResetLink {
+			slog.Warn("mail(SMTP 未配置) password reset link", "to", to, "link", link)
+		} else {
+			slog.Warn("mail(SMTP 未配置) 重置邮件未发送；如需在日志中查看链接请设置 LOG_RESET_LINK=true",
+				"to", to)
+		}
 		return
 	}
 	if err := m.send(to, m.buildResetMessage(to, link)); err != nil {
