@@ -107,6 +107,18 @@ export default {
     groupName: '群名称',
     createGroupOk: '群聊已创建',
     joinedGroup: '已加入「{name}」',
+    // 会话右键菜单
+    pin: '置顶会话',
+    unpin: '取消置顶',
+    markRead: '标记为已读',
+    markedRead: '已标记为已读',
+    copyName: '复制会话名',
+    copied: '已复制',
+    copyFailed: '复制失败',
+    // 成员右键菜单
+    memberCopyName: '复制昵称',
+    memberCopied: '昵称已复制',
+    memberCopyFailed: '复制失败',
     profileTitle: '个人资料',
     nickname: '昵称',
     nicknamePlaceholder: '别人看到的名字',

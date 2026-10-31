@@ -95,8 +95,14 @@ func (s *MessageStore) BumpUnread(convID, senderID uint, msgID uint64) error {
 // MarkRead 上报已读：清未读、推进 last_read_message_id（只前进不后退）。
 // 返回受影响行数（0 表示重复上报，无需广播）。
 func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) (int64, error) {
+	// 条件里带上 `unread_count > 0`：正常路径下 last_read 与 unread 一起更新，
+	// 但若两者出现不一致（历史数据 / 手工修过库 / 端上补报），只判 last_read 会跳过更新，
+	// 结果是红点永远消不掉。带上未读条件即可兜住这种情况，且不影响幂等。
 	res := s.db.Model(&model.UserConversation{}).
-		Where("user_id = ? AND conversation_id = ? AND last_read_message_id < ?", userID, convID, upToID).
+		Where(
+			"user_id = ? AND conversation_id = ? AND (last_read_message_id < ? OR unread_count > 0)",
+			userID, convID, upToID,
+		).
 		Updates(map[string]any{"unread_count": 0, "last_read_message_id": upToID})
 	return res.RowsAffected, res.Error
 }

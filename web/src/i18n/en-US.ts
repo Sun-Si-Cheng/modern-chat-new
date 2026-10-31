@@ -107,6 +107,18 @@ export default {
     groupName: 'Group name',
     createGroupOk: 'Group created',
     joinedGroup: 'Joined “{name}”',
+    // Conversation context menu
+    pin: 'Pin conversation',
+    unpin: 'Unpin conversation',
+    markRead: 'Mark as read',
+    markedRead: 'Marked as read',
+    copyName: 'Copy conversation name',
+    copied: 'Copied',
+    copyFailed: 'Copy failed',
+    // Member context menu
+    memberCopyName: 'Copy nickname',
+    memberCopied: 'Nickname copied',
+    memberCopyFailed: 'Copy failed',
     profileTitle: 'Profile',
     nickname: 'Display name',
     nicknamePlaceholder: 'The name others see',

@@ -93,29 +93,38 @@ func (s *FriendStore) list(userID uint, status int8, _ bool) ([]model.FriendItem
 	if err != nil {
 		return nil, err
 	}
+
+	// 双向查询会把同一好友的两条记录（我→对方、对方→我）都查出来，
+	// 必须按「对端 id」去重，否则好友列表里同一个人会出现两次。
+	otherOf := func(f model.Friend) uint {
+		if f.UserID == userID {
+			return f.FriendID
+		}
+		return f.UserID
+	}
+
+	seen := make(map[uint]struct{}, len(rows))
+	deduped := make([]model.Friend, 0, len(rows))
 	otherIDs := make([]uint, 0, len(rows))
 	for _, f := range rows {
-		if f.UserID == userID {
-			otherIDs = append(otherIDs, f.FriendID)
-		} else {
-			otherIDs = append(otherIDs, f.UserID)
+		other := otherOf(f)
+		if _, ok := seen[other]; ok {
+			continue
 		}
+		seen[other] = struct{}{}
+		deduped = append(deduped, f)
+		otherIDs = append(otherIDs, other)
 	}
+
 	users, err := s.briefs(otherIDs)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.FriendItemView, 0, len(rows))
-	for _, f := range rows {
-		other := f.FriendID
-		if f.UserID == userID {
-			other = f.FriendID
-		} else {
-			other = f.UserID
-		}
+	out := make([]model.FriendItemView, 0, len(deduped))
+	for _, f := range deduped {
 		out = append(out, model.FriendItemView{
 			ID:        f.ID,
-			Friend:    users[other],
+			Friend:    users[otherOf(f)],
 			Status:    f.Status,
 			CreatedAt: f.CreatedAt,
 		})

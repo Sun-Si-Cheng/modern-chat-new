@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Dialog as TDialog, DialogPlugin, Input as TInput, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
+import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import PluginPanel from '@/components/declarative/PluginPanel.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
@@ -112,6 +113,50 @@ async function doTransfer() {
   }
 }
 
+// ===== 成员右键菜单 =====
+
+const memberMenuVisible = ref(false)
+const memberMenuX = ref(0)
+const memberMenuY = ref(0)
+const memberMenuTarget = ref<ConversationMember | null>(null)
+
+function openMemberMenu(e: MouseEvent, m: ConversationMember) {
+  memberMenuTarget.value = m
+  memberMenuX.value = e.clientX
+  memberMenuY.value = e.clientY
+  memberMenuVisible.value = true
+}
+
+const memberMenuItems = computed<ContextMenuItem[]>(() => {
+  const m = memberMenuTarget.value
+  if (!m) return []
+  const mine = m.userId === auth.user?.id
+  const items: ContextMenuItem[] = [{ key: 'copyName', label: t('chat.memberCopyName') }]
+  // 群主可以管理其他成员；自己的行不给踢出/转让入口
+  if (isOwner.value && !mine) {
+    items.push({ key: 'transfer', label: t('group.transfer'), dividerBefore: true })
+    items.push({ key: 'kick', label: t('group.kick'), danger: true })
+  }
+  return items
+})
+
+function onMemberMenuSelect(key: string) {
+  const m = memberMenuTarget.value
+  if (!m) return
+  if (key === 'copyName') {
+    void navigator.clipboard
+      .writeText(m.user.nickname)
+      .then(() => MessagePlugin.success(t('chat.memberCopied')))
+      .catch(() => MessagePlugin.error(t('chat.memberCopyFailed')))
+  }
+  if (key === 'kick') kick(m.userId, m.user.nickname)
+  if (key === 'transfer') {
+    // 复用现有的转让确认弹窗，把目标成员预选好
+    transferTarget.value = m.userId
+    transferVisible.value = true
+  }
+}
+
 async function refreshMembers() {
   if (!conv.value) return
   members.value = await convApi.members(conv.value.id)
@@ -158,7 +203,12 @@ async function leave() {
           </span>
         </div>
 
-        <div class="mc-detail__member" v-for="m in members" :key="m.userId">
+        <div
+          class="mc-detail__member"
+          v-for="m in members"
+          :key="m.userId"
+          @contextmenu.prevent="openMemberMenu($event, m)"
+        >
           <AvatarBadge
             :name="m.user.nickname"
             :src="m.user.avatar"
@@ -205,6 +255,15 @@ async function leave() {
     <!-- 插件侧边栏 -->
     <PluginPanel />
   </div>
+
+  <!-- 成员右键菜单 -->
+  <ContextMenu
+    v-model:visible="memberMenuVisible"
+    :x="memberMenuX"
+    :y="memberMenuY"
+    :items="memberMenuItems"
+    @select="onMemberMenuSelect"
+  />
 
   <!-- 改群名 -->
   <TDialog

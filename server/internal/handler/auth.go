@@ -312,6 +312,9 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 资料变更实时同步：广播给好友与同会话成员（含本人多端），
+	// 否则对方会话列表里的昵称/头像要刷新页面才更新。
+	notifyFor(c).NotifyUserChange(u.ID, u.Nickname, u.Avatar, u.AvatarColor)
 	c.JSON(http.StatusOK, u)
 }
 

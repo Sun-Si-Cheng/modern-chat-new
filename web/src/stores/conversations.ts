@@ -26,6 +26,37 @@ export const useConversationsStore = defineStore('conversations', () => {
     else delete drafts[convId]
   }
 
+  // ===== 会话置顶（服务端无该字段，按浏览器本地保存） =====
+
+  const PINNED_KEY = 'mc_pinned_convs'
+
+  function loadPinned(): number[] {
+    try {
+      const raw = localStorage.getItem(PINNED_KEY)
+      const arr = raw ? (JSON.parse(raw) as unknown) : []
+      return Array.isArray(arr) ? arr.filter((x): x is number => typeof x === 'number') : []
+    } catch {
+      return []
+    }
+  }
+
+  const pinnedIds = ref<number[]>(loadPinned())
+
+  function isPinned(convId: number): boolean {
+    return pinnedIds.value.includes(convId)
+  }
+
+  function togglePin(convId: number) {
+    pinnedIds.value = isPinned(convId)
+      ? pinnedIds.value.filter((id) => id !== convId)
+      : [...pinnedIds.value, convId]
+    try {
+      localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedIds.value))
+    } catch {
+      /* 隐私模式：忽略 */
+    }
+  }
+
   /** 读回草稿 */
   function draftOf(convId: number): string {
     return drafts[convId] ?? ''
@@ -354,6 +385,9 @@ export const useConversationsStore = defineStore('conversations', () => {
     drafts,
     setDraft,
     draftOf,
+    pinnedIds,
+    isPinned,
+    togglePin,
     messagesByConv,
     currentMessages,
     loadingMessages,

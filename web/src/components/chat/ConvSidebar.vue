@@ -12,6 +12,7 @@ import {
 import { ChatIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
+import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -166,10 +167,70 @@ function fmtTime(ts: string | null): string {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+// ===== 会话右键菜单 =====
+
+const convMenuVisible = ref(false)
+const convMenuX = ref(0)
+const convMenuY = ref(0)
+const convMenuTarget = ref<Conversation | null>(null)
+
+function openConvMenu(e: MouseEvent, c: Conversation) {
+  convMenuTarget.value = c
+  convMenuX.value = e.clientX
+  convMenuY.value = e.clientY
+  convMenuVisible.value = true
+}
+
+const convMenuItems = computed<ContextMenuItem[]>(() => {
+  const c = convMenuTarget.value
+  if (!c) return []
+  const items: ContextMenuItem[] = [
+    { key: 'pin', label: convStore.isPinned(c.id) ? t('chat.unpin') : t('chat.pin') },
+  ]
+  if (c.unreadCount > 0) items.push({ key: 'read', label: t('chat.markRead') })
+  items.push({ key: 'copyName', label: t('chat.copyName'), dividerBefore: true })
+  return items
+})
+
+/** 标记已读：直接用会话上的 lastMessageId 作为 upToId，不必先打开会话 */
+async function markConvRead(c: Conversation) {
+  const upTo = c.lastMessageId ?? 0
+  if (upTo <= 0) return
+  try {
+    await convApi.read(c.id, upTo)
+    c.unreadCount = 0
+    void MessagePlugin.success(t('chat.markedRead'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+async function copyName(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    void MessagePlugin.success(t('chat.copied'))
+  } catch {
+    void MessagePlugin.error(t('chat.copyFailed'))
+  }
+}
+
+function onConvMenuSelect(key: string) {
+  const c = convMenuTarget.value
+  if (!c) return
+  if (key === 'pin') convStore.togglePin(c.id)
+  if (key === 'read') void markConvRead(c)
+  if (key === 'copyName') void copyName(convName(c))
+}
+
 const sortedConvs = computed(() => {
-  let list = [...convStore.conversations].sort((a, b) =>
-    (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''),
-  )
+  const pinned = new Set(convStore.pinnedIds)
+  let list = [...convStore.conversations].sort((a, b) => {
+    // 置顶优先，其余按最后消息时间倒序
+    const pa = pinned.has(a.id) ? 1 : 0
+    const pb = pinned.has(b.id) ? 1 : 0
+    if (pa !== pb) return pb - pa
+    return (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '')
+  })
   const f = convStore.filter
   if (f === 'unread') list = list.filter((c) => c.unreadCount > 0)
   else if (f === 'single') list = list.filter((c) => c.type === 1)
@@ -233,9 +294,10 @@ const sortedConvs = computed(() => {
         :key="c.id"
         type="button"
         class="mc-conv-item"
-        :class="{ active: c.id === convStore.currentConvId }"
+        :class="{ active: c.id === convStore.currentConvId, 'is-pinned': convStore.isPinned(c.id) }"
         :aria-current="c.id === convStore.currentConvId ? 'true' : undefined"
         @click="convStore.openConversation(c.id)"
+        @contextmenu.prevent="openConvMenu($event, c)"
       >
         <AvatarBadge
           :name="convAvatar(c).name"
@@ -314,6 +376,15 @@ const sortedConvs = computed(() => {
         <p>{{ t('friends.empty') }}</p>
       </div>
     </div>
+
+    <!-- 会话右键菜单 -->
+    <ContextMenu
+      v-model:visible="convMenuVisible"
+      :x="convMenuX"
+      :y="convMenuY"
+      :items="convMenuItems"
+      @select="onConvMenuSelect"
+    />
   </aside>
 </template>
 
@@ -428,6 +499,12 @@ const sortedConvs = computed(() => {
 /* 选中态用中性灰阶，品牌色留给未读数据 */
 .mc-conv-item.active {
   background: var(--td-bg-color-container-active, #ebebeb);
+}
+
+/* 置顶：左侧一条品牌色细线。
+   用 inset 阴影而不是 ::before —— 容器是 flex，伪元素加绝对定位在这里不稳。 */
+.mc-conv-item.is-pinned {
+  box-shadow: inset 2px 0 0 var(--td-brand-color);
 }
 
 .mc-conv-item:focus-visible {
