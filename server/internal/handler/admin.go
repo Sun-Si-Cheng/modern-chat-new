@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,14 +20,23 @@ import (
 type AdminHandler struct {
 	users   *store.UserStore
 	convs   *store.ConversationStore
+	msgs    *store.MessageStore
 	plugins *store.PluginStore
 }
 
-func NewAdminHandler(users *store.UserStore, convs *store.ConversationStore, plugins *store.PluginStore) *AdminHandler {
-	return &AdminHandler{users: users, convs: convs, plugins: plugins}
+// adminStartedAt 进程启动时间，用于概览里的运行时长。
+var adminStartedAt = time.Now()
+
+func NewAdminHandler(
+	users *store.UserStore,
+	convs *store.ConversationStore,
+	msgs *store.MessageStore,
+	plugins *store.PluginStore,
+) *AdminHandler {
+	return &AdminHandler{users: users, convs: convs, msgs: msgs, plugins: plugins}
 }
 
-// Users 用户分页列表。
+// Users 用户分页列表，支持关键词 / 角色 / 封禁状态筛选。
 func (h *AdminHandler) Users(c *gin.Context) {
 	page := int(parseUint64Default(c.Query("page"), 1))
 	pageSize := int(parseUint64Default(c.Query("pageSize"), 20))
@@ -35,12 +46,12 @@ func (h *AdminHandler) Users(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	total, err := h.users.Count()
-	if err != nil {
-		internal(c, err)
-		return
+	filter := store.AdminUserFilter{
+		Keyword: strings.TrimSpace(c.Query("kw")),
+		Role:    c.Query("role"),
+		Status:  c.Query("status"),
 	}
-	rows, err := h.users.List(page, pageSize)
+	rows, total, err := h.users.ListFiltered(filter, page, pageSize)
 	if err != nil {
 		internal(c, err)
 		return
@@ -51,6 +62,128 @@ func (h *AdminHandler) Users(c *gin.Context) {
 		"page":     page,
 		"pageSize": pageSize,
 	})
+}
+
+// Stats 后台概览：用户 / 会话 / 消息 / 插件 / 在线数 / 运行时长。
+func (h *AdminHandler) Stats(c *gin.Context) {
+	usersTotal, err := h.users.Count()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	usersToday, err := h.users.CountToday()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	usersBanned, err := h.users.CountBanned()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	admins, err := h.users.CountByRole("admin")
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	single, group, err := h.convs.CountByType()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	msgsTotal, err := h.msgs.Count()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	msgsToday, err := h.msgs.CountToday()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	installed, enabled, disabled, err := h.plugins.AdminStats()
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"users": gin.H{
+			"total":  usersTotal,
+			"today":  usersToday,
+			"banned": usersBanned,
+			"admins": admins,
+		},
+		"conversations": gin.H{"single": single, "group": group},
+		"messages":      gin.H{"total": msgsTotal, "today": msgsToday},
+		"plugins":       gin.H{"installed": installed, "enabled": enabled, "disabled": disabled},
+		"online":        notifyFor(c).OnlineCount(),
+		"uptimeSeconds": int64(time.Since(adminStartedAt).Seconds()),
+		"goVersion":     runtime.Version(),
+	})
+}
+
+// UserDetail 单个用户详情：基础资料 + 会话 / 消息 / 插件计数 + 是否在线。
+func (h *AdminHandler) UserDetail(c *gin.Context) {
+	id, ok := parseUserID(c)
+	if !ok {
+		return
+	}
+	u, err := h.users.ByID(id)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if u == nil {
+		fail(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+	convs, err := h.convs.CountForUser(id)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	msgs, err := h.msgs.CountBySender(id)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	plugins, err := h.plugins.CountByUser(id)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"user": u,
+		"stats": gin.H{
+			"conversations": convs,
+			"messages":      msgs,
+			"plugins":       plugins,
+		},
+		"online": notifyFor(c).Online(id),
+	})
+}
+
+// Kick 强制下线但不封禁：断开既有连接，用户可立刻重新登录。
+func (h *AdminHandler) Kick(c *gin.Context) {
+	id, ok := parseUserID(c)
+	if !ok {
+		return
+	}
+	u, err := h.users.ByID(id)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if u == nil {
+		fail(c, http.StatusNotFound, "用户不存在")
+		return
+	}
+	online := notifyFor(c).Online(id)
+	notifyFor(c).KickUser(id, "你已被管理员强制下线")
+	slog.Warn("user kicked by admin",
+		"target", u.ID, "username", u.Username, "wasOnline", online,
+		"by", middleware.UserFrom(c).ID)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "wasOnline": online})
 }
 
 // Ban 封禁：days=0 永久（实现为 100 年）；tv+1 并强制下线。

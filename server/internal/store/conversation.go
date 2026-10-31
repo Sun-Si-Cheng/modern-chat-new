@@ -353,3 +353,34 @@ func (s *ConversationStore) MembersView(convID uint) ([]model.MemberView, error)
 	}
 	return out, nil
 }
+
+// CountByType 单聊 / 群聊数量。
+func (s *ConversationStore) CountByType() (single, group int64, err error) {
+	var rows []struct {
+		Type  int
+		Total int64
+	}
+	if err = s.db.Model(&model.Conversation{}).
+		Select("type, COUNT(*) AS total").
+		Group("type").
+		Scan(&rows).Error; err != nil {
+		return 0, 0, err
+	}
+	for _, r := range rows {
+		switch r.Type {
+		case 1:
+			single = r.Total
+		case 2:
+			group = r.Total
+		}
+	}
+	return single, group, nil
+}
+
+// CountForUser 某用户参与的会话数。
+func (s *ConversationStore) CountForUser(userID uint) (int64, error) {
+	var n int64
+	err := s.db.Model(&model.ConversationMember{}).
+		Where("user_id = ?", userID).Count(&n).Error
+	return n, err
+}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -157,4 +158,65 @@ func likeEscape(s string) string {
 		}
 	}
 	return string(out)
+}
+
+// AdminUserFilter 站长后台的用户列表筛选条件（零值表示不限）。
+type AdminUserFilter struct {
+	Keyword string // 用户名 / 昵称模糊匹配
+	Role    string // "" 全部 / user / admin
+	Status  string // "" 全部 / banned 已封禁 / active 正常
+}
+
+// ListFiltered 带筛选的分页用户列表（站长后台）。
+func (s *UserStore) ListFiltered(f AdminUserFilter, page, pageSize int) ([]model.User, int64, error) {
+	q := s.db.Model(&model.User{})
+	if f.Keyword != "" {
+		pat := "%" + likeEscape(f.Keyword) + "%"
+		q = q.Where("username LIKE ? OR nickname LIKE ?", pat, pat)
+	}
+	if f.Role == "user" || f.Role == "admin" {
+		q = q.Where("role = ?", f.Role)
+	}
+	switch f.Status {
+	case "banned":
+		q = q.Where("banned_until IS NOT NULL AND banned_until > ?", time.Now())
+	case "active":
+		q = q.Where("banned_until IS NULL OR banned_until <= ?", time.Now())
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []model.User
+	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error
+	return rows, total, err
+}
+
+// CountToday 今日注册用户数。
+func (s *UserStore) CountToday() (int64, error) {
+	var n int64
+	err := s.db.Model(&model.User{}).Where("created_at >= ?", startOfToday()).Count(&n).Error
+	return n, err
+}
+
+// CountBanned 当前处于封禁状态的用户数。
+func (s *UserStore) CountBanned() (int64, error) {
+	var n int64
+	err := s.db.Model(&model.User{}).
+		Where("banned_until IS NOT NULL AND banned_until > ?", time.Now()).
+		Count(&n).Error
+	return n, err
+}
+
+// CountByRole 按角色统计用户数。
+func (s *UserStore) CountByRole(role string) (int64, error) {
+	var n int64
+	err := s.db.Model(&model.User{}).Where("role = ?", role).Count(&n).Error
+	return n, err
+}
+
+// startOfToday 当天 00:00（本地时区），用于「今日」类统计。
+func startOfToday() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }

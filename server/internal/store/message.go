@@ -129,3 +129,24 @@ func (s *MessageStore) InboxOf(userID, convID uint) (*model.UserConversation, er
 	}
 	return &uc, nil
 }
+
+// Count 消息总数（含已撤回）。
+func (s *MessageStore) Count() (int64, error) {
+	var n int64
+	err := s.db.Model(&model.Message{}).Count(&n).Error
+	return n, err
+}
+
+// CountToday 今日新增消息数。
+func (s *MessageStore) CountToday() (int64, error) {
+	var n int64
+	err := s.db.Model(&model.Message{}).Where("created_at >= ?", startOfToday()).Count(&n).Error
+	return n, err
+}
+
+// CountBySender 某用户发送的消息数（含已撤回）。
+func (s *MessageStore) CountBySender(userID uint) (int64, error) {
+	var n int64
+	err := s.db.Model(&model.Message{}).Where("sender_id = ?", userID).Count(&n).Error
+	return n, err
+}
