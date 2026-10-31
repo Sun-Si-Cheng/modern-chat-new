@@ -81,3 +81,10 @@ server/logs/
 
 # ===== 协作提交锁（多 agent 并发提交时的互斥标记，勿入库）=====
 .mc-commit.lock/
+
+# ===== 本地诊断/截图脚本与工具产物（勿入库）=====
+.shot-*.mjs
+.diag-*.mjs
+.playwright-cli/
+.workbuddy/
+
