@@ -301,7 +301,10 @@ async function purgePlugin(row: AdminPluginRow) {
 async function fetchAudits() {
   auditsLoading.value = true
   try {
-    const page = await adminApi.audits(auditPagination.value.current, auditPagination.value.pageSize)
+    const page = await adminApi.audits(
+      auditPagination.value.current,
+      auditPagination.value.pageSize,
+    )
     audits.value = page.audits
     auditPagination.value.total = page.total
   } catch (e) {
@@ -336,7 +339,10 @@ function actionLabel(action: string): string {
 async function fetchPlugins() {
   pluginsLoading.value = true
   try {
-    const page = await adminApi.plugins(pluginPagination.value.current, pluginPagination.value.pageSize)
+    const page = await adminApi.plugins(
+      pluginPagination.value.current,
+      pluginPagination.value.pageSize,
+    )
     plugins.value = page.plugins
     pluginPagination.value.total = page.total
   } catch (e) {
@@ -423,7 +429,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
     onConfirm: async () => {
       try {
         const r = await adminApi.setPluginGlobalDisabled(row.name, next)
-        void MessagePlugin.success(next ? t('admin.disabledOk', { n: r.affected }) : t('admin.enabledOk'))
+        void MessagePlugin.success(
+          next ? t('admin.disabledOk', { n: r.affected }) : t('admin.enabledOk'),
+        )
         await fetchPlugins()
       } catch (e) {
         void MessagePlugin.error(te(e))
@@ -439,7 +447,11 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
     <header class="mc-admin__header">
       <h2>{{ t('admin.title') }}</h2>
       <div class="mc-admin__header-right">
-        <span v-if="buildInfo" class="mc-admin__build text-placeholder num" :title="t('admin.buildVersion')">
+        <span
+          v-if="buildInfo"
+          class="mc-admin__build text-placeholder num"
+          :title="t('admin.buildVersion')"
+        >
           {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
         </span>
         <TButton
@@ -459,7 +471,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       <div class="mc-admin__stat">
         <span class="mc-admin__stat-label">{{ t('admin.statUsers') }}</span>
         <strong class="mc-admin__stat-value num">{{ stats?.users.total ?? '—' }}</strong>
-        <span class="mc-admin__stat-sub">{{ t('admin.statToday', { n: stats?.users.today ?? 0 }) }}</span>
+        <span class="mc-admin__stat-sub">{{
+          t('admin.statToday', { n: stats?.users.today ?? 0 })
+        }}</span>
       </div>
       <div class="mc-admin__stat">
         <span class="mc-admin__stat-label">{{ t('admin.statOnline') }}</span>
@@ -472,13 +486,20 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           {{ stats ? stats.conversations.single + stats.conversations.group : '—' }}
         </strong>
         <span class="mc-admin__stat-sub">
-          {{ t('admin.statConvSub', { s: stats?.conversations.single ?? 0, g: stats?.conversations.group ?? 0 }) }}
+          {{
+            t('admin.statConvSub', {
+              s: stats?.conversations.single ?? 0,
+              g: stats?.conversations.group ?? 0,
+            })
+          }}
         </span>
       </div>
       <div class="mc-admin__stat">
         <span class="mc-admin__stat-label">{{ t('admin.statMsgs') }}</span>
         <strong class="mc-admin__stat-value num">{{ stats?.messages.total ?? '—' }}</strong>
-        <span class="mc-admin__stat-sub">{{ t('admin.statToday', { n: stats?.messages.today ?? 0 }) }}</span>
+        <span class="mc-admin__stat-sub">{{
+          t('admin.statToday', { n: stats?.messages.today ?? 0 })
+        }}</span>
       </div>
       <div class="mc-admin__stat">
         <span class="mc-admin__stat-label">{{ t('admin.statPlugins') }}</span>
@@ -490,7 +511,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       <div class="mc-admin__stat">
         <span class="mc-admin__stat-label">{{ t('admin.statBanned') }}</span>
         <strong class="mc-admin__stat-value num">{{ stats?.users.banned ?? '—' }}</strong>
-        <span class="mc-admin__stat-sub">{{ t('admin.statAdminSub', { n: stats?.users.admins ?? 0 }) }}</span>
+        <span class="mc-admin__stat-sub">{{
+          t('admin.statAdminSub', { n: stats?.users.admins ?? 0 })
+        }}</span>
       </div>
     </section>
 
@@ -509,149 +532,179 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
     <TTabss v-model="tab" class="mc-admin__tabs">
       <TTabPanel value="users" :label="t('admin.tabUsers')">
-        <div class="mc-admin__filters">
-          <TInput
-            v-model="keyword"
-            class="mc-admin__search"
-            :placeholder="t('admin.searchUser')"
-            clearable
-            @enter="applyFilter"
-            @clear="applyFilter"
-          />
-          <TSelect
-            v-model="roleFilter"
-            :options="filterRoleOptions()"
-            :placeholder="t('admin.filterRole')"
-            style="width: 130px"
-            @change="applyFilter"
-          />
-          <TSelect
-            v-model="statusFilter"
-            :options="filterStatusOptions()"
-            :placeholder="t('admin.filterStatus')"
-            style="width: 130px"
-            @change="applyFilter"
-          />
-          <TButton size="small" variant="outline" @click="resetFilter">
-            {{ t('admin.resetFilter') }}
-          </TButton>
+        <div class="mc-admin__panel">
+          <div class="mc-admin__filters">
+            <TInput
+              v-model="keyword"
+              class="mc-admin__search"
+              :placeholder="t('admin.searchUser')"
+              clearable
+              @enter="applyFilter"
+              @clear="applyFilter"
+            />
+            <TSelect
+              v-model="roleFilter"
+              :options="filterRoleOptions()"
+              :placeholder="t('admin.filterRole')"
+              style="width: 130px"
+              @change="applyFilter"
+            />
+            <TSelect
+              v-model="statusFilter"
+              :options="filterStatusOptions()"
+              :placeholder="t('admin.filterStatus')"
+              style="width: 130px"
+              @change="applyFilter"
+            />
+            <TButton size="small" variant="outline" @click="resetFilter">
+              {{ t('admin.resetFilter') }}
+            </TButton>
+          </div>
+
+          <TTable
+            row-key="id"
+            :data="users"
+            :columns="columns"
+            :loading="loading"
+            :pagination="pagination"
+            @page-change="onPageChange"
+          >
+            <template #user="{ row }">
+              <div class="mc-admin__user">
+                <AvatarBadge
+                  :name="row.nickname"
+                  :src="row.avatar"
+                  :color="row.avatarColor"
+                  :size="30"
+                />
+                <span>{{ row.nickname }}</span>
+              </div>
+            </template>
+
+            <template #role="{ row }">
+              {{ row.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser') }}
+            </template>
+
+            <template #status="{ row }">
+              <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
+                {{
+                  row.banReason
+                    ? t('admin.banned', { reason: row.banReason })
+                    : t('admin.bannedShort')
+                }}
+              </TTag>
+              <TTag v-else theme="success" variant="light" size="small">{{
+                t('admin.normal')
+              }}</TTag>
+            </template>
+
+            <template #ops="{ row }">
+              <div class="mc-admin__ops">
+                <a @click="openDetail(row)">{{ t('admin.detail') }}</a>
+                <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
+                <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
+                <a @click="kick(row)">{{ t('admin.kick') }}</a>
+                <a @click="setRole(row)">
+                  {{ row.role === 'admin' ? t('admin.revokeAdmin') : t('admin.grantAdmin') }}
+                </a>
+                <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
+              </div>
+            </template>
+          </TTable>
         </div>
-
-        <TTable
-          row-key="id"
-          :data="users"
-          :columns="columns"
-          :loading="loading"
-          :pagination="pagination"
-          @page-change="onPageChange"
-        >
-          <template #user="{ row }">
-            <div class="mc-admin__user">
-              <AvatarBadge :name="row.nickname" :src="row.avatar" :color="row.avatarColor" :size="30" />
-              <span>{{ row.nickname }}</span>
-            </div>
-          </template>
-
-          <template #role="{ row }">
-            {{ row.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser') }}
-          </template>
-
-          <template #status="{ row }">
-            <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
-              {{ row.banReason ? t('admin.banned', { reason: row.banReason }) : t('admin.bannedShort') }}
-            </TTag>
-            <TTag v-else theme="success" variant="light" size="small">{{ t('admin.normal') }}</TTag>
-          </template>
-
-          <template #ops="{ row }">
-            <div class="mc-admin__ops">
-              <a @click="openDetail(row)">{{ t('admin.detail') }}</a>
-              <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
-              <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
-              <a @click="kick(row)">{{ t('admin.kick') }}</a>
-              <a @click="setRole(row)">
-                {{ row.role === 'admin' ? t('admin.revokeAdmin') : t('admin.grantAdmin') }}
-              </a>
-              <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
-            </div>
-          </template>
-        </TTable>
       </TTabPanel>
 
       <TTabPanel value="plugins" :label="t('admin.tabPlugins')">
-        <p class="mc-admin__hint text-placeholder">{{ t('admin.pluginHint') }}</p>
-        <TTable
-          row-key="name"
-          :data="plugins"
-          :columns="pluginColumns"
-          :loading="pluginsLoading"
-          :pagination="{ ...pluginPagination }"
-          @page-change="onPluginPageChange"
-        >
-          <template #name="{ row }">
-            <span class="mc-admin__plugin-name">{{ row.name }}</span>
-          </template>
-          <template #installCount="{ row }">
-            <span class="mc-admin__num">{{ row.installCount }}</span>
-          </template>
-          <template #enabledCount="{ row }">
-            <span class="mc-admin__num">{{ row.enabledCount }}</span>
-          </template>
-          <template #globalStatus="{ row }">
-            <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
-              {{ t('admin.disabledTag') }}
-            </TTag>
-            <TTag v-else theme="success" variant="light" size="small">{{ t('admin.globalNormal') }}</TTag>
-          </template>
-          <template #ops="{ row }">
-            <div class="mc-admin__ops">
-              <a @click="toggleGlobalDisabled(row)">
-                {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
-              </a>
-              <a class="mc-admin__danger" @click="purgePlugin(row)">{{ t('admin.purge') }}</a>
-            </div>
-          </template>
-        </TTable>
+        <div class="mc-admin__panel">
+          <p class="mc-admin__hint text-placeholder">{{ t('admin.pluginHint') }}</p>
+          <TTable
+            row-key="name"
+            :data="plugins"
+            :columns="pluginColumns"
+            :loading="pluginsLoading"
+            :pagination="{ ...pluginPagination }"
+            @page-change="onPluginPageChange"
+          >
+            <template #name="{ row }">
+              <span class="mc-admin__plugin-name">{{ row.name }}</span>
+            </template>
+            <template #installCount="{ row }">
+              <span class="mc-admin__num">{{ row.installCount }}</span>
+            </template>
+            <template #enabledCount="{ row }">
+              <span class="mc-admin__num">{{ row.enabledCount }}</span>
+            </template>
+            <template #globalStatus="{ row }">
+              <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
+                {{ t('admin.disabledTag') }}
+              </TTag>
+              <TTag v-else theme="success" variant="light" size="small">{{
+                t('admin.globalNormal')
+              }}</TTag>
+            </template>
+            <template #ops="{ row }">
+              <div class="mc-admin__ops">
+                <a @click="toggleGlobalDisabled(row)">
+                  {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
+                </a>
+                <a class="mc-admin__danger" @click="purgePlugin(row)">{{ t('admin.purge') }}</a>
+              </div>
+            </template>
+          </TTable>
+        </div>
       </TTabPanel>
 
       <TTabPanel value="audits" :label="t('admin.tabAudits')">
-        <p class="mc-admin__hint text-placeholder">{{ t('admin.auditHint') }}</p>
-        <TTable
-          row-key="id"
-          :data="audits"
-          :columns="auditColumns"
-          :loading="auditsLoading"
-          :pagination="auditPagination"
-          @page-change="onAuditPageChange"
-        >
-          <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
-          <template #action="{ row }">
-            <TTag variant="outline" size="small">{{ actionLabel(row.action) }}</TTag>
-          </template>
-          <template #targetName="{ row }">
-            {{ row.targetName || '—' }}
-          </template>
-          <template #detail="{ row }">
-            <span class="mc-admin__audit-detail">{{ row.detail || '—' }}</span>
-          </template>
-          <template #ip="{ row }">
-            <span class="text-placeholder num">{{ row.ip || '—' }}</span>
-          </template>
-        </TTable>
+        <div class="mc-admin__panel">
+          <p class="mc-admin__hint text-placeholder">{{ t('admin.auditHint') }}</p>
+          <TTable
+            row-key="id"
+            :data="audits"
+            :columns="auditColumns"
+            :loading="auditsLoading"
+            :pagination="auditPagination"
+            @page-change="onAuditPageChange"
+          >
+            <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
+            <template #action="{ row }">
+              <TTag variant="outline" size="small">{{ actionLabel(row.action) }}</TTag>
+            </template>
+            <template #targetName="{ row }">
+              {{ row.targetName || '—' }}
+            </template>
+            <template #detail="{ row }">
+              <span class="mc-admin__audit-detail">{{ row.detail || '—' }}</span>
+            </template>
+            <template #ip="{ row }">
+              <span class="text-placeholder num">{{ row.ip || '—' }}</span>
+            </template>
+          </TTable>
+        </div>
       </TTabPanel>
     </TTabss>
 
     <!-- 封禁弹窗 -->
     <TDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
       <div class="mc-admin__ban">
-        <TInputNumber v-model="banDays" :min="0" theme="column" :suffix="t('admin.daysSuffix')" style="width: 160px" />
+        <TInputNumber
+          v-model="banDays"
+          :min="0"
+          theme="column"
+          :suffix="t('admin.daysSuffix')"
+          style="width: 160px"
+        />
         <p class="text-placeholder">{{ t('admin.banHint') }}</p>
         <TInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
       </div>
     </TDialog>
 
     <!-- 用户详情 -->
-    <TDialog v-model:visible="detailVisible" :header="t('admin.detailTitle')" :footer="false" width="520px">
+    <TDialog
+      v-model:visible="detailVisible"
+      :header="t('admin.detailTitle')"
+      :footer="false"
+      width="520px"
+    >
       <p v-if="detailLoading" class="text-placeholder">{{ t('admin.loading') }}</p>
       <div v-else-if="detail" class="mc-admin__detail">
         <div class="mc-admin__detail-head">
@@ -759,6 +812,15 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   margin: 0 0 12px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* 每个页签的内容收进一块卡片，页面背景变化时仍有稳定的阅读面 */
+.mc-admin__panel {
+  padding: 16px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-lg);
+  box-shadow: var(--mc-shadow-1);
 }
 
 .mc-admin__plugin-name {
@@ -949,6 +1011,10 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 @media (max-width: 560px) {
   .mc-admin__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mc-admin__panel {
+    padding: 12px;
   }
 
   .mc-admin__detail-grid {

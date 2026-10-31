@@ -105,6 +105,61 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* ===== 插件描述式 UI 的基础排版 =====
+ * 渲染器只输出白名单组件，这里统一间距、圆角与卡片底色，
+ * 避免插件在不同宿主页面里长得各不相同。 */
+.mc-declarative {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mc-declarative .mc-dtext {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.mc-dimage {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--mc-radius-sm);
+}
+
+.mc-dcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-dlist {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+
+.mc-dlist li {
+  margin-bottom: 4px;
+}
+
+.mc-dlist li:last-child {
+  margin-bottom: 0;
+}
+
+.mc-declarative a {
+  color: var(--mc-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mc-declarative a:hover {
+  text-decoration-thickness: 2px;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

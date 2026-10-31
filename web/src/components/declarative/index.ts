@@ -43,7 +43,6 @@ export const DeclarativeNodes = defineComponent({
             class: 'mc-dimage',
             src: httpUrl(p.src, ''),
             alt: str('alt'),
-            style: { maxWidth: '100%', borderRadius: '4px', display: 'block' },
           })
         case 'button':
           return h(
@@ -67,22 +66,13 @@ export const DeclarativeNodes = defineComponent({
         case 'card':
           return h(
             'div',
-            {
-              class: 'mc-dcard',
-              style: {
-                border: '1px solid var(--td-component-border)',
-                borderRadius: '6px',
-                padding: '8px 10px',
-                margin: '4px 0',
-                background: 'var(--td-bg-color-container)',
-              },
-            },
+            { class: 'mc-dcard' },
             h(DeclarativeNodes, { nodes: node.children ?? [], onAction: props.onAction }),
           )
         case 'list':
           return h(
             'ul',
-            { class: 'mc-dlist', style: { margin: '4px 0', paddingLeft: '18px' } },
+            { class: 'mc-dlist' },
             (node.children ?? []).map((c, i) => h('li', { key: i }, [renderNode(c)])),
           )
         case 'divider':
