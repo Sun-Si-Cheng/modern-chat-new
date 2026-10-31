@@ -399,7 +399,8 @@ const senderAvatar = (m: Message) => {
 .mc-msg {
   display: flex;
   gap: 8px;
-  margin: 6px 0;
+  /* 气泡之间的呼吸感：上下各 11px，相邻两条合计 22px（原为 12px） */
+  margin: 11px 0;
 }
 
 .mc-msg.mine {
