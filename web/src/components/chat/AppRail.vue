@@ -19,12 +19,10 @@ import {
 import AvatarBadge from './AvatarBadge.vue'
 import ProfileCard from './ProfileCard.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { usePluginHost } from '@/composables/usePluginHost'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
-import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
 
 /**
@@ -32,18 +30,12 @@ import { useWsStore } from '@/stores/ws'
  * 头像(资料卡) + 新建菜单 + 功能导航(消息/联系人/插件/后台) + 底部设置
  */
 defineProps<{ view: 'chats' | 'contacts' }>()
-const emit = defineEmits<{
-  'update:view': [v: 'chats' | 'contacts']
-  'open-plugins': []
-  'open-add-friend': []
-}>()
+const emit = defineEmits<{ 'update:view': [v: 'chats' | 'contacts']; 'open-plugins': [] }>()
 
 const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
-const pluginsStore = usePluginsStore()
-const pluginHost = usePluginHost()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
@@ -61,9 +53,6 @@ function confirmLogout() {
     body: t('chat.logoutBody'),
     onConfirm: () => {
       auth.logout()
-      // 登出前先停掉插件宿主：卸载 iframe 与 message 监听器，再清空插件列表
-      pluginHost.stop()
-      pluginsStore.reset()
       ws.disconnect()
       convStore.reset()
       friendsStore.reset()
@@ -80,7 +69,7 @@ function menuNewGroup() {
 
 function menuAddFriend() {
   moreVisible.value = false
-  emit('open-add-friend')
+  emit('update:view', 'contacts')
 }
 
 function menuSearchUser() {
@@ -273,15 +262,6 @@ async function doCreateGroup() {
   border-radius: 50%;
   cursor: pointer;
   line-height: 0;
-  transition: transform var(--mc-dur-fast) var(--mc-ease-out);
-}
-
-.app-rail__avatar:hover {
-  transform: scale(1.05);
-}
-
-.app-rail__avatar:active {
-  transform: scale(0.96);
 }
 
 .app-rail__avatar:focus-visible {
@@ -290,7 +270,6 @@ async function doCreateGroup() {
 }
 
 .app-rail__btn {
-  position: relative;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -302,39 +281,16 @@ async function doCreateGroup() {
   background: transparent;
   color: var(--td-text-color-secondary);
   cursor: pointer;
-  transition:
-    background-color var(--mc-dur-fast) var(--mc-ease-out),
-    color var(--mc-dur-fast) var(--mc-ease-out),
-    transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .app-rail__btn:hover {
   background: var(--td-bg-color-secondarycontainer);
   color: var(--td-text-color-primary);
-  transform: translateY(-1px);
-}
-
-.app-rail__btn:active {
-  transform: scale(0.94);
 }
 
 .app-rail__btn.is-active {
   background: var(--td-brand-color-1, var(--td-brand-color));
   color: var(--td-brand-color);
-}
-
-/* 选中项左侧一小段品牌色标记，随切换弹入 */
-.app-rail__btn.is-active::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  width: 3px;
-  height: 18px;
-  border-radius: 0 2px 2px 0;
-  background: var(--td-brand-color);
-  transform: translateY(-50%);
-  animation: mc-pop-in-centered var(--mc-dur-fast) var(--mc-ease-spring);
 }
 
 .app-rail__btn:focus-visible {
@@ -350,11 +306,6 @@ async function doCreateGroup() {
 
 .app-rail__icon :deep(svg) {
   font-size: 20px;
-  transition: transform var(--mc-dur-fast) var(--mc-ease-out);
-}
-
-.app-rail__btn:hover .app-rail__icon :deep(svg) {
-  transform: scale(1.06);
 }
 
 /* 未读/申请小红点 */
@@ -366,7 +317,6 @@ async function doCreateGroup() {
   height: 8px;
   border-radius: 50%;
   background: var(--td-error-color, #d54941);
-  animation: mc-pop-in var(--mc-dur-base) var(--mc-ease-spring);
 }
 
 /* 新建菜单 */

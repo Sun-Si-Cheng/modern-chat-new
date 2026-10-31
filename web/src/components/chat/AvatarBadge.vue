@@ -60,7 +60,6 @@ watch(
   justify-content: center;
   font-weight: 600;
   user-select: none;
-  transition: transform var(--mc-dur-fast) var(--mc-ease-out);
 }
 
 .mc-avatar.is-clickable:focus-visible {
@@ -96,6 +95,5 @@ watch(
   border-radius: 50%;
   background: var(--td-success-color, #2ba471);
   border: 2px solid var(--td-bg-color-container, #fff);
-  animation: mc-online-pulse 2.8s ease-in-out infinite;
 }
 </style>

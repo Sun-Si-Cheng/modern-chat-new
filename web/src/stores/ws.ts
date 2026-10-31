@@ -4,7 +4,6 @@ import { defineStore } from 'pinia'
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useConversationsStore } from './conversations'
-import { useFriendsStore } from './friends'
 
 const HEARTBEAT_INTERVAL = 25_000
 const MAX_RECONNECT_DELAY = 30_000
@@ -13,7 +12,6 @@ const MAX_RECONNECT_DELAY = 30_000
 export const useWsStore = defineStore('ws', () => {
   const auth = useAuthStore()
   const conversations = useConversationsStore()
-  const friends = useFriendsStore()
 
   const connected = ref(false)
   /** 在线用户 id 集合（含自己） */
@@ -52,14 +50,8 @@ export const useWsStore = defineStore('ws', () => {
       connected.value = true
       reconnectDelay = 1000
       startHeartbeat()
-      // 重连：断线期间的消息/好友变动都不会补发帧，必须重新对齐服务端状态
-      if (hasConnected) {
-        // 服务端在连接建立后不补发完整在线集合，只能先清空、等后续 presence 帧重建；
-        // TODO: 服务端补发一次 presence 快照后，这里可以不清空，避免重连后短暂全员离线
-        onlineUsers.value = new Set()
-        void conversations.resync()
-        void friends.loadAll().catch((e) => console.warn('[ws] reload friends failed:', e))
-      }
+      // 重连：断线期间的消息不会补发帧，必须重新对齐服务端状态
+      if (hasConnected) void conversations.resync()
       hasConnected = true
     }
 
@@ -99,18 +91,6 @@ export const useWsStore = defineStore('ws', () => {
         if (frame.online) onlineUsers.value.add(frame.userId)
         else onlineUsers.value.delete(frame.userId)
         break
-      case 'user_change': {
-        // 昵称/头像变更：本机、会话 peer、好友与申请列表就地更新
-        const patch = {
-          nickname: frame.nickname,
-          avatar: frame.avatar,
-          avatarColor: frame.avatarColor,
-        }
-        if (auth.user?.id === frame.userId) auth.patchProfile(patch)
-        conversations.applyUserProfile({ userId: frame.userId, ...patch })
-        friends.applyUserProfile({ userId: frame.userId, ...patch })
-        break
-      }
       case 'kicked': {
         // 封禁/失效强制下线
         closedByUser = true

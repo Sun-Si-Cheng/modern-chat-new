@@ -2,8 +2,6 @@
 
 ModernChat 前端（Vue 3 + Vite + TypeScript + Pinia + tdesign-vue-next）。
 
-> 本文是结构速览与命令。**完整的前端架构说明见 [docs/前端技术方案.md](../docs/前端技术方案.md)**。
-
 项目定位、插件开发、升级部署见根目录 [README](../README.md)；完整设计见 [docs/设计文档.md](../docs/设计文档.md)；接口字段见 [docs/后端需求规格.md](../docs/后端需求规格.md)。
 
 > 前端需要后端在 `:8080` 才能登录与收发消息（Vite 已代理 `/api` 与 `/ws`）。
