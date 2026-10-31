@@ -28,6 +28,9 @@ func upgraderFor(allowed []string) websocket.Upgrader {
 	return websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+		// permessage-deflate（设计文档 §9.2）：浏览器默认请求该扩展，
+		// 开启后文本帧自动压缩；连接数压顶时可置 false 换取 CPU。
+		EnableCompression: true,
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 			if origin == "" {

@@ -4,6 +4,7 @@ package router
 import (
 	"log/slog"
 
+	"github.com/gin-contrib/gzip"
 	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,15 @@ func New(d Deps) *gin.Engine {
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(gin.Recovery(), middleware.Logger())
+	// REST 响应压缩（设计文档 §9.2）。
+	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
+	// WS 侧用 permessage-deflate 单独压缩（见 internal/ws 的 upgraderFor）。
+	// MinLength=1024：小于该长度的响应压缩后反而更大（gzip 头 + 熵不足）。
+	r.Use(gzip.Gzip(
+		gzip.DefaultCompression,
+		gzip.WithExcludedPaths([]string{"/ws"}),
+		gzip.WithMinLength(1024),
+	))
 	if d.Notifier != nil {
 		r.Use(func(c *gin.Context) {
 			c.Set("notifier", d.Notifier)
