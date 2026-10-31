@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button as TButton, MessagePlugin } from 'tdesign-vue-next'
+import { ChatDoubleFilledIcon } from 'tdesign-icons-vue-next'
 
 import AddFriendDialog from '@/components/chat/AddFriendDialog.vue'
 import AppRail from '@/components/chat/AppRail.vue'
@@ -78,15 +79,8 @@ onUnmounted(() => {
         <div v-else class="mc-layout__empty">
           <div class="mc-empty">
             <div class="mc-empty__mark" aria-hidden="true">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M5 5.8C5 4.8 5.8 4 6.8 4h10.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2c-.5.4-1.3 0-1.3-.7V14.2c-.3-.2-.5-.6-.5-1.1V5.8Z"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linejoin="round"
-                />
-                <path d="M8.5 8.5h7M8.5 11.5h4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
+              <!-- 用 TDesign 的实心双气泡图标（与产品 logo 造型一致），替代原先的手绘线条 -->
+              <ChatDoubleFilledIcon size="26px" />
             </div>
             <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
             <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
