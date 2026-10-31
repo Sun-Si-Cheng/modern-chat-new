@@ -145,6 +145,39 @@ export const adminApi = {
   plugins: (page = 1, pageSize = 20) => http.get<AdminPluginsPage>('/admin/plugins', { page, pageSize }),
   setPluginGlobalDisabled: (name: string, disabled: boolean) =>
     http.post<{ ok: true; affected: number }>('/admin/plugins/global-disable', { name, disabled }),
+  /** 按插件名强制卸载（userId=0 表示所有用户） */
+  purgePlugin: (name: string, userId = 0) =>
+    http.post<{ ok: true; affected: number }>('/admin/plugins/purge', { name, userId }),
+  /** 调整角色：设 / 取消站长 */
+  setRole: (id: number, role: 'user' | 'admin') =>
+    http.post<{ ok: true; changed: boolean }>(`/admin/users/${id}/role`, { role }),
+  /** 全站公告：写入系统会话并推送给所有用户 */
+  announce: (content: string) =>
+    http.post<{ ok: true; convId: number; messageId: number; recipients: number }>('/admin/announce', {
+      content,
+    }),
+  audits: (page = 1, pageSize = 20) =>
+    http.get<AdminAuditsPage>('/admin/audits', { page, pageSize }),
+}
+
+/** 站长操作审计记录 */
+export interface AdminAudit {
+  id: number
+  adminId: number
+  action: string
+  targetType: string
+  targetId: number
+  targetName: string
+  detail: string
+  ip: string
+  createdAt: string
+}
+
+export interface AdminAuditsPage {
+  audits: AdminAudit[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 /** 站长概览：用户 / 会话 / 消息 / 插件 / 在线 / 运行时长 */

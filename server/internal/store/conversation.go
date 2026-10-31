@@ -384,3 +384,31 @@ func (s *ConversationStore) CountForUser(userID uint) (int64, error) {
 		Where("user_id = ?", userID).Count(&n).Error
 	return n, err
 }
+
+// AddMembersIgnoreDuplicate 批量加成员，已存在则跳过（公告把全站用户拉进系统会话时需要）。
+func (s *ConversationStore) AddMembersIgnoreDuplicate(rows []model.ConversationMember) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// systemConvType 系统通知会话（单聊=1 群聊=2）。
+const systemConvType = 3
+
+// EnsureSystemConversation 取系统通知会话，不存在则创建。
+func (s *ConversationStore) EnsureSystemConversation(name string) (*model.Conversation, error) {
+	var c model.Conversation
+	err := s.db.Where("type = ?", systemConvType).Order("id ASC").First(&c).Error
+	if err == nil {
+		return &c, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	c = model.Conversation{Type: systemConvType, Name: &name}
+	if err := s.db.Create(&c).Error; err != nil {
+		return nil, err
+	}
+	return &c, nil
+}

@@ -774,3 +774,147 @@ func TestAdminOverview(t *testing.T) {
 		t.Fatalf("无 token 应 401，got %d", code)
 	}
 }
+
+// TestAdminActions 角色调整 / 全站公告 / 按插件名强制卸载 / 操作审计。
+func TestAdminActions(t *testing.T) {
+	e := setup(t)
+	token, admin := register(t, e, "act-admin")
+	if admin.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", admin.Role)
+	}
+	bobToken, bob := register(t, e, "act-bob")
+	register(t, e, "act-carol")
+
+	call := func(method, path, asToken, body string) (int, map[string]any) {
+		t.Helper()
+		var reader *strings.Reader
+		if body == "" {
+			reader = strings.NewReader("")
+		} else {
+			reader = strings.NewReader(body)
+		}
+		req, err := http.NewRequest(method, e.ts.URL+path, reader)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		if asToken != "" {
+			req.Header.Set("Authorization", "Bearer "+asToken)
+		}
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+
+	// ===== 1) 角色调整 =====
+	body := fmt.Sprintf(`{"role":"admin"}`)
+	code, r := call(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/role", bob.ID), token, body)
+	if code != http.StatusOK || r["changed"] != true {
+		t.Fatalf("提升为站长应成功，got %d %v", code, r)
+	}
+	// 现在有 2 个站长，把 bob 降回普通用户
+	code, r = call(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/role", bob.ID), token, `{"role":"user"}`)
+	if code != http.StatusOK || r["changed"] != true {
+		t.Fatalf("降级为普通用户应成功，got %d %v", code, r)
+	}
+	// 只剩一个站长：不能再降级
+	code, _ = call(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/role", admin.ID), token, `{"role":"user"}`)
+	if code != http.StatusForbidden {
+		t.Fatalf("降级最后一个站长应 403，got %d", code)
+	}
+	// 非法角色
+	code, _ = call(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/role", bob.ID), token, `{"role":"root"}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("非法角色应 400，got %d", code)
+	}
+
+	// ===== 2) 全站公告 =====
+	code, ann := call(http.MethodPost, "/api/admin/announce", token, `{"content":"今晚 23:00 维护，请提前保存"}`)
+	if code != http.StatusOK {
+		t.Fatalf("公告应成功，got %d %v", code, ann)
+	}
+	if got := int(ann["recipients"].(float64)); got != 3 {
+		t.Fatalf("公告应发给 3 人，got %d", got)
+	}
+	convID := int(ann["convId"].(float64))
+	// 普通用户在系统会话里能看到这条消息
+	code, msgs := call(http.MethodGet, fmt.Sprintf("/api/conversations/%d/messages?limit=10", convID), bobToken, "")
+	if code != http.StatusOK {
+		t.Fatalf("读取系统会话消息应 200，got %d", code)
+	}
+	list, _ := msgs["messages"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("系统会话应有 1 条公告，got %d", len(list))
+	}
+	if got := list[0].(map[string]any)["content"]; got != "今晚 23:00 维护，请提前保存" {
+		t.Fatalf("公告内容不对：%v", got)
+	}
+	// 再次公告：幂等加成员，不报错，消息累计 2 条
+	code, ann2 := call(http.MethodPost, "/api/admin/announce", token, `{"content":"第二条公告"}`)
+	if code != http.StatusOK {
+		t.Fatalf("第二次公告应成功（成员幂等），got %d %v", code, ann2)
+	}
+	if int(ann2["convId"].(float64)) != convID {
+		t.Fatalf("两次公告应复用同一个系统会话，got %v want %d", ann2["convId"], convID)
+	}
+
+	// ===== 3) 按插件名强制卸载 =====
+	pluginCode := `/* {"name":"purgetest","version":"1.0.0","description":"临时插件","permissions":["message:read"],"allowedHosts":[]} */
+function __mcActivate(api) {}`
+	req, err := http.NewRequest(http.MethodPost, e.ts.URL+"/api/plugins/upload", strings.NewReader(pluginCode))
+	if err != nil {
+		t.Fatalf("new plugin request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("upload plugin: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("插件上传应 200，got %d", resp.StatusCode)
+	}
+
+	code, purged := call(http.MethodPost, "/api/admin/plugins/purge", token, `{"name":"purgetest"}`)
+	if code != http.StatusOK {
+		t.Fatalf("强制卸载应 200，got %d %v", code, purged)
+	}
+	if got := int(purged["affected"].(float64)); got != 1 {
+		t.Fatalf("应卸载 1 条安装记录，got %d", got)
+	}
+	// 再卸一次：已无记录 → 404
+	code, _ = call(http.MethodPost, "/api/admin/plugins/purge", token, `{"name":"purgetest"}`)
+	if code != http.StatusNotFound {
+		t.Fatalf("无匹配记录应 404，got %d", code)
+	}
+
+	// ===== 4) 审计日志 =====
+	code, audits := call(http.MethodGet, "/api/admin/audits?page=1&pageSize=50", token, "")
+	if code != http.StatusOK {
+		t.Fatalf("审计列表应 200，got %d", code)
+	}
+	rows, _ := audits["audits"].([]any)
+	if len(rows) == 0 {
+		t.Fatal("审计列表不应为空")
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		m, _ := row.(map[string]any)
+		if a, ok := m["action"].(string); ok {
+			seen[a] = true
+		}
+	}
+	for _, want := range []string{"set_role", "announce", "purge_plugin"} {
+		if !seen[want] {
+			t.Fatalf("审计缺少 %s 记录，实际有 %v", want, seen)
+		}
+	}
+}

@@ -21,6 +21,7 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import {
   adminApi,
   systemApi,
+  type AdminAudit,
   type AdminPluginRow,
   type AdminStats,
   type AdminUserDetail,
@@ -33,7 +34,16 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-const tab = ref<'users' | 'plugins'>('users')
+const tab = ref<'users' | 'plugins' | 'audits'>('users')
+
+// ---- 全站公告 ----
+const announceText = ref('')
+const announceSending = ref(false)
+
+// ---- 操作审计 ----
+const audits = ref<AdminAudit[]>([])
+const auditsLoading = ref(false)
+const auditPagination = ref({ current: 1, pageSize: 20, total: 0 })
 
 const loading = ref(false)
 const users = ref<AdminUserRow[]>([])
@@ -66,6 +76,8 @@ const detailLoading = ref(false)
 const columns = ref<any[]>([])
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pluginColumns = ref<any[]>([])
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const auditColumns = ref<any[]>([])
 
 function buildColumns() {
   columns.value = [
@@ -81,7 +93,14 @@ function buildColumns() {
     { colKey: 'installCount', title: t('admin.colInstalls'), width: 100 },
     { colKey: 'enabledCount', title: t('admin.colEnabled'), width: 100 },
     { colKey: 'globalStatus', title: t('admin.colGlobal'), width: 120 },
-    { colKey: 'ops', title: t('admin.colOps'), width: 120 },
+    { colKey: 'ops', title: t('admin.colOps'), width: 160 },
+  ]
+  auditColumns.value = [
+    { colKey: 'createdAt', title: t('admin.auditTime'), width: 170 },
+    { colKey: 'action', title: t('admin.auditAction'), width: 120 },
+    { colKey: 'targetName', title: t('admin.auditTarget'), width: 140 },
+    { colKey: 'detail', title: t('admin.auditDetail') },
+    { colKey: 'ip', title: t('admin.auditIp'), width: 130 },
   ]
 }
 
@@ -94,6 +113,7 @@ onMounted(() => {
   void fetchUsers()
   void fetchPlugins()
   void fetchStats()
+  void fetchAudits()
   systemApi
     .version()
     .then((v) => {
@@ -200,6 +220,117 @@ function formatDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString()
+}
+
+// ---- 全站公告 ----
+
+async function doAnnounce() {
+  const content = announceText.value.trim()
+  if (!content) return
+  announceSending.value = true
+  try {
+    const r = await adminApi.announce(content)
+    announceText.value = ''
+    void MessagePlugin.success(t('admin.announceOk', { n: r.recipients }))
+    void fetchStats()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    announceSending.value = false
+  }
+}
+
+// ---- 角色调整 ----
+
+function confirmDialog(header: string, body: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const d = DialogPlugin.confirm({
+      header,
+      body,
+      onConfirm: () => {
+        d.hide()
+        resolve(true)
+      },
+      onClose: () => {
+        d.hide()
+        resolve(false)
+      },
+    })
+  })
+}
+
+async function setRole(row: AdminUserRow) {
+  const next = row.role === 'admin' ? 'user' : 'admin'
+  const ok = await confirmDialog(
+    t('admin.setRoleTitle'),
+    next === 'admin'
+      ? t('admin.setRoleAdminBody', { name: row.nickname })
+      : t('admin.setRoleUserBody', { name: row.nickname }),
+  )
+  if (!ok) return
+  try {
+    await adminApi.setRole(row.id, next)
+    void MessagePlugin.success(t('admin.setRoleOk'))
+    void fetchUsers()
+    void fetchStats()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+// ---- 强制卸载插件 ----
+
+async function purgePlugin(row: AdminPluginRow) {
+  const ok = await confirmDialog(
+    t('admin.purgeTitle'),
+    t('admin.purgeBody', { name: row.name, n: row.installCount }),
+  )
+  if (!ok) return
+  try {
+    const r = await adminApi.purgePlugin(row.name)
+    void MessagePlugin.success(t('admin.purgeOk', { n: r.affected }))
+    void fetchPlugins()
+    void fetchStats()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+// ---- 审计 ----
+
+async function fetchAudits() {
+  auditsLoading.value = true
+  try {
+    const page = await adminApi.audits(auditPagination.value.current, auditPagination.value.pageSize)
+    audits.value = page.audits
+    auditPagination.value.total = page.total
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    auditsLoading.value = false
+  }
+}
+
+function onAuditPageChange(info: { current: number; pageSize: number }) {
+  auditPagination.value.current = info.current
+  auditPagination.value.pageSize = info.pageSize
+  void fetchAudits()
+}
+
+/** 动作名 → 可读文案 */
+function actionLabel(action: string): string {
+  const map: Record<string, string> = {
+    ban: t('admin.actBan'),
+    unban: t('admin.actUnban'),
+    kick: t('admin.actKick'),
+    reset_password: t('admin.actResetPassword'),
+    set_role: t('admin.actSetRole'),
+    purge_plugin: t('admin.actPurgePlugin'),
+    disable_plugin: t('admin.actDisablePlugin'),
+    restore_plugin: t('admin.actRestorePlugin'),
+    announce: t('admin.actAnnounce'),
+  }
+  return map[action] ?? action
 }
 
 async function fetchPlugins() {
@@ -363,6 +494,19 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       </div>
     </section>
 
+    <!-- 全站公告 -->
+    <div class="mc-admin__announce">
+      <TInput
+        v-model="announceText"
+        :placeholder="t('admin.announcePlaceholder')"
+        :maxlength="200"
+        @enter="doAnnounce"
+      />
+      <TButton theme="primary" :loading="announceSending" @click="doAnnounce">
+        {{ t('admin.announceSend') }}
+      </TButton>
+    </div>
+
     <TTabss v-model="tab" class="mc-admin__tabs">
       <TTabPanel value="users" :label="t('admin.tabUsers')">
         <div class="mc-admin__filters">
@@ -425,6 +569,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
               <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
               <a @click="kick(row)">{{ t('admin.kick') }}</a>
+              <a @click="setRole(row)">
+                {{ row.role === 'admin' ? t('admin.revokeAdmin') : t('admin.grantAdmin') }}
+              </a>
               <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
             </div>
           </template>
@@ -461,7 +608,34 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               <a @click="toggleGlobalDisabled(row)">
                 {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
               </a>
+              <a class="mc-admin__danger" @click="purgePlugin(row)">{{ t('admin.purge') }}</a>
             </div>
+          </template>
+        </TTable>
+      </TTabPanel>
+
+      <TTabPanel value="audits" :label="t('admin.tabAudits')">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.auditHint') }}</p>
+        <TTable
+          row-key="id"
+          :data="audits"
+          :columns="auditColumns"
+          :loading="auditsLoading"
+          :pagination="auditPagination"
+          @page-change="onAuditPageChange"
+        >
+          <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
+          <template #action="{ row }">
+            <TTag variant="outline" size="small">{{ actionLabel(row.action) }}</TTag>
+          </template>
+          <template #targetName="{ row }">
+            {{ row.targetName || '—' }}
+          </template>
+          <template #detail="{ row }">
+            <span class="mc-admin__audit-detail">{{ row.detail || '—' }}</span>
+          </template>
+          <template #ip="{ row }">
+            <span class="text-placeholder num">{{ row.ip || '—' }}</span>
           </template>
         </TTable>
       </TTabPanel>
@@ -650,6 +824,29 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   flex: 1;
   min-width: 180px;
   max-width: 320px;
+}
+
+/* ===== 全站公告 ===== */
+.mc-admin__announce {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+/* ===== 危险操作链接 ===== */
+.mc-admin__danger {
+  color: var(--td-error-color, #d54941);
+}
+
+/* ===== 审计详情列（超长省略） ===== */
+.mc-admin__audit-detail {
+  display: inline-block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 /* ===== 用户详情 ===== */

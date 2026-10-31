@@ -143,3 +143,13 @@ func (s *PluginStore) CountByUser(userID uint) (int64, error) {
 	err := s.db.Model(&model.Plugin{}).Where("installed_by = ?", userID).Count(&n).Error
 	return n, err
 }
+
+// PurgeByName 强制卸载：userID=0 表示删除所有用户安装的该插件（物理删除，比全局下架更彻底）。
+func (s *PluginStore) PurgeByName(name string, userID uint) (int64, error) {
+	q := s.db.Where("name = ?", name)
+	if userID > 0 {
+		q = q.Where("installed_by = ?", userID)
+	}
+	res := q.Delete(&model.Plugin{})
+	return res.RowsAffected, res.Error
+}

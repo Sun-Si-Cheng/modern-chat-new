@@ -220,3 +220,10 @@ func startOfToday() time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }
+
+// AllIDs 全部用户 id（公告广播用）。
+func (s *UserStore) AllIDs() ([]uint, error) {
+	var ids []uint
+	err := s.db.Model(&model.User{}).Order("id ASC").Pluck("id", &ids).Error
+	return ids, err
+}
