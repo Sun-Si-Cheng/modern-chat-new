@@ -945,3 +945,57 @@ function __mcActivate(api) {}`
 		}
 	}
 }
+
+// TestFriendStalePendingNotDuplicated 回归：好友关系里残留的 status=0 记录
+// 不能让同一个人同时出现在「收到的申请」和「我的好友」两段
+// （用户看到的现象就是「同一个好友重复出现两次」）。
+func TestFriendStalePendingNotDuplicated(t *testing.T) {
+	e := setup(t)
+	tokenA, a := register(t, e, "dup-a")
+	tokenB, b := register(t, e, "dup-b")
+
+	// 走正常流程成为好友：A 申请 → B 同意
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", tokenA, `{"toUsername":"dup-b"}`); code != http.StatusOK {
+		t.Fatalf("apply status = %d", code)
+	}
+	code, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", tokenB, "")
+	if code != http.StatusOK {
+		t.Fatalf("requests status = %d", code)
+	}
+	list, _ := reqsAny.([]any)
+	if len(list) != 1 {
+		t.Fatalf("应有 1 条好友申请，got %d", len(list))
+	}
+	reqID := uint(list[0].(map[string]any)["id"].(float64))
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", tokenB,
+		fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+		t.Fatalf("handle status = %d", code)
+	}
+
+	// 制造脏数据：两人之间再插一条残留的待处理记录
+	//（真实场景来自「互发申请」的并发竞态或早期版本遗留）
+	if err := e.db.Exec(
+		"INSERT INTO friends (user_id, friend_id, status, created_at) VALUES (?, ?, 0, NOW(3))",
+		b.ID, a.ID,
+	).Error; err != nil {
+		t.Fatalf("insert stale pending: %v", err)
+	}
+
+	// 已经是好友的人不应再出现在申请列表
+	code, reqs2Any := apiAny(t, e, "GET", "/api/friends/requests", tokenB, "")
+	if code != http.StatusOK {
+		t.Fatalf("requests2 status = %d", code)
+	}
+	if n := len(reqs2Any.([]any)); n != 0 {
+		t.Fatalf("已是好友的人不应再出现在申请列表，got %d 条", n)
+	}
+
+	// 好友列表仍只有 1 条（双向记录已去重）
+	code, friendsAny := apiAny(t, e, "GET", "/api/friends", tokenB, "")
+	if code != http.StatusOK {
+		t.Fatalf("friends status = %d", code)
+	}
+	if n := len(friendsAny.([]any)); n != 1 {
+		t.Fatalf("好友列表应为 1 条，got %d", n)
+	}
+}

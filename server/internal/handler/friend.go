@@ -154,6 +154,12 @@ func (h *FriendHandler) Handle(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 收尾：把这对之间其它的待处理记录置为已拒绝。
+	// 两人互发过申请（并发竞态）时会留下第二条 status=0，不清掉的话
+	// 对方会一直看到「好友申请」，同时又出现在「我的好友」里 —— 即重复好友。
+	if err := h.friends.ClosePendingBetween(f.UserID, me.ID, f.ID); err != nil {
+		slog.Warn("friend pending cleanup failed", "a", f.UserID, "b", me.ID, "err", err.Error())
+	}
 	slog.Info("friend request accepted", "from", f.UserID, "by", me.ID)
 
 	// 双方各自若无单聊则保持未创建（首次发消息/点开时由前端 createSingle 幂等创建）

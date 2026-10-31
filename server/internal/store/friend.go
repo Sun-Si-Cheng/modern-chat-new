@@ -55,17 +55,57 @@ func (s *FriendStore) DeleteBetween(a, b uint) error {
 	).Delete(&model.Friend{}).Error
 }
 
+// ClosePendingBetween 把两人之间除 keepID 之外的 status=0 记录置为已拒绝（2）。
+//
+// 同意好友后调用：若两人曾经互发申请（或存在历史残留），会留下第二条待处理
+// 记录，不清掉的话对方会一直看到「好友申请」，同时又已经是好友。
+func (s *FriendStore) ClosePendingBetween(a, b, keepID uint) error {
+	return s.db.Model(&model.Friend{}).
+		Where(
+			"status = 0 AND id <> ? AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))",
+			keepID, a, b, b, a,
+		).
+		Update("status", 2).Error
+}
+
 // AcceptedByUser 我的好友（status=1，双向查询，other=对方）。
 func (s *FriendStore) AcceptedByUser(userID uint) ([]model.FriendItemView, error) {
 	return s.list(userID, 1, false)
 }
 
 // PendingToUser 指向我、待处理的申请（status=0 且 friend_id=me，other=申请人）。
+//
+// 必须排除「已经是好友」的对：历史残留的 status=0 记录（互发申请的竞态、
+// 早期数据）会让同一个人同时出现在「收到的申请」和「我的好友」两段，
+// 用户看到的就是「同一个好友重复出现两次」。
 func (s *FriendStore) PendingToUser(userID uint) ([]model.FriendRequestView, error) {
 	var rows []model.Friend
-	if err := s.db.Where("status = ? AND friend_id = ?", 0, userID).Order("id ASC").Find(&rows).Error; err != nil {
+	err := s.db.Raw(`
+		SELECT f.* FROM friends f
+		WHERE f.status = 0 AND f.friend_id = ?
+		  AND NOT EXISTS (
+		    SELECT 1 FROM friends g
+		    WHERE g.status = 1
+		      AND ((g.user_id = f.user_id AND g.friend_id = f.friend_id)
+		        OR (g.user_id = f.friend_id AND g.friend_id = f.user_id))
+		  )
+		ORDER BY f.id ASC`, userID).Scan(&rows).Error
+	if err != nil {
 		return nil, err
 	}
+
+	// 同一人可能残留多条待处理记录，按申请人去重（保留最早一条）
+	seen := make(map[uint]struct{}, len(rows))
+	deduped := make([]model.Friend, 0, len(rows))
+	for _, f := range rows {
+		if _, ok := seen[f.UserID]; ok {
+			continue
+		}
+		seen[f.UserID] = struct{}{}
+		deduped = append(deduped, f)
+	}
+	rows = deduped
+
 	otherIDs := make([]uint, 0, len(rows))
 	for _, f := range rows {
 		otherIDs = append(otherIDs, f.UserID)

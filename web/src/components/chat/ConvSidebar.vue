@@ -326,9 +326,9 @@ const sortedConvs = computed(() => {
         <TButton block variant="outline" @click="emit('open-add-friend')">{{ t('friends.addTitle') }}</TButton>
       </div>
 
-      <template v-if="friendsStore.requests.length">
+      <template v-if="friendsStore.pendingRequests.length">
         <div class="mc-sidebar__group-label">{{ t('friends.requests') }}</div>
-        <div v-for="r in friendsStore.requests" :key="r.id" class="mc-friend-item">
+        <div v-for="r in friendsStore.pendingRequests" :key="r.id" class="mc-friend-item">
           <AvatarBadge :name="r.from.nickname" :src="r.from.avatar" :color="r.from.avatarColor" :size="32" />
           <span class="mc-conv-item__name">{{ r.from.nickname }}</span>
           <div class="mc-friend-item__actions">
