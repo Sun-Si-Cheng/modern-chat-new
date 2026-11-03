@@ -9,6 +9,27 @@ server {
     root /var/www/modernchat;
     index index.html;
 
+    # ===== 压缩 =====
+    # 优先发送预压缩文件（npm run build 会同时产出 .gz / .br），**零运行时 CPU**；
+    # 找不到同名预压缩文件时，回落到底下的 gzip 实时压缩。
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types
+        text/plain text/css text/javascript application/javascript
+        application/json application/xml image/svg+xml;
+    gzip_static on;
+
+    # brotli 比 gzip 再省约 13%，但官方 nginx 未内置该模块。
+    # 启用前先确认：nginx -V 2>&1 | grep -i brotli
+    # 确认有模块后再取消注释：
+    # brotli on;
+    # brotli_static on;
+    # brotli_comp_level 6;
+    # brotli_types text/plain text/css application/javascript application/json image/svg+xml;
+
     # ===== 安全响应头（nginx 侧必须配，API 响应头由后端中间件负责）=====
     # X-Frame-Options：禁止本站被 iframe 嵌套，防点击劫持（诱导站长点「封禁/删除」）
     add_header X-Frame-Options "DENY" always;
