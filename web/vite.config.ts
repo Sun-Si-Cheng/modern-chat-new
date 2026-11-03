@@ -23,6 +23,17 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
+  // preview（生产构建预览）默认不带代理，导致本地跑 preview 时接口全 404，
+  // 也就无法测量真实的生产性能。这里与 dev 保持一致。
+  preview: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {

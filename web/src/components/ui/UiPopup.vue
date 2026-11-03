@@ -84,7 +84,16 @@ async function place() {
 }
 
 watch(open, async (v) => {
-  if (v) await place()
+  if (v) {
+    // 滚动/尺寸监听只在浮层打开期间挂载：关闭时不该为每个 UiPopup
+    // 都留一对全局监听（页面上十几个气泡菜单，累积起来是真实开销）
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, { capture: true, passive: true })
+    await place()
+  } else {
+    window.removeEventListener('resize', close)
+    window.removeEventListener('scroll', close, true)
+  }
 })
 
 function onDocPointerDown(e: MouseEvent) {
@@ -99,10 +108,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  // pointerdown 必须常驻：它负责判断「点击是否落在浮层外」
   document.addEventListener('pointerdown', onDocPointerDown, true)
   document.addEventListener('keydown', onKeydown)
-  window.addEventListener('resize', close)
-  window.addEventListener('scroll', close, true)
 })
 
 onBeforeUnmount(() => {

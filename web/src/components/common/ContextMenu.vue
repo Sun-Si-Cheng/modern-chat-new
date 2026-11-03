@@ -30,8 +30,16 @@ const pos = ref({ x: 0, y: 0 })
 watch(
   () => props.visible,
   async (v) => {
-    if (!v) return
+    if (!v) {
+      // 关闭时摘掉滚动/尺寸监听：右键菜单在页面上是常驻组件，
+      // 每个都挂一对全局监听没必要
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+      return
+    }
     pos.value = { x: props.x, y: props.y }
+    window.addEventListener('scroll', close, { capture: true, passive: true })
+    window.addEventListener('resize', close)
     await nextTick()
     const el = menuRef.value
     if (!el) return
@@ -64,11 +72,10 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  // 捕获阶段监听，点菜单外的任何地方都能关闭
+  // pointerdown / keydown 常驻（负责判断「点菜单外」与 Esc）；
+  // scroll / resize 在 watch(visible) 里按需挂载
   document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('keydown', onKeydown)
-  window.addEventListener('scroll', close, true)
-  window.addEventListener('resize', close)
 })
 
 onBeforeUnmount(() => {

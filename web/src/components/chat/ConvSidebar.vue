@@ -593,6 +593,10 @@ const sortedConvs = computed(() => {
   border: none;
   border-radius: var(--mc-radius-md);
   background: transparent;
+  /* 注：曾尝试 content-visibility: auto + contain-intrinsic-size 跳过
+     屏幕外项的渲染，实测 100 个会话时 scrollHeight 会从估算值跳变到实测值
+     （滚动条"跳一下"），收益不抵副作用，已回退。消息列表由 DynamicScroller
+     负责虚拟化；会话列表在 100 项量级下 DOM 约 950 节点，实测无卡顿。 */
   box-sizing: border-box;
   color: inherit;
   font: inherit;

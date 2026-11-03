@@ -38,6 +38,8 @@ watch(
       :src="src || '/default-avatar.svg'"
       :alt="name"
       draggable="false"
+      loading="lazy"
+      decoding="async"
       @error="imageFailed = true"
     />
     <span v-else class="mc-avatar__initial" :style="{ background: color }">{{ initial }}</span>
