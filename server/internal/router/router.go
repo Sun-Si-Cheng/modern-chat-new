@@ -71,12 +71,24 @@ func New(d Deps) *gin.Engine {
 	resets := store.NewPasswordResetStore(d.DB)
 	audits := store.NewAuditStore(d.DB)
 
+	// 系统设置：密钥类字段用 JWT_SECRET 派生的 AES-256-GCM 加密落库
+	box, err := store.NewSecretBox(d.Cfg.JWTSecret)
+	if err != nil {
+		slog.Error("init secretbox failed", "err", err.Error())
+	}
+	settings := store.NewSettingStore(d.DB, box)
+	// 启动时用库里的配置覆盖环境变量：后台改过的值重启后继续生效
+	if cfg, ok := settings.SMTPConfig(d.Cfg.SMTP.LogResetLink); ok {
+		d.Mailer.SetConfig(cfg)
+		slog.Info("smtp config loaded from database", "host", cfg.Host, "port", cfg.Port)
+	}
+
 	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
-	adminH := handler.NewAdminHandler(users, convs, msgs, plugins, audits)
+	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
@@ -143,6 +155,10 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/users/:id/role", adminH.SetRole)
 		admin.POST("/announce", adminH.Announce)
 		admin.GET("/audits", adminH.Audits)
+		// 系统设置（SMTP / Redis / 对象存储）
+		admin.GET("/settings", adminH.GetSettings)
+		admin.PUT("/settings", adminH.SaveSettings)
+		admin.POST("/settings/smtp/test", adminH.TestSMTP)
 	}
 
 	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）

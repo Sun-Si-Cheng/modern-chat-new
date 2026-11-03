@@ -158,6 +158,47 @@ export const adminApi = {
     }),
   audits: (page = 1, pageSize = 20) =>
     http.get<AdminAuditsPage>('/admin/audits', { page, pageSize }),
+
+  /** 系统设置：SMTP / Redis / 对象存储（敏感项只回 hasXxx） */
+  settings: () => http.get<AdminSettings>('/admin/settings'),
+  saveSettings: (payload: AdminSettingsPayload) =>
+    http.put<{ ok: true; redisNeedsRestart: boolean; storageApplied: boolean }>(
+      '/admin/settings',
+      payload,
+    ),
+  testSMTP: (to: string) => http.post<{ ok: true }>('/admin/settings/smtp/test', { to }),
+}
+
+/** 系统设置（读）：敏感字段只有 hasXxx，永不回显明文 */
+export interface AdminSettings {
+  smtp: { host: string; port: string; user: string; from: string; hasPass: boolean }
+  redis: { addr: string; db: string; hasPass: boolean }
+  storage: {
+    endpoint: string
+    region: string
+    bucket: string
+    accessKey: string
+    hasSecretKey: boolean
+  }
+  smtpEnabled: boolean
+  redisEnabled: boolean
+  /** 对象存储当前没有消费方，保存也不生效 */
+  storageApplied: boolean
+  /** Redis 限流器在启动时构造，改动需重启 */
+  redisNeedsRestart: boolean
+}
+
+/** 系统设置（写）：敏感字段留空表示不修改 */
+export interface AdminSettingsPayload {
+  smtp: { host: string; port: string; user: string; from: string; pass?: string }
+  redis: { addr: string; db: string; pass?: string }
+  storage: {
+    endpoint: string
+    region: string
+    bucket: string
+    accessKey: string
+    secretKey?: string
+  }
 }
 
 /** 站长操作审计记录 */

@@ -24,7 +24,7 @@ func TestNormalizeEmail(t *testing.T) {
 func TestBuildResetMessage(t *testing.T) {
 	m := NewMailer(config.SMTPConfig{Host: "smtp.qq.com", Port: "465", From: "no-reply@example.com"})
 	link := "https://chat.example.com/reset?token=abc123"
-	msg := string(m.buildResetMessage("user@example.com", link))
+	msg := string(buildResetMessage(m.Config(), "user@example.com", link))
 
 	// 必备头字段
 	for _, want := range []string{

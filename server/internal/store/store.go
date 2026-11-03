@@ -67,6 +67,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Plugin{},
 		&model.PasswordReset{},
 		&model.AdminAudit{},
+		&model.SystemSetting{},
 	)
 }
 

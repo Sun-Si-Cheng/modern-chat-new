@@ -13,31 +13,42 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
 // AdminHandler 站长后台。
 type AdminHandler struct {
-	users   *store.UserStore
-	convs   *store.ConversationStore
-	msgs    *store.MessageStore
-	plugins *store.PluginStore
-	audits  *store.AuditStore
+	users    *store.UserStore
+	convs    *store.ConversationStore
+	msgs     *store.MessageStore
+	plugins  *store.PluginStore
+	audits   *store.AuditStore
+	settings *store.SettingStore
+	mailer   *service.Mailer
+	cfg      config.Config
 }
 
 // adminStartedAt 进程启动时间，用于概览里的运行时长。
 var adminStartedAt = time.Now()
 
 func NewAdminHandler(
+	cfg config.Config,
 	users *store.UserStore,
 	convs *store.ConversationStore,
 	msgs *store.MessageStore,
 	plugins *store.PluginStore,
 	audits *store.AuditStore,
+	settings *store.SettingStore,
+	mailer *service.Mailer,
 ) *AdminHandler {
-	return &AdminHandler{users: users, convs: convs, msgs: msgs, plugins: plugins, audits: audits}
+	return &AdminHandler{
+		users: users, convs: convs, msgs: msgs, plugins: plugins,
+		audits: audits, settings: settings, mailer: mailer, cfg: cfg,
+	}
 }
 
 // audit 记录一条站长操作。写失败只打日志，不影响主流程。

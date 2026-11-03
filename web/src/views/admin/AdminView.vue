@@ -17,6 +17,7 @@ import {
   systemApi,
   type AdminAudit,
   type AdminPluginRow,
+  type AdminSettingsPayload,
   type AdminStats,
   type AdminUserDetail,
   type AdminUserRow,
@@ -28,11 +29,89 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-const tab = ref<'users' | 'plugins' | 'audits'>('users')
+const tab = ref<'users' | 'plugins' | 'audits' | 'settings'>('users')
 
 // ---- 全站公告 ----
 const announceText = ref('')
 const announceSending = ref(false)
+
+// ---- 系统设置（SMTP / Redis / 对象存储）----
+
+const savingSettings = ref(false)
+const testingSMTP = ref(false)
+const testEmail = ref('')
+/** 服务器实际生效状态（与表单值不是一回事：Redis 改了要重启才生效） */
+const settingsMeta = ref({ smtpEnabled: false, redisEnabled: false, storageApplied: false })
+
+const settingsForm = ref<AdminSettingsPayload>({
+  smtp: { host: '', port: '465', user: '', from: '', pass: '' },
+  redis: { addr: '', db: '0', pass: '' },
+  storage: { endpoint: '', region: '', bucket: '', accessKey: '', secretKey: '' },
+})
+
+async function fetchSettings() {
+  try {
+    const s = await adminApi.settings()
+    settingsForm.value = {
+      smtp: {
+        host: s.smtp.host,
+        port: s.smtp.port || '465',
+        user: s.smtp.user,
+        from: s.smtp.from,
+        // 密码永不回显：留空 = 不修改
+        pass: '',
+      },
+      redis: { addr: s.redis.addr, db: s.redis.db || '0', pass: '' },
+      storage: {
+        endpoint: s.storage.endpoint,
+        region: s.storage.region,
+        bucket: s.storage.bucket,
+        accessKey: s.storage.accessKey,
+        secretKey: '',
+      },
+    }
+    settingsMeta.value = {
+      smtpEnabled: s.smtpEnabled,
+      redisEnabled: s.redisEnabled,
+      storageApplied: s.storageApplied,
+    }
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+async function saveSettings() {
+  savingSettings.value = true
+  try {
+    const r = await adminApi.saveSettings(settingsForm.value)
+    void MessagePlugin.success(
+      r.redisNeedsRestart ? t('admin.settingsSavedNeedRestart') : t('admin.settingsSaved'),
+    )
+    // 保存后清空密码输入框（已落库，不需要留在表单里）
+    settingsForm.value.smtp.pass = ''
+    settingsForm.value.redis.pass = ''
+    settingsForm.value.storage.secretKey = ''
+    await fetchSettings()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+async function sendTestMail() {
+  const to = testEmail.value.trim()
+  if (!to) return
+  testingSMTP.value = true
+  try {
+    await adminApi.testSMTP(to)
+    void MessagePlugin.success(t('admin.testMailOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    testingSMTP.value = false
+  }
+}
 
 // ---- 操作审计 ----
 const audits = ref<AdminAudit[]>([])
@@ -108,6 +187,7 @@ onMounted(() => {
   void fetchPlugins()
   void fetchStats()
   void fetchAudits()
+  void fetchSettings()
   systemApi
     .version()
     .then((v) => {
@@ -675,6 +755,134 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           </TTable>
         </div>
       </TTabPanel>
+
+      <TTabPanel value="settings" :label="t('admin.tabSettings')">
+        <div class="mc-admin__panel">
+          <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
+
+          <!-- 邮件（SMTP）：找回密码依赖它 -->
+          <section class="mc-settings">
+            <div class="mc-settings__head">
+              <h3 class="mc-settings__title">{{ t('admin.smtpTitle') }}</h3>
+              <UiTag :theme="settingsMeta.smtpEnabled ? 'success' : 'default'" variant="light">
+                {{ settingsMeta.smtpEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+              </UiTag>
+            </div>
+            <p class="mc-settings__desc text-placeholder">{{ t('admin.smtpDesc') }}</p>
+            <div class="mc-settings__grid">
+              <label class="mc-settings__field">
+                <span>{{ t('admin.smtpHost') }}</span>
+                <UiInput v-model="settingsForm.smtp.host" placeholder="smtp.qq.com" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.smtpPort') }}</span>
+                <UiInput v-model="settingsForm.smtp.port" placeholder="465" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.smtpUser') }}</span>
+                <UiInput v-model="settingsForm.smtp.user" placeholder="you@qq.com" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.smtpPass') }}</span>
+                <UiInput
+                  v-model="settingsForm.smtp.pass"
+                  type="password"
+                  :placeholder="t('admin.secretPlaceholder')"
+                />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.smtpFrom') }}</span>
+                <UiInput v-model="settingsForm.smtp.from" :placeholder="t('admin.smtpFromHint')" />
+              </label>
+            </div>
+            <div class="mc-settings__actions">
+              <UiInput
+                v-model="testEmail"
+                class="mc-settings__test-to"
+                :placeholder="t('admin.testMailPlaceholder')"
+              />
+              <UiButton variant="outline" :loading="testingSMTP" @click="sendTestMail">
+                {{ t('admin.sendTestMail') }}
+              </UiButton>
+            </div>
+          </section>
+
+          <!-- Redis：限流共享配额 -->
+          <section class="mc-settings">
+            <div class="mc-settings__head">
+              <h3 class="mc-settings__title">{{ t('admin.redisTitle') }}</h3>
+              <UiTag :theme="settingsMeta.redisEnabled ? 'success' : 'default'" variant="light">
+                {{ settingsMeta.redisEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+              </UiTag>
+            </div>
+            <p class="mc-settings__desc text-placeholder">{{ t('admin.redisDesc') }}</p>
+            <div class="mc-settings__grid">
+              <label class="mc-settings__field mc-settings__field--wide">
+                <span>{{ t('admin.redisAddr') }}</span>
+                <UiInput v-model="settingsForm.redis.addr" placeholder="127.0.0.1:6379" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.redisDB') }}</span>
+                <UiInput v-model="settingsForm.redis.db" placeholder="0" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.redisPass') }}</span>
+                <UiInput
+                  v-model="settingsForm.redis.pass"
+                  type="password"
+                  :placeholder="t('admin.secretPlaceholder')"
+                />
+              </label>
+            </div>
+            <p class="mc-settings__warn">{{ t('admin.redisRestartHint') }}</p>
+          </section>
+
+          <!-- 对象存储：暂无消费方 -->
+          <section class="mc-settings">
+            <div class="mc-settings__head">
+              <h3 class="mc-settings__title">{{ t('admin.storageTitle') }}</h3>
+              <UiTag theme="warning" variant="light">{{ t('admin.cfgNotWired') }}</UiTag>
+            </div>
+            <p class="mc-settings__desc text-placeholder">{{ t('admin.storageDesc') }}</p>
+            <div class="mc-settings__grid">
+              <label class="mc-settings__field mc-settings__field--wide">
+                <span>{{ t('admin.storageEndpoint') }}</span>
+                <UiInput
+                  v-model="settingsForm.storage.endpoint"
+                  placeholder="https://s3.example.com"
+                />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.storageRegion') }}</span>
+                <UiInput v-model="settingsForm.storage.region" placeholder="us-east-1" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.storageBucket') }}</span>
+                <UiInput v-model="settingsForm.storage.bucket" placeholder="modernchat" />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.storageAK') }}</span>
+                <UiInput v-model="settingsForm.storage.accessKey" placeholder="AKIA..." />
+              </label>
+              <label class="mc-settings__field">
+                <span>{{ t('admin.storageSK') }}</span>
+                <UiInput
+                  v-model="settingsForm.storage.secretKey"
+                  type="password"
+                  :placeholder="t('admin.secretPlaceholder')"
+                />
+              </label>
+            </div>
+            <p class="mc-settings__warn">{{ t('admin.storageNotWiredHint') }}</p>
+          </section>
+
+          <div class="mc-settings__save">
+            <UiButton theme="primary" :loading="savingSettings" @click="saveSettings">
+              {{ t('admin.saveSettings') }}
+            </UiButton>
+          </div>
+        </div>
+      </TTabPanel>
     </TTabss>
 
     <!-- 封禁弹窗 -->
@@ -928,6 +1136,78 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   flex: 1;
   min-width: 180px;
   max-width: 320px;
+}
+
+/* ===== 系统设置 ===== */
+.mc-settings {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.mc-settings__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.mc-settings__title {
+  margin: 0;
+  font-size: var(--mc-fs-emphasis);
+  font-weight: 600;
+}
+
+.mc-settings__desc {
+  margin: 0 0 12px;
+  font-size: var(--mc-fs-sm);
+  line-height: 1.5;
+}
+
+.mc-settings__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 16px;
+}
+
+.mc-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--mc-fs-sm);
+  color: var(--td-text-color-secondary);
+}
+
+/* UiInput 根元素会带上本组件的 scope id，可直接命中。
+   设置页的输入框密排在卡片上，bg-surface 与卡片同色、8% 白的边框几乎看不见，
+   改成"凹下"的底色 + 更明显的描边，边界才清楚。 */
+.mc-settings__field > div {
+  background: var(--td-bg-color-page);
+  border-color: var(--td-component-border);
+}
+
+.mc-settings__field--wide {
+  grid-column: 1 / -1;
+}
+
+.mc-settings__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mc-settings__test-to {
+  width: 260px;
+}
+
+.mc-settings__warn {
+  margin: 10px 0 0;
+  font-size: var(--mc-fs-sm);
+  color: var(--td-warning-color);
+}
+
+.mc-settings__save {
+  padding-top: 16px;
 }
 
 /* ===== 全站公告 ===== */
