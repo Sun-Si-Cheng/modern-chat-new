@@ -104,27 +104,31 @@ onBeforeUnmount(() => clearTimeout(releaseTimer))
 .ui-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
+  /* 16px：14px 在 800px 长的轨道上太单薄，也不够好抓 */
+  width: 16px;
+  height: 16px;
+  margin-top: -6px; /* (16 - 轨道 4) / 2 */
   border-radius: 50%;
   background: var(--td-bg-color-container);
   border: 2px solid var(--td-brand-color);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
-  transition: transform 120ms var(--mc-ease-in-out);
+  transition: transform var(--mc-dur-instant) var(--mc-ease-out);
 }
 
 .ui-slider:hover::-webkit-slider-thumb {
   transform: scale(1.1);
 }
 
-/* 拖动中：滑钮放大，轨道加粗（「被握住」的反馈） */
+/* 拖动中：滑钮放大，轨道加粗（「被握住」的反馈）。
+   4→6px 而不是 4→5px：只差 1px 时肉眼几乎看不出来。 */
 .ui-slider.is-dragging::-webkit-slider-thumb {
-  transform: scale(1.18);
+  transform: scale(1.2);
+  /* 轨道变 6px，滑钮要跟着重新居中，否则会偏上 1px */
+  margin-top: -5px;
 }
 
 .ui-slider.is-dragging::-webkit-slider-runnable-track {
-  height: 5px;
+  height: 6px;
 }
 
 /* 松手：带轻微 overshoot 的弹性回位 */
@@ -172,8 +176,8 @@ onBeforeUnmount(() => clearTimeout(releaseTimer))
 }
 
 .ui-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--td-bg-color-container);
   border: 2px solid var(--td-brand-color);
