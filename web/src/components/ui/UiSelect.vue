@@ -38,7 +38,7 @@ const hasValue = computed(() => props.modelValue !== '' && props.modelValue !== 
 const triggerCls = computed(() => [
   'flex items-center gap-1.5 w-full rounded-md border-1 border-solid bg-surface transition-colors cursor-pointer',
   props.size === 'small' ? 'h-7 px-2 text-[12.5px]' : 'h-8 px-2.5 text-[13.5px]',
-  props.disabled ? 'border-line opacity-60 cursor-not-allowed' : 'border-line hover:border-brand/50',
+  props.disabled ? 'border-line opacity-60 cursor-not-allowed' : 'border-line hover:border-brand-line-strong',
   open.value ? 'border-brand' : '',
 ])
 

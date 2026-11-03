@@ -34,6 +34,21 @@ export default defineConfig({
       success: 'var(--td-success-color)',
       warning: 'var(--td-warning-color)',
       info: 'var(--td-brand-color)',
+
+      // ===== 带透明度的衍生色 =====
+      // 上面的色值都是 CSS 变量，UnoCSS 的 `/12` 透明度修饰对 var() 无效：
+      // `bg-success/12` 会退化成实心色，配合同色文字就变成「看不见的字」。
+      // 所以这里用 color-mix 预先把常用档位算好。
+      'brand-soft': 'color-mix(in srgb, var(--td-brand-color) 10%, transparent)',
+      'brand-line': 'color-mix(in srgb, var(--td-brand-color) 40%, transparent)',
+      'brand-line-strong': 'color-mix(in srgb, var(--td-brand-color) 50%, transparent)',
+      'brand-ring': 'color-mix(in srgb, var(--td-brand-color) 45%, transparent)',
+      'danger-soft': 'color-mix(in srgb, var(--td-error-color) 12%, transparent)',
+      'danger-line': 'color-mix(in srgb, var(--td-error-color) 40%, transparent)',
+      'success-soft': 'color-mix(in srgb, var(--td-success-color) 12%, transparent)',
+      'success-line': 'color-mix(in srgb, var(--td-success-color) 40%, transparent)',
+      'warning-soft': 'color-mix(in srgb, var(--td-warning-color) 12%, transparent)',
+      'warning-line': 'color-mix(in srgb, var(--td-warning-color) 40%, transparent)',
     },
     borderRadius: {
       sm: '6px',

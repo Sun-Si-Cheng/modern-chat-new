@@ -54,7 +54,7 @@ function bump(dir: 1 | -1) {
 const wrapCls = computed(() => [
   'flex items-center gap-1 w-full rounded-md border bg-surface transition-colors',
   'h-8 px-2.5',
-  props.disabled ? 'border-line opacity-60' : 'border-line hover:border-brand/50 focus-within:border-brand',
+  props.disabled ? 'border-line opacity-60' : 'border-line hover:border-brand-line-strong focus-within:border-brand',
 ])
 </script>
 

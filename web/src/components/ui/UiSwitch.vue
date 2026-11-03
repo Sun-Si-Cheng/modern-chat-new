@@ -16,7 +16,9 @@ const emit = defineEmits<{ change: [value: boolean] }>()
 const trackCls = computed(() => [
   'relative inline-flex items-center flex-shrink-0 rounded-full border-none transition-colors duration-150',
   props.size === 'small' ? 'w-8 h-[18px]' : 'w-10 h-[22px]',
-  props.value ? 'bg-brand' : 'bg-active',
+  // 关闭态用 ink-4 而不是 bg-active：后者在暗色下与背景几乎同色，
+  // 只看得到白色圆点、看不出这是一颗开关
+  props.value ? 'bg-brand' : 'bg-ink-4',
   props.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
 ])
 

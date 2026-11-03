@@ -46,7 +46,7 @@ const themeCls = computed(() => {
   // 每个分支都显式声明 background：
   // <button> 自带浏览器默认灰底（rgb(240,240,240)），不声明就会漏出来
   if (props.variant === 'text') {
-    if (props.theme === 'danger') return 'bg-transparent border-none text-danger hover:bg-danger/10'
+    if (props.theme === 'danger') return 'bg-transparent border-none text-danger hover:bg-danger-soft'
     if (props.theme === 'primary') return 'bg-transparent border-none text-brand hover:bg-brand-light'
     return 'bg-transparent border-none text-ink-2 hover:text-ink hover:bg-hover'
   }
@@ -55,9 +55,9 @@ const themeCls = computed(() => {
   // 只写 `border` 会因浏览器默认 border-style:none 而部分边不显示。
   if (props.variant === 'outline') {
     if (props.theme === 'danger')
-      return 'bg-transparent border-1 border-solid border-danger/40 text-danger hover:bg-danger/8'
+      return 'bg-transparent border-1 border-solid border-danger-line text-danger hover:bg-danger-soft'
     if (props.theme === 'primary')
-      return 'bg-transparent border-1 border-solid border-brand/40 text-brand hover:bg-brand-light'
+      return 'bg-transparent border-1 border-solid border-brand-line text-brand hover:bg-brand-light'
     return 'bg-transparent border-1 border-solid border-line text-ink hover:bg-hover'
   }
   // 实心
@@ -76,7 +76,7 @@ const themeCls = computed(() => {
 const cls = computed(() => [
   'inline-flex items-center justify-center select-none whitespace-nowrap',
   'font-[inherit] transition-colors duration-150 outline-none',
-  'focus-visible:ring-2 focus-visible:ring-brand/50',
+  'focus-visible:ring-2 focus-visible:ring-brand-ring',
   sizeCls.value,
   themeCls.value,
   props.block ? 'w-full' : '',

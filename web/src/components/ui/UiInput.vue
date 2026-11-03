@@ -37,7 +37,7 @@ const wrapCls = computed(() => [
   props.size === 'small' ? 'h-7 px-2' : props.size === 'large' ? 'h-10 px-3' : 'h-8 px-2.5',
   props.disabled
     ? 'border-line opacity-60 cursor-not-allowed'
-    : 'border-line hover:border-brand/50 focus-within:border-brand',
+    : 'border-line hover:border-brand-line-strong focus-within:border-brand',
 ])
 
 const inputCls = computed(() => [

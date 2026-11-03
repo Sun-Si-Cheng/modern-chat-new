@@ -68,8 +68,8 @@ function onInput(e: Event) {
     to right,
     var(--td-brand-color) 0%,
     var(--td-brand-color) var(--ui-slider-percent),
-    var(--mc-hairline) var(--ui-slider-percent),
-    var(--mc-hairline) 100%
+    var(--td-component-border, rgba(127,127,127,.35)) var(--ui-slider-percent),
+    var(--td-component-border, rgba(127,127,127,.35)) 100%
   );
 }
 
@@ -102,7 +102,7 @@ function onInput(e: Event) {
 .ui-slider::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: var(--mc-hairline);
+  background: var(--td-component-border, rgba(127,127,127,.35));
 }
 
 .ui-slider::-moz-range-progress {

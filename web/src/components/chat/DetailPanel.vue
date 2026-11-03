@@ -310,6 +310,9 @@ async function leave() {
 .mc-detail__section {
   padding: 16px;
   border-bottom: 1px solid var(--td-component-border);
+  /* 面板是 flex column 且整体滚动：子项默认会被等比压缩，
+     成员一多就把底部「退群」按钮挤成一条细线。固定住高度让它滚动而不是压缩。 */
+  flex-shrink: 0;
 }
 
 .mc-detail__title {
@@ -416,5 +419,6 @@ async function leave() {
 
 .mc-detail__footer {
   margin-top: 14px;
+  flex-shrink: 0;
 }
 </style>

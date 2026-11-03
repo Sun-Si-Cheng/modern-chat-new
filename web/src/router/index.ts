@@ -38,13 +38,25 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.token) {
     return { name: 'login', query: to.fullPath === '/chat' ? {} : { redirect: to.fullPath } }
   }
   if (to.meta.guest && auth.token) return { name: 'chat' }
-  if (to.meta.requiresAdmin && auth.user?.role !== 'admin') return { name: 'chat' }
+  if (to.meta.requiresAdmin) {
+    // auth.user 只是内存态：刷新或直接访问 /admin 时它是空的，
+    // 直接判 role 会把有权限的人挡回聊天页（表现为「后台进不去」）。
+    // 有 token 就先补一次资料再判。
+    if (!auth.user && auth.token) {
+      try {
+        await auth.fetchMe()
+      } catch {
+        /* 令牌失效由请求拦截器统一处理 */
+      }
+    }
+    if (auth.user?.role !== 'admin') return { name: 'chat' }
+  }
 })
 
 export default router
