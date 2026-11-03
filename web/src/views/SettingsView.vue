@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import UiSlider from '@/components/ui/UiSlider.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { DialogPlugin, MessagePlugin, Slider as TSlider } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
@@ -247,7 +248,7 @@ function goBack() {
             <span class="settings-row__label">{{ p.label }}</span>
             <span class="settings-row__value num">{{ layout.panes[p.key].width }}px</span>
           </div>
-          <TSlider
+          <UiSlider
             :model-value="layout.panes[p.key].width"
             :min="PANE_LIMITS[p.key].min"
             :max="PANE_LIMITS[p.key].max"

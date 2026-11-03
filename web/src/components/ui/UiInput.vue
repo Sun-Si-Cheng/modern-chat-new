@@ -82,7 +82,7 @@ function clear() {
     <button
       v-if="clearable && modelValue && !disabled"
       type="button"
-      class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full bg-transparent text-ink-3 hover:text-ink hover:bg-hover"
+      class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full border-none bg-transparent text-ink-3 hover:text-ink hover:bg-hover"
       aria-label="clear"
       @click="clear"
     >

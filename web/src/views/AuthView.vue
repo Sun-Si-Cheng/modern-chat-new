@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Form as TForm, FormItem as TFormItem, Checkbox as TCheckbox, MessagePlugin } from 'tdesign-vue-next'
+import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
 
@@ -148,7 +149,7 @@ function switchMode(m: 'login' | 'register') {
 
         <!-- 协议同意：紧邻密码与提交按钮之间 -->
         <div class="auth-card__agree">
-          <TCheckbox v-model="agreed" size="small">
+          <UiCheckbox v-model="agreed" size="small">
             <span class="auth-card__agree-text">
               {{ t('legal.agreePrefix') }}
               <!-- 新标签打开，避免打断登录流程 -->
@@ -156,7 +157,7 @@ function switchMode(m: 'login' | 'register') {
               {{ t('legal.and') }}
               <RouterLink :to="'/privacy'" target="_blank" @click.stop>{{ t('legal.privacyLink') }}</RouterLink>
             </span>
-          </TCheckbox>
+          </UiCheckbox>
         </div>
 
         <UiButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">

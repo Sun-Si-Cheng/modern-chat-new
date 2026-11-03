@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import UiSwitch from '@/components/ui/UiSwitch.vue'
 import UiDrawer from '@/components/ui/UiDrawer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
 import { ref, watch } from 'vue'
-import { DialogPlugin, MessagePlugin, Switch as TSwitch } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
 import { pluginApi } from '@/api'
@@ -173,7 +174,7 @@ async function uninstall(plugin: Plugin) {
             {{ p.name }}
             <span class="text-placeholder num">v{{ p.version }}</span>
           </span>
-          <TSwitch
+          <UiSwitch
             :value="p.enabled && !p.globalDisabled"
             :disabled="p.globalDisabled"
             @change="(v: unknown) => toggle(p, v as boolean)"

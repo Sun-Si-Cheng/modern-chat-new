@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
-import { DialogPlugin, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
@@ -290,7 +291,7 @@ async function leave() {
     :confirm-btn-loading="transferring"
     @confirm="doTransfer"
   >
-    <TSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
+    <UiSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
   </UiDialog>
 </template>
 

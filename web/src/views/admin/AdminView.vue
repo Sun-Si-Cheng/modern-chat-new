@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import UiInputNumber from '@/components/ui/UiInputNumber.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { DialogPlugin, InputNumber as TInputNumber, MessagePlugin, Select as TSelect, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
@@ -534,14 +536,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               @enter="applyFilter"
               @clear="applyFilter"
             />
-            <TSelect
+            <UiSelect
               v-model="roleFilter"
               :options="filterRoleOptions()"
               :placeholder="t('admin.filterRole')"
               style="width: 130px"
               @change="applyFilter"
             />
-            <TSelect
+            <UiSelect
               v-model="statusFilter"
               :options="filterStatusOptions()"
               :placeholder="t('admin.filterStatus')"
@@ -678,10 +680,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
     <!-- 封禁弹窗 -->
     <UiDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
       <div class="mc-admin__ban">
-        <TInputNumber
+        <UiInputNumber
           v-model="banDays"
           :min="0"
-          theme="column"
           :suffix="t('admin.daysSuffix')"
           style="width: 160px"
         />

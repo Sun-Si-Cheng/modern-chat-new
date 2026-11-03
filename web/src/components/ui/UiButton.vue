@@ -46,9 +46,9 @@ const themeCls = computed(() => {
   // 每个分支都显式声明 background：
   // <button> 自带浏览器默认灰底（rgb(240,240,240)），不声明就会漏出来
   if (props.variant === 'text') {
-    if (props.theme === 'danger') return 'bg-transparent text-danger hover:bg-danger/10'
-    if (props.theme === 'primary') return 'bg-transparent text-brand hover:bg-brand-light'
-    return 'bg-transparent text-ink-2 hover:text-ink hover:bg-hover'
+    if (props.theme === 'danger') return 'bg-transparent border-none text-danger hover:bg-danger/10'
+    if (props.theme === 'primary') return 'bg-transparent border-none text-brand hover:bg-brand-light'
+    return 'bg-transparent border-none text-ink-2 hover:text-ink hover:bg-hover'
   }
   // 描边：透明底 + 细边
   // 必须显式 border-solid + border-1：项目没有引入 preflight，
@@ -63,13 +63,13 @@ const themeCls = computed(() => {
   // 实心
   switch (props.theme) {
     case 'primary':
-      return 'bg-brand text-white hover:bg-brand-hover active:bg-brand-active'
+      return 'border-none bg-brand text-white hover:bg-brand-hover active:bg-brand-active'
     case 'danger':
-      return 'bg-danger text-white hover:opacity-90 active:opacity-80'
+      return 'border-none bg-danger text-white hover:opacity-90 active:opacity-80'
     case 'success':
-      return 'bg-success text-white hover:opacity-90'
+      return 'border-none bg-success text-white hover:opacity-90'
     default:
-      return 'bg-hover text-ink hover:bg-active'
+      return 'border-none bg-hover text-ink hover:bg-active'
   }
 })
 
