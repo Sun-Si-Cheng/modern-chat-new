@@ -1,14 +1,9 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTag from '@/components/ui/UiTag.vue'
 import { ref, watch } from 'vue'
-import {
-  Button as TButton,
-  DialogPlugin,
-  Drawer as TDrawer,
-  Input as TInput,
-  MessagePlugin,
-  Switch as TSwitch,
-  Tag as TTag,
-} from 'tdesign-vue-next'
+import { DialogPlugin, Drawer as TDrawer, MessagePlugin, Switch as TSwitch } from 'tdesign-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
 import { pluginApi } from '@/api'
@@ -160,13 +155,13 @@ async function uninstall(plugin: Plugin) {
       <div class="mc-plugins__install">
         <label class="mc-plugins__upload">
           <input type="file" accept=".js,application/javascript,text/javascript" @change="onPickFile" />
-          <TButton variant="outline" size="small" :loading="installing">{{ t('plugin.upload') }}</TButton>
+          <UiButton variant="outline" size="small" :loading="installing">{{ t('plugin.upload') }}</UiButton>
         </label>
         <div class="mc-plugins__url">
-          <TInput v-model="urlInput" :placeholder="t('plugin.urlPlaceholder')" clearable @enter="installFromUrl" />
-          <TButton variant="outline" size="small" :loading="installing" @click="installFromUrl">
+          <UiInput v-model="urlInput" :placeholder="t('plugin.urlPlaceholder')" clearable @enter="installFromUrl" />
+          <UiButton variant="outline" size="small" :loading="installing" @click="installFromUrl">
             {{ t('plugin.urlInstall') }}
-          </TButton>
+          </UiButton>
         </div>
       </div>
 
@@ -185,13 +180,13 @@ async function uninstall(plugin: Plugin) {
         </div>
         <div class="mc-plugins__desc text-secondary">{{ p.description || t('plugin.noDesc') }}</div>
         <div class="mc-plugins__tags">
-          <TTag v-for="perm in p.permissions" :key="perm" size="small" theme="primary" variant="light">
+          <UiTag v-for="perm in p.permissions" :key="perm" size="small" theme="primary" variant="light">
             {{ permLabel(perm) }}
-          </TTag>
-          <TTag v-for="h in p.allowedHosts" :key="h" size="small" variant="outline">{{ h }}</TTag>
-          <TTag v-if="p.globalDisabled" size="small" theme="danger" variant="light">
+          </UiTag>
+          <UiTag v-for="h in p.allowedHosts" :key="h" size="small" variant="outline">{{ h }}</UiTag>
+          <UiTag v-if="p.globalDisabled" size="small" theme="danger" variant="light">
             {{ t('plugin.globalDisabled') }}
-          </TTag>
+          </UiTag>
         </div>
         <div class="mc-plugins__ops">
           <a class="mc-plugins__remove" @click="uninstall(p)">{{ t('plugin.uninstall') }}</a>

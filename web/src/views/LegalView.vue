@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button as TButton } from 'tdesign-vue-next'
+
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
@@ -51,10 +52,10 @@ function goBack() {
 <template>
   <div class="legal-page">
     <header class="legal-top">
-      <TButton variant="text" size="small" @click="goBack">
+      <UiButton variant="text" size="small" @click="goBack">
         <template #icon><ArrowLeftIcon /></template>
         {{ t('common.back') }}
-      </TButton>
+      </UiButton>
       <QuickPrefs />
     </header>
 

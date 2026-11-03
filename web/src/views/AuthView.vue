@@ -1,14 +1,9 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  Form as TForm,
-  FormItem as TFormItem,
-  Input as TInput,
-  Button as TButton,
-  Checkbox as TCheckbox,
-  MessagePlugin,
-} from 'tdesign-vue-next'
+import { Form as TForm, FormItem as TFormItem, Checkbox as TCheckbox, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
 
@@ -128,27 +123,27 @@ function switchMode(m: 'login' | 'register') {
         @submit="onSubmit"
       >
         <TFormItem name="username">
-          <TInput v-model="data.username" size="large" :placeholder="t('auth.username')" clearable>
+          <UiInput v-model="data.username" size="large" :placeholder="t('auth.username')" clearable>
             <template #prefix-icon><UserIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="nickname">
-          <TInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
+          <UiInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
             <template #prefix-icon><UserIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
-          <TInput v-model="data.password" size="large" type="password" :placeholder="t('auth.password')">
+          <UiInput v-model="data.password" size="large" type="password" :placeholder="t('auth.password')">
             <template #prefix-icon><LockOnIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="confirm">
-          <TInput v-model="registerForm.confirm" size="large" type="password" :placeholder="t('auth.confirmPassword')">
+          <UiInput v-model="registerForm.confirm" size="large" type="password" :placeholder="t('auth.confirmPassword')">
             <template #prefix-icon><LockOnIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <!-- 协议同意：紧邻密码与提交按钮之间 -->
@@ -164,9 +159,9 @@ function switchMode(m: 'login' | 'register') {
           </TCheckbox>
         </div>
 
-        <TButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">
+        <UiButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">
           {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
-        </TButton>
+        </UiButton>
       </TForm>
 
       <div class="auth-card__links">

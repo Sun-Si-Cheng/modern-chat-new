@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button as TButton, MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { ChatDoubleFilledIcon, UsergroupIcon } from 'tdesign-icons-vue-next'
 
 import AddFriendDialog from '@/components/chat/AddFriendDialog.vue'
@@ -148,9 +149,9 @@ onUnmounted(() => {
             <!-- 主区只留一个主行动（加好友）。插件属于低频配置，入口在设置页，
                  这里用一行文字链接兜住「新用户不知道有插件」的发现路径。 -->
             <div class="mc-empty__actions">
-              <TButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
+              <UiButton v-if="paneView !== 'contacts'" theme="primary" @click="openAddFriend">
                 {{ t('chat.emptyAddFriend') }}
-              </TButton>
+              </UiButton>
               <button type="button" class="mc-empty__link" @click="pluginDrawerVisible = true">
                 {{ t('chat.emptyPlugins') }}
               </button>
@@ -159,7 +160,7 @@ onUnmounted(() => {
         </div>
       </Transition>
       <!-- 详情抽屉形态下的入口按钮（浮在主区右上角） -->
-      <TButton
+      <UiButton
         v-if="showDetail && layout.panes.detail.drawer"
         class="mc-layout__detail-toggle"
         variant="text"
@@ -169,7 +170,7 @@ onUnmounted(() => {
         @click="layout.open('detail')"
       >
         <UsergroupIcon size="16px" />
-      </TButton>
+      </UiButton>
     </div>
 
     <!-- 详情面板：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->

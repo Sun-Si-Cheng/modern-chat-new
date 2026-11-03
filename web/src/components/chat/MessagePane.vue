@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { MessagePlugin, Button as TButton } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
@@ -283,7 +284,7 @@ const senderAvatar = (m: Message) => {
 <template>
   <section class="mc-msgpane">
     <header class="mc-msgpane__header">
-      <TButton
+      <UiButton
         class="mc-msgpane__back"
         variant="text"
         shape="square"
@@ -291,7 +292,7 @@ const senderAvatar = (m: Message) => {
         @click="convStore.currentConvId = null"
       >
         <template #icon><ArrowLeftIcon /></template>
-      </TButton>
+      </UiButton>
       <div v-if="conv" class="mc-msgpane__identity">
         <AvatarBadge
           :name="conv.type === 1 ? (conv.peer?.nickname ?? '?') : (conv.name ?? '#')"

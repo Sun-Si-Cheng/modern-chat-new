@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
-import { Dialog as TDialog, DialogPlugin, Input as TInput, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
+import { Dialog as TDialog, DialogPlugin, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
@@ -232,9 +234,9 @@ async function leave() {
         </div>
 
         <div class="mc-detail__footer">
-          <TButton variant="outline" theme="danger" size="small" block @click="leave">
+          <UiButton variant="outline" theme="danger" size="small" block @click="leave">
             {{ isOwner ? t('group.leaveOwner') : t('group.leave') }}
-          </TButton>
+          </UiButton>
         </div>
       </div>
 
@@ -277,7 +279,7 @@ async function leave() {
     :confirm-btn-loading="renaming"
     @confirm="doRename"
   >
-    <TInput v-model="newName" :placeholder="t('group.newName')" clearable @enter="doRename" />
+    <UiInput v-model="newName" :placeholder="t('group.newName')" clearable @enter="doRename" />
   </TDialog>
 
   <!-- 转让群主 -->

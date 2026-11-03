@@ -1,16 +1,9 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiBadge from '@/components/ui/UiBadge.vue'
 import { computed, ref } from 'vue'
-import {
-  Badge as TBadge,
-  Button as TButton,
-  Dialog as TDialog,
-  DialogPlugin,
-  Input as TInput,
-  List as TList,
-  ListItem as TListItem,
-  MessagePlugin,
-  Popup as TPopup,
-} from 'tdesign-vue-next'
+import { Dialog as TDialog, DialogPlugin, List as TList, ListItem as TListItem, MessagePlugin, Popup as TPopup } from 'tdesign-vue-next'
 import { AddIcon, ChatIcon, SearchIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -282,7 +275,7 @@ const sortedConvs = computed(() => {
   <aside class="mc-sidebar">
     <!-- 搜索：人 / 群 -->
     <div class="mc-sidebar__search">
-      <TInput
+      <UiInput
         v-model="kw"
         :placeholder="t('chat.searchPlaceholder')"
         clearable
@@ -290,7 +283,7 @@ const sortedConvs = computed(() => {
         @enter="onSearch"
       >
         <template #prefix-icon><SearchIcon /></template>
-      </TInput>
+      </UiInput>
       <!-- 新建：加好友 / 建群（高频动作，一层可达） -->
       <TPopup
         v-model:visible="newMenuVisible"
@@ -299,14 +292,14 @@ const sortedConvs = computed(() => {
         :show-arrow="false"
         attach="body"
       >
-        <TButton
+        <UiButton
           class="mc-sidebar__new"
           variant="outline"
           :aria-label="t('chat.moreMenu')"
           :title="t('chat.moreMenu')"
         >
           <AddIcon />
-        </TButton>
+        </UiButton>
         <template #content>
           <ul class="mc-sidebar__new-menu">
             <li>
@@ -378,7 +371,7 @@ const sortedConvs = computed(() => {
         </span>
         <span class="mc-conv-item__right">
           <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>
-          <TBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
+          <UiBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
         </span>
       </button>
       <div v-if="!sortedConvs.length" class="mc-sidebar__empty">
@@ -390,7 +383,7 @@ const sortedConvs = computed(() => {
     <!-- 联系人 -->
     <div v-else class="mc-sidebar__list">
       <div class="mc-sidebar__add-friend">
-        <TButton block variant="outline" @click="emit('open-add-friend')">{{ t('friends.addTitle') }}</TButton>
+        <UiButton block variant="outline" @click="emit('open-add-friend')">{{ t('friends.addTitle') }}</UiButton>
       </div>
 
       <template v-if="friendsStore.pendingRequests.length">
@@ -399,7 +392,7 @@ const sortedConvs = computed(() => {
           <AvatarBadge :name="r.from.nickname" :src="r.from.avatar" :color="r.from.avatarColor" :size="32" />
           <span class="mc-conv-item__name">{{ r.from.nickname }}</span>
           <div class="mc-friend-item__actions">
-            <TButton
+            <UiButton
               size="small"
               theme="primary"
               variant="text"
@@ -408,15 +401,15 @@ const sortedConvs = computed(() => {
               @click="handleRequest(r.id, true)"
             >
               {{ t('friends.accept') }}
-            </TButton>
-            <TButton
+            </UiButton>
+            <UiButton
               size="small"
               variant="text"
               :disabled="!!busyKey && busyKey !== `req-${r.id}`"
               @click="handleRequest(r.id, false)"
             >
               {{ t('friends.reject') }}
-            </TButton>
+            </UiButton>
           </div>
         </div>
       </template>
@@ -432,10 +425,10 @@ const sortedConvs = computed(() => {
         />
         <span class="mc-conv-item__name">{{ f.friend.nickname }}</span>
         <div class="mc-friend-item__actions">
-          <TButton size="small" variant="text" @click="openFriendChat(f.friend.id)">{{ t('friends.send') }}</TButton>
-          <TButton size="small" variant="text" theme="danger" @click="removeFriend(f.friend.id, f.friend.nickname)">
+          <UiButton size="small" variant="text" @click="openFriendChat(f.friend.id)">{{ t('friends.send') }}</UiButton>
+          <UiButton size="small" variant="text" theme="danger" @click="removeFriend(f.friend.id, f.friend.nickname)">
             {{ t('friends.remove') }}
-          </TButton>
+          </UiButton>
         </div>
       </div>
       <div v-if="!friendsStore.accepted.length" class="mc-sidebar__empty">
@@ -461,7 +454,7 @@ const sortedConvs = computed(() => {
       :confirm-btn-loading="creatingGroup"
       @confirm="doCreateGroup"
     >
-      <TInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
+      <UiInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
     </TDialog>
   </aside>
 </template>

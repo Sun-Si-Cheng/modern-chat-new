@@ -8,6 +8,8 @@ const props = withDefaults(
     /** 只显示小圆点，不显示数字 */
     dot?: boolean
     max?: number
+    /** 兼容 TDesign 的 size 属性（当前统一一种尺寸，接收后忽略） */
+    size?: 'small' | 'medium'
   }>(),
   { count: 0, dot: false, max: 99 },
 )

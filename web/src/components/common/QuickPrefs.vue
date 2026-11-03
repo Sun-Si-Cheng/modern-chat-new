@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Button as TButton, Popup as TPopup, Tooltip as TTooltip } from 'tdesign-vue-next'
+import { Popup as TPopup, Tooltip as TTooltip } from 'tdesign-vue-next'
 import { DesktopIcon, MoonIcon, PaletteIcon, SunnyIcon, TranslateIcon } from 'tdesign-icons-vue-next'
 
 import { SCENE_PRESETS, usePrefsStore, type SceneEffect } from '@/stores/prefs'
@@ -41,33 +42,33 @@ function onColorInput(e: Event) {
 <template>
   <div class="quick-prefs">
     <TTooltip :content="`${t('prefs.language')} · ${prefs.lang === 'zh-CN' ? '中文' : 'English'}`">
-      <TButton
+      <UiButton
         variant="text"
         shape="square"
         :aria-label="t('prefs.language')"
         @click="prefs.toggleLang()"
       >
         <template #icon><TranslateIcon /></template>
-      </TButton>
+      </UiButton>
     </TTooltip>
 
     <TTooltip :content="`${t('prefs.theme')}：${themeLabel}`">
-      <TButton
+      <UiButton
         variant="text"
         shape="square"
         :aria-label="`${t('prefs.theme')}：${themeLabel}`"
         @click="prefs.cycleTheme()"
       >
         <template #icon><component :is="themeIcon" /></template>
-      </TButton>
+      </UiButton>
     </TTooltip>
 
     <!-- 登录页背景：颜色 + 特效 -->
     <TPopup trigger="click" placement="bottom-right" :show-arrow="false">
       <TTooltip :content="t('prefs.scene')">
-        <TButton variant="text" shape="square" :aria-label="t('prefs.scene')">
+        <UiButton variant="text" shape="square" :aria-label="t('prefs.scene')">
           <template #icon><PaletteIcon /></template>
-        </TButton>
+        </UiButton>
       </TTooltip>
 
       <template #content>

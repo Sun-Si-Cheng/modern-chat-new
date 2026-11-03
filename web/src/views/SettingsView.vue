@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Button as TButton,
-  DialogPlugin,
-  Input as TInput,
-  MessagePlugin,
-  Slider as TSlider,
-} from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin, Slider as TSlider } from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
@@ -28,6 +24,17 @@ const friendsStore = useFriendsStore()
 const layout = useLayoutStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
+
+// 直接打开/刷新设置页时不会经过聊天页的初始化，auth.user 为空 →
+// 账号卡片会误显示「登录后可修改昵称与邮箱」。这里自行补一次资料拉取。
+onMounted(async () => {
+  if (!auth.token || auth.user) return
+  try {
+    await auth.fetchMe()
+  } catch {
+    /* 令牌失效由请求拦截器统一处理 */
+  }
+})
 
 // ===== 布局（宽度可调 / 区域可改抽屉形态）=====
 
@@ -129,10 +136,10 @@ function goBack() {
 <template>
   <div class="settings-page">
     <header class="settings-top">
-      <TButton variant="text" size="small" @click="goBack">
+      <UiButton variant="text" size="small" @click="goBack">
         <template #icon><ArrowLeftIcon /></template>
         {{ t('settings.back') }}
-      </TButton>
+      </UiButton>
       <h1 class="settings-top__title">{{ t('settings.title') }}</h1>
       <span class="settings-top__spacer" />
     </header>
@@ -193,7 +200,7 @@ function goBack() {
         <template v-if="auth.user">
           <div class="settings-field">
             <label class="settings-field__label" for="st-nickname">{{ t('settings.nickname') }}</label>
-            <TInput
+            <UiInput
               id="st-nickname"
               v-model="profile.nickname"
               :placeholder="t('settings.nicknamePlaceholder')"
@@ -204,7 +211,7 @@ function goBack() {
 
           <div class="settings-field">
             <label class="settings-field__label" for="st-email">{{ t('settings.email') }}</label>
-            <TInput
+            <UiInput
               id="st-email"
               v-model="profile.email"
               :placeholder="t('settings.email')"
@@ -214,14 +221,14 @@ function goBack() {
           </div>
 
           <div class="settings-actions">
-            <TButton theme="primary" :loading="saving" @click="saveProfile">{{ t('settings.save') }}</TButton>
+            <UiButton theme="primary" :loading="saving" @click="saveProfile">{{ t('settings.save') }}</UiButton>
           </div>
 
           <div class="settings-row settings-row--last">
             <span class="settings-row__label">{{ t('settings.logout') }}</span>
-            <TButton variant="outline" theme="danger" size="small" @click="confirmLogout">
+            <UiButton variant="outline" theme="danger" size="small" @click="confirmLogout">
               {{ t('settings.logout') }}
-            </TButton>
+            </UiButton>
           </div>
         </template>
 
@@ -263,9 +270,9 @@ function goBack() {
             </button>
           </div>
         </div>
-        <TButton class="settings-layout__reset" variant="outline" size="small" @click="layout.reset()">
+        <UiButton class="settings-layout__reset" variant="outline" size="small" @click="layout.reset()">
           {{ t('settings.resetLayout') }}
-        </TButton>
+        </UiButton>
       </section>
 
       <!-- 插件 -->
@@ -276,9 +283,9 @@ function goBack() {
             <span class="settings-row__label">{{ t('settings.pluginsLabel') }}</span>
             <span class="settings-row__hint text-placeholder">{{ t('settings.pluginsHint') }}</span>
           </div>
-          <TButton variant="outline" size="small" @click="openPlugins">
+          <UiButton variant="outline" size="small" @click="openPlugins">
             {{ t('settings.openPlugins') }}
-          </TButton>
+          </UiButton>
         </div>
       </section>
 
@@ -290,9 +297,9 @@ function goBack() {
             <span class="settings-row__label">{{ t('settings.adminLabel') }}</span>
             <span class="settings-row__hint text-placeholder">{{ t('settings.adminHint') }}</span>
           </div>
-          <TButton variant="outline" size="small" @click="openAdmin">
+          <UiButton variant="outline" size="small" @click="openAdmin">
             {{ t('settings.openAdmin') }}
-          </TButton>
+          </UiButton>
         </div>
       </section>
 

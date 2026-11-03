@@ -16,6 +16,8 @@ const props = withDefaults(
     loading?: boolean
     disabled?: boolean
     type?: 'button' | 'submit'
+    /** square/circle：等宽高图标按钮（兼容 TDesign 的 shape 属性） */
+    shape?: 'default' | 'square' | 'circle'
   }>(),
   {
     theme: 'default',
@@ -25,34 +27,38 @@ const props = withDefaults(
     loading: false,
     disabled: false,
     type: 'button',
+    shape: 'default',
   },
 )
 
 const emit = defineEmits<{ click: [e: MouseEvent] }>()
 
 const sizeCls = computed(() => {
-  switch (props.size) {
-    case 'small':
-      return 'h-7 px-2.5 text-[13px] gap-1 rounded-sm'
-    case 'large':
-      return 'h-10 px-4 text-[15px] gap-2 rounded-md'
-    default:
-      return 'h-8 px-3 text-[13.5px] gap-1.5 rounded-md'
-  }
+  // square/circle 是等宽高图标按钮，不能带水平内边距
+  const sq = props.shape !== 'default'
+  const round = props.shape === 'circle' ? 'rounded-full' : ''
+  if (props.size === 'small') return `h-7 text-[13px] gap-1 ${sq ? 'w-7 p-0' : 'px-2.5'} ${round || 'rounded-sm'}`
+  if (props.size === 'large') return `h-10 text-[15px] gap-2 ${sq ? 'w-10 p-0' : 'px-4'} ${round || 'rounded-md'}`
+  return `h-8 text-[13.5px] gap-1.5 ${sq ? 'w-8 p-0' : 'px-3'} ${round || 'rounded-md'}`
 })
 
 const themeCls = computed(() => {
-  // 文字按钮：无底无边，靠品牌色区分
+  // 每个分支都显式声明 background：
+  // <button> 自带浏览器默认灰底（rgb(240,240,240)），不声明就会漏出来
   if (props.variant === 'text') {
-    if (props.theme === 'danger') return 'text-danger hover:bg-danger/10'
-    if (props.theme === 'primary') return 'text-brand hover:bg-brand-light'
-    return 'text-ink-2 hover:text-ink hover:bg-hover'
+    if (props.theme === 'danger') return 'bg-transparent text-danger hover:bg-danger/10'
+    if (props.theme === 'primary') return 'bg-transparent text-brand hover:bg-brand-light'
+    return 'bg-transparent text-ink-2 hover:text-ink hover:bg-hover'
   }
-  // 描边：白底 + 细边
+  // 描边：透明底 + 细边
+  // 必须显式 border-solid + border-1：项目没有引入 preflight，
+  // 只写 `border` 会因浏览器默认 border-style:none 而部分边不显示。
   if (props.variant === 'outline') {
-    if (props.theme === 'danger') return 'border border-danger/40 text-danger hover:bg-danger/8'
-    if (props.theme === 'primary') return 'border border-brand/40 text-brand hover:bg-brand-light'
-    return 'border border-line text-ink hover:bg-hover'
+    if (props.theme === 'danger')
+      return 'bg-transparent border-1 border-solid border-danger/40 text-danger hover:bg-danger/8'
+    if (props.theme === 'primary')
+      return 'bg-transparent border-1 border-solid border-brand/40 text-brand hover:bg-brand-light'
+    return 'bg-transparent border-1 border-solid border-line text-ink hover:bg-hover'
   }
   // 实心
   switch (props.theme) {
@@ -86,6 +92,8 @@ function onClick(e: MouseEvent) {
 <template>
   <button :type="type" :class="cls" :disabled="disabled || loading" @click="onClick">
     <span v-if="loading" class="ui-btn__spin" aria-hidden="true" />
+    <!-- 兼容 TDesign 的 #icon 插槽（QuickPrefs 等图标按钮在用） -->
+    <slot v-else name="icon" />
     <slot />
   </button>
 </template>

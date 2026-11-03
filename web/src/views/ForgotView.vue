@@ -1,13 +1,9 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Form as TForm,
-  FormItem as TFormItem,
-  Input as TInput,
-  Button as TButton,
-  MessagePlugin,
-} from 'tdesign-vue-next'
+import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { KeyIcon, LockOnIcon, MailIcon } from 'tdesign-icons-vue-next'
 
@@ -125,14 +121,14 @@ function backToStep1() {
         @submit.prevent
       >
         <TFormItem name="email">
-          <TInput v-model="emailForm.email" size="large" :placeholder="t('forgot.email')" clearable @enter="submitEmail">
+          <UiInput v-model="emailForm.email" size="large" :placeholder="t('forgot.email')" clearable @enter="submitEmail">
             <template #prefix-icon><MailIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
-        <TButton class="auth-card__submit" theme="primary" block size="large" :loading="loading" @click="submitEmail">
+        <UiButton class="auth-card__submit" theme="primary" block size="large" :loading="loading" @click="submitEmail">
           {{ t('forgot.sendLink') }}
-        </TButton>
+        </UiButton>
       </TForm>
 
       <!-- 第二步：令牌 + 新密码 -->
@@ -146,26 +142,26 @@ function backToStep1() {
         @submit.prevent
       >
         <TFormItem name="token">
-          <TInput v-model="resetForm.token" size="large" :placeholder="t('forgot.token')" clearable>
+          <UiInput v-model="resetForm.token" size="large" :placeholder="t('forgot.token')" clearable>
             <template #prefix-icon><KeyIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <TFormItem name="newPassword">
-          <TInput v-model="resetForm.newPassword" size="large" type="password" :placeholder="t('forgot.newPassword')">
+          <UiInput v-model="resetForm.newPassword" size="large" type="password" :placeholder="t('forgot.newPassword')">
             <template #prefix-icon><LockOnIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
         <TFormItem name="confirm">
-          <TInput v-model="resetForm.confirm" size="large" type="password" :placeholder="t('forgot.confirm')">
+          <UiInput v-model="resetForm.confirm" size="large" type="password" :placeholder="t('forgot.confirm')">
             <template #prefix-icon><LockOnIcon /></template>
-          </TInput>
+          </UiInput>
         </TFormItem>
 
-        <TButton class="auth-card__submit" theme="primary" block size="large" :loading="loading" @click="submitReset">
+        <UiButton class="auth-card__submit" theme="primary" block size="large" :loading="loading" @click="submitReset">
           {{ t('forgot.reset') }}
-        </TButton>
+        </UiButton>
       </TForm>
 
       <div class="auth-card__links">

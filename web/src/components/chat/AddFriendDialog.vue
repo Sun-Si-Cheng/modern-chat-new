@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { Button as TButton, Dialog as TDialog, Input as TInput, MessagePlugin } from 'tdesign-vue-next'
+import { Dialog as TDialog, MessagePlugin } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -125,7 +127,7 @@ onBeforeUnmount(() => {
     attach="body"
   >
     <div class="add-friend">
-      <TInput
+      <UiInput
         ref="inputRef"
         v-model="keyword"
         size="large"
@@ -141,7 +143,7 @@ onBeforeUnmount(() => {
             <span class="add-friend__username">@{{ u.username }}</span>
           </span>
           <span v-if="isFriend(u)" class="add-friend__tag">{{ t('friends.alreadyFriend') }}</span>
-          <TButton
+          <UiButton
             v-else-if="incomingRequest(u)"
             size="small"
             theme="primary"
@@ -149,11 +151,11 @@ onBeforeUnmount(() => {
             @click="accept(u)"
           >
             {{ t('friends.accept') }}
-          </TButton>
+          </UiButton>
           <span v-else-if="sentIds.has(u.id)" class="add-friend__tag">{{ t('friends.sent') }}</span>
-          <TButton v-else size="small" theme="primary" @click="add(u)">
+          <UiButton v-else size="small" theme="primary" @click="add(u)">
             {{ t('friends.addAction') }}
-          </TButton>
+          </UiButton>
         </li>
       </ul>
 

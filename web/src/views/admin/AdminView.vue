@@ -1,19 +1,10 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTag from '@/components/ui/UiTag.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Dialog as TDialog,
-  DialogPlugin,
-  Input as TInput,
-  InputNumber as TInputNumber,
-  MessagePlugin,
-  Select as TSelect,
-  TabPanel as TTabPanel,
-  Tabs as TTabss,
-  Table as TTable,
-  Tag as TTag,
-  Button as TButton,
-} from 'tdesign-vue-next'
+import { Dialog as TDialog, DialogPlugin, InputNumber as TInputNumber, MessagePlugin, Select as TSelect, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
@@ -454,15 +445,15 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         >
           {{ buildInfo.version }} · {{ buildInfo.commit }} · {{ buildInfo.buildTime }}
         </span>
-        <TButton
+        <UiButton
           variant="text"
           shape="square"
           :aria-label="t('settings.title')"
           @click="router.push('/settings')"
         >
           <template #icon><SettingIcon /></template>
-        </TButton>
-        <TButton variant="text" @click="router.push('/chat')">{{ t('admin.backToChat') }}</TButton>
+        </UiButton>
+        <UiButton variant="text" @click="router.push('/chat')">{{ t('admin.backToChat') }}</UiButton>
       </div>
     </header>
 
@@ -519,22 +510,22 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
     <!-- 全站公告 -->
     <div class="mc-admin__announce">
-      <TInput
+      <UiInput
         v-model="announceText"
         :placeholder="t('admin.announcePlaceholder')"
         :maxlength="200"
         @enter="doAnnounce"
       />
-      <TButton theme="primary" :loading="announceSending" @click="doAnnounce">
+      <UiButton theme="primary" :loading="announceSending" @click="doAnnounce">
         {{ t('admin.announceSend') }}
-      </TButton>
+      </UiButton>
     </div>
 
     <TTabss v-model="tab" class="mc-admin__tabs">
       <TTabPanel value="users" :label="t('admin.tabUsers')">
         <div class="mc-admin__panel">
           <div class="mc-admin__filters">
-            <TInput
+            <UiInput
               v-model="keyword"
               class="mc-admin__search"
               :placeholder="t('admin.searchUser')"
@@ -556,9 +547,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               style="width: 130px"
               @change="applyFilter"
             />
-            <TButton size="small" variant="outline" @click="resetFilter">
+            <UiButton size="small" variant="outline" @click="resetFilter">
               {{ t('admin.resetFilter') }}
-            </TButton>
+            </UiButton>
           </div>
 
           <TTable
@@ -586,16 +577,16 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
             </template>
 
             <template #status="{ row }">
-              <TTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
+              <UiTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
                 {{
                   row.banReason
                     ? t('admin.banned', { reason: row.banReason })
                     : t('admin.bannedShort')
                 }}
-              </TTag>
-              <TTag v-else theme="success" variant="light" size="small">{{
+              </UiTag>
+              <UiTag v-else theme="success" variant="light" size="small">{{
                 t('admin.normal')
-              }}</TTag>
+              }}</UiTag>
             </template>
 
             <template #ops="{ row }">
@@ -635,12 +626,12 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               <span class="mc-admin__num">{{ row.enabledCount }}</span>
             </template>
             <template #globalStatus="{ row }">
-              <TTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
+              <UiTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
                 {{ t('admin.disabledTag') }}
-              </TTag>
-              <TTag v-else theme="success" variant="light" size="small">{{
+              </UiTag>
+              <UiTag v-else theme="success" variant="light" size="small">{{
                 t('admin.globalNormal')
-              }}</TTag>
+              }}</UiTag>
             </template>
             <template #ops="{ row }">
               <div class="mc-admin__ops">
@@ -667,7 +658,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           >
             <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
             <template #action="{ row }">
-              <TTag variant="outline" size="small">{{ actionLabel(row.action) }}</TTag>
+              <UiTag variant="outline" size="small">{{ actionLabel(row.action) }}</UiTag>
             </template>
             <template #targetName="{ row }">
               {{ row.targetName || '—' }}
@@ -694,7 +685,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           style="width: 160px"
         />
         <p class="text-placeholder">{{ t('admin.banHint') }}</p>
-        <TInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
+        <UiInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
       </div>
     </TDialog>
 
@@ -718,9 +709,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
             <strong>{{ detail.user.nickname }}</strong>
             <span class="text-placeholder">@{{ detail.user.username }}</span>
           </div>
-          <TTag :theme="detail.online ? 'success' : 'default'" variant="light" size="small">
+          <UiTag :theme="detail.online ? 'success' : 'default'" variant="light" size="small">
             {{ detail.online ? t('admin.online') : t('admin.offline') }}
-          </TTag>
+          </UiTag>
         </div>
 
         <dl class="mc-admin__detail-grid">

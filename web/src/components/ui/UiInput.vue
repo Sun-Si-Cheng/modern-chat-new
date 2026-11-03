@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 /**
  * 基础输入框（UnoCSS 实现，替代 TDesign Input）。
- * 焦点态用 `focus-within` 把边框染成品牌色，与存量表单观感一致。
+ *
+ * 兼容 TDesign 的常用能力，方便逐文件替换：
+ * - `#prefix-icon` 插槽（前置图标）
+ * - `size`: small / medium / large
+ * - 通过 ref 调用 `focus()`（AddFriendDialog 打开时需要自动聚焦）
  */
 const props = withDefaults(
   defineProps<{
@@ -11,7 +15,7 @@ const props = withDefaults(
     placeholder?: string
     clearable?: boolean
     disabled?: boolean
-    size?: 'small' | 'medium'
+    size?: 'small' | 'medium' | 'large'
     type?: 'text' | 'password' | 'email'
     maxlength?: number
   }>(),
@@ -25,9 +29,12 @@ const emit = defineEmits<{
   clear: []
 }>()
 
+const inputEl = ref<HTMLInputElement | null>(null)
+defineExpose({ focus: () => inputEl.value?.focus() })
+
 const wrapCls = computed(() => [
-  'flex items-center gap-1 w-full rounded-md border bg-surface transition-colors',
-  props.size === 'small' ? 'h-7 px-2' : 'h-8 px-2.5',
+  'flex items-center gap-1.5 w-full rounded-md border bg-surface transition-colors',
+  props.size === 'small' ? 'h-7 px-2' : props.size === 'large' ? 'h-10 px-3' : 'h-8 px-2.5',
   props.disabled
     ? 'border-line opacity-60 cursor-not-allowed'
     : 'border-line hover:border-brand/50 focus-within:border-brand',
@@ -35,7 +42,7 @@ const wrapCls = computed(() => [
 
 const inputCls = computed(() => [
   'flex-1 min-w-0 bg-transparent outline-none border-none',
-  props.size === 'small' ? 'text-[12.5px]' : 'text-[13.5px]',
+  props.size === 'small' ? 'text-[12.5px]' : props.size === 'large' ? 'text-[15px]' : 'text-[13.5px]',
   'text-ink placeholder:text-ink-3',
 ])
 
@@ -51,12 +58,17 @@ function clear() {
   emit('update:modelValue', '')
   emit('change', '')
   emit('clear')
+  inputEl.value?.focus()
 }
 </script>
 
 <template>
   <div :class="wrapCls">
+    <span v-if="$slots['prefix-icon']" class="flex-shrink-0 flex items-center text-ink-3">
+      <slot name="prefix-icon" />
+    </span>
     <input
+      ref="inputEl"
       :value="modelValue"
       :type="type"
       :placeholder="placeholder"
@@ -70,7 +82,7 @@ function clear() {
     <button
       v-if="clearable && modelValue && !disabled"
       type="button"
-      class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full text-ink-3 hover:text-ink hover:bg-hover"
+      class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full bg-transparent text-ink-3 hover:text-ink hover:bg-hover"
       aria-label="clear"
       @click="clear"
     >
