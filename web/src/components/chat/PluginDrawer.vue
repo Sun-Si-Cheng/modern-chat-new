@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import UiDrawer from '@/components/ui/UiDrawer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
 import { ref, watch } from 'vue'
-import { DialogPlugin, Drawer as TDrawer, MessagePlugin, Switch as TSwitch } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin, Switch as TSwitch } from 'tdesign-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
 import { pluginApi } from '@/api'
@@ -149,7 +150,7 @@ async function uninstall(plugin: Plugin) {
 <template>
   <!-- TDesign 的 Drawer 只有 visible prop（没有 modelValue），必须写全 v-model:visible，
        否则值会被当作 HTML 属性落到 DOM 上，抽屉永远停在屏幕外 -->
-  <TDrawer v-model:visible="visible" :header="t('plugin.title')" size="420px" :footer="false">
+  <UiDrawer v-model:visible="visible" :header="t('plugin.title')" size="420px">
     <div class="mc-plugins">
       <!-- 安装 -->
       <div class="mc-plugins__install">
@@ -197,7 +198,7 @@ async function uninstall(plugin: Plugin) {
         {{ t('plugin.empty') }}
       </div>
     </div>
-  </TDrawer>
+  </UiDrawer>
 </template>
 
 <style scoped>

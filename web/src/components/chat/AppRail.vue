@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import UiPopup from '@/components/ui/UiPopup.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { DialogPlugin, Popup as TPopup } from 'tdesign-vue-next'
+import { DialogPlugin } from 'tdesign-vue-next'
 import { ChatIcon, SettingIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -63,12 +64,9 @@ function setView(v: 'chats' | 'contacts') {
   <nav class="app-rail">
     <div class="app-rail__top">
       <!-- 头像：点击弹资料卡 -->
-      <TPopup
+      <UiPopup
         v-model:visible="profileVisible"
-        trigger="click"
         placement="right-top"
-        :show-arrow="false"
-        attach="body"
       >
         <button type="button" class="app-rail__avatar" :aria-label="t('profile.menu')">
           <AvatarBadge
@@ -81,7 +79,7 @@ function setView(v: 'chats' | 'contacts') {
         <template #content>
           <ProfileCard @logout="confirmLogout" />
         </template>
-      </TPopup>
+      </UiPopup>
 
     </div>
 

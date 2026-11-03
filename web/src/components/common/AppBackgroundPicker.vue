@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import UiPopup from '@/components/ui/UiPopup.vue'
 import { computed, ref } from 'vue'
-import { MessagePlugin, Popup as TPopup } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { PaletteIcon } from 'tdesign-icons-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -108,7 +109,7 @@ async function onImageChange(ev: Event) {
 </script>
 
 <template>
-  <TPopup v-model:visible="visible" trigger="click" placement="bottom-right" :show-arrow="false" attach="body">
+  <UiPopup v-model:visible="visible" placement="bottom-right">
     <button
       v-if="compact"
       type="button"
@@ -196,7 +197,7 @@ async function onImageChange(ev: Event) {
         </button>
       </div>
     </template>
-  </TPopup>
+  </UiPopup>
 </template>
 
 <style scoped>

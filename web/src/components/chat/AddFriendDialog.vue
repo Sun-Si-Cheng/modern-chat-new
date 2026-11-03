@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { Dialog as TDialog, MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -119,12 +120,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <TDialog
+  <UiDialog
     v-model:visible="visible"
     :header="t('friends.addTitle')"
-    :footer="false"
     width="440px"
-    attach="body"
+    :footer="false"
   >
     <div class="add-friend">
       <UiInput
@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
       <div v-else-if="searched" class="add-friend__state text-placeholder">{{ t('chat.noResults') }}</div>
       <div v-else class="add-friend__state text-placeholder">{{ t('friends.searchHint') }}</div>
     </div>
-  </TDialog>
+  </UiDialog>
 </template>
 
 <style scoped>

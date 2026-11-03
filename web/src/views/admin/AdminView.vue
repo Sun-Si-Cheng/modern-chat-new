@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog as TDialog, DialogPlugin, InputNumber as TInputNumber, MessagePlugin, Select as TSelect, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
+import { DialogPlugin, InputNumber as TInputNumber, MessagePlugin, Select as TSelect, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
@@ -675,7 +676,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
     </TTabss>
 
     <!-- 封禁弹窗 -->
-    <TDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
+    <UiDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
       <div class="mc-admin__ban">
         <TInputNumber
           v-model="banDays"
@@ -687,15 +688,15 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         <p class="text-placeholder">{{ t('admin.banHint') }}</p>
         <UiInput v-model="banReason" :placeholder="t('admin.banReason')" clearable />
       </div>
-    </TDialog>
+    </UiDialog>
 
     <!-- 用户详情 -->
-    <TDialog
+    <UiDialog
       v-model:visible="detailVisible"
       :header="t('admin.detailTitle')"
-      :footer="false"
       width="520px"
-    >
+      :footer="false"
+      >
       <p v-if="detailLoading" class="text-placeholder">{{ t('admin.loading') }}</p>
       <div v-else-if="detail" class="mc-admin__detail">
         <div class="mc-admin__detail-head">
@@ -737,7 +738,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           {{ t('admin.detailBanned', { reason: detail.user.banReason || '—' }) }}
         </p>
       </div>
-    </TDialog>
+    </UiDialog>
   </div>
 </template>
 

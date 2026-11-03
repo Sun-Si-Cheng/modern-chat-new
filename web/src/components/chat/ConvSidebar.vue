@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiPopup from '@/components/ui/UiPopup.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import { computed, ref } from 'vue'
-import { Dialog as TDialog, DialogPlugin, List as TList, ListItem as TListItem, MessagePlugin, Popup as TPopup } from 'tdesign-vue-next'
+import { DialogPlugin, List as TList, ListItem as TListItem, MessagePlugin } from 'tdesign-vue-next'
 import { AddIcon, ChatIcon, SearchIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
@@ -285,12 +287,9 @@ const sortedConvs = computed(() => {
         <template #prefix-icon><SearchIcon /></template>
       </UiInput>
       <!-- 新建：加好友 / 建群（高频动作，一层可达） -->
-      <TPopup
+      <UiPopup
         v-model:visible="newMenuVisible"
-        trigger="click"
         placement="bottom-right"
-        :show-arrow="false"
-        attach="body"
       >
         <UiButton
           class="mc-sidebar__new"
@@ -310,7 +309,7 @@ const sortedConvs = computed(() => {
             </li>
           </ul>
         </template>
-      </TPopup>
+      </UiPopup>
     </div>
 
     <div v-if="kw.trim()" class="mc-sidebar__results">
@@ -447,7 +446,7 @@ const sortedConvs = computed(() => {
     />
 
     <!-- 新建群聊 -->
-    <TDialog
+    <UiDialog
       v-model:visible="createGroupVisible"
       :header="t('chat.createGroupTitle')"
       :confirm-btn="{ content: t('chat.createGroup'), theme: 'primary' }"
@@ -455,7 +454,7 @@ const sortedConvs = computed(() => {
       @confirm="doCreateGroup"
     >
       <UiInput v-model="groupName" :placeholder="t('chat.groupName')" clearable @enter="doCreateGroup" />
-    </TDialog>
+    </UiDialog>
   </aside>
 </template>
 

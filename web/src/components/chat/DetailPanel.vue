@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
-import { Dialog as TDialog, DialogPlugin, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin, Select as TSelect } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
@@ -273,24 +274,24 @@ async function leave() {
   />
 
   <!-- 改群名 -->
-  <TDialog
+  <UiDialog
     v-model:visible="renameVisible"
     :header="t('group.renameTitle')"
     :confirm-btn-loading="renaming"
     @confirm="doRename"
   >
     <UiInput v-model="newName" :placeholder="t('group.newName')" clearable @enter="doRename" />
-  </TDialog>
+  </UiDialog>
 
   <!-- 转让群主 -->
-  <TDialog
+  <UiDialog
     v-model:visible="transferVisible"
     :header="t('group.transferTitle')"
     :confirm-btn-loading="transferring"
     @confirm="doTransfer"
   >
     <TSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
-  </TDialog>
+  </UiDialog>
 </template>
 
 <style scoped>

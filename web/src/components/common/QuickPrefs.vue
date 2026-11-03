@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import UiPopup from '@/components/ui/UiPopup.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Popup as TPopup, Tooltip as TTooltip } from 'tdesign-vue-next'
+import { Tooltip as TTooltip } from 'tdesign-vue-next'
 import { DesktopIcon, MoonIcon, PaletteIcon, SunnyIcon, TranslateIcon } from 'tdesign-icons-vue-next'
 
 import { SCENE_PRESETS, usePrefsStore, type SceneEffect } from '@/stores/prefs'
@@ -64,7 +65,7 @@ function onColorInput(e: Event) {
     </TTooltip>
 
     <!-- 登录页背景：颜色 + 特效 -->
-    <TPopup trigger="click" placement="bottom-right" :show-arrow="false">
+    <UiPopup placement="bottom-right">
       <TTooltip :content="t('prefs.scene')">
         <UiButton variant="text" shape="square" :aria-label="t('prefs.scene')">
           <template #icon><PaletteIcon /></template>
@@ -111,7 +112,7 @@ function onColorInput(e: Event) {
           </button>
         </div>
       </template>
-    </TPopup>
+    </UiPopup>
   </div>
 </template>
 
