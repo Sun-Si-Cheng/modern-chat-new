@@ -65,7 +65,7 @@ const wrapCls = computed(() => [
       type="text"
       inputmode="numeric"
       :disabled="disabled"
-      class="flex-1 min-w-0 bg-transparent outline-none border-none text-[13.5px] text-ink"
+      class="flex-1 min-w-0 bg-transparent outline-none border-none text-[13px] text-ink"
       @input="onInput"
       @blur="onBlur"
       @keydown.enter="onBlur"

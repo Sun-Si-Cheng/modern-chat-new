@@ -45,7 +45,7 @@ function toMutable(body: unknown): UIDescNode[] {
 }
 
 .mc-plugin-panel__title {
-  font-size: 13.5px;
+  font-size: var(--mc-fs-body);
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--td-text-color-primary);

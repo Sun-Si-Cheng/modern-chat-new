@@ -213,7 +213,7 @@ async function uninstall(plugin: Plugin) {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px;
+  padding: 16px;
   border: 1px dashed var(--td-component-border);
   border-radius: var(--mc-radius-lg);
   background: var(--td-bg-color-secondarycontainer);
@@ -231,7 +231,7 @@ async function uninstall(plugin: Plugin) {
 .mc-plugins__item {
   border: 1px solid var(--mc-hairline);
   border-radius: var(--mc-radius-md);
-  padding: 14px;
+  padding: 16px;
   transition:
     border-color var(--mc-dur-fast) var(--mc-ease-out),
     box-shadow var(--mc-dur-fast) var(--mc-ease-out);
@@ -259,7 +259,7 @@ async function uninstall(plugin: Plugin) {
 }
 
 .mc-plugins__desc {
-  font-size: 12.5px;
+  font-size: var(--mc-fs-sm);
   line-height: 1.6;
   margin: 8px 0;
   white-space: pre-wrap;

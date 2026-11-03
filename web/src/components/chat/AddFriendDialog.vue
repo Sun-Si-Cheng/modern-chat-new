@@ -226,10 +226,10 @@ onBeforeUnmount(() => {
 
 .add-friend__tag {
   flex-shrink: 0;
-  padding: 3px 9px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: var(--td-bg-color-secondarycontainer);
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   color: var(--td-text-color-secondary);
 }
 
@@ -238,9 +238,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 28px 8px;
+  padding: 32px 8px;
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--mc-fs-sm);
   line-height: 1.6;
   animation: mc-fade-in var(--mc-dur-base) var(--mc-ease-out);
 }

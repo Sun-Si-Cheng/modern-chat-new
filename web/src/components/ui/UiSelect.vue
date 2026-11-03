@@ -37,7 +37,7 @@ const hasValue = computed(() => props.modelValue !== '' && props.modelValue !== 
 
 const triggerCls = computed(() => [
   'flex items-center gap-1.5 w-full rounded-md border-1 border-solid bg-surface transition-colors cursor-pointer',
-  props.size === 'small' ? 'h-7 px-2 text-[12.5px]' : 'h-8 px-2.5 text-[13.5px]',
+  props.size === 'small' ? 'h-7 px-2 text-[12px]' : 'h-8 px-2.5 text-[13px]',
   props.disabled ? 'border-line opacity-60 cursor-not-allowed' : 'border-line hover:border-brand-line-strong',
   open.value ? 'border-brand' : '',
 ])
@@ -80,7 +80,7 @@ function toggle() {
 
     <template #content="{ close }">
       <ul class="m-0 p-1 list-none max-h-[240px] overflow-auto">
-        <li v-if="!options.length" class="px-2.5 py-2 text-[12.5px] text-ink-3">
+        <li v-if="!options.length" class="px-2.5 py-2 text-[12px] text-ink-3">
           <slot name="empty">—</slot>
         </li>
         <li

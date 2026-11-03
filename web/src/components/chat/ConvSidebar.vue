@@ -527,7 +527,7 @@ const sortedConvs = computed(() => {
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--mc-text-faint);
-  padding: 14px 8px 6px;
+  padding: 16px 8px 6px;
 }
 
 .mc-sidebar__empty {
@@ -642,6 +642,9 @@ const sortedConvs = computed(() => {
 
 .mc-conv-item__name {
   display: block;
+  /* 之前没定义字号，靠继承拿到 16px（比预览的 12px 大了一档多）。
+     列表标题按规范用 emphasis 档：14px / 500。 */
+  font-size: var(--mc-fs-emphasis);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;

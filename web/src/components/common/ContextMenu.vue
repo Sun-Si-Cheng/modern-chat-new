@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
 .mc-ctx__item {
   display: block;
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: none;
   border-radius: var(--mc-radius-sm);
   background: transparent;

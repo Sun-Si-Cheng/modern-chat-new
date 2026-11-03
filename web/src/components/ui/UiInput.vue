@@ -42,7 +42,7 @@ const wrapCls = computed(() => [
 
 const inputCls = computed(() => [
   'flex-1 min-w-0 bg-transparent outline-none border-none',
-  props.size === 'small' ? 'text-[12.5px]' : props.size === 'large' ? 'text-[15px]' : 'text-[13.5px]',
+  props.size === 'small' ? 'text-[12px]' : props.size === 'large' ? 'text-[16px]' : 'text-[13px]',
   'text-ink placeholder:text-ink-3',
 ])
 

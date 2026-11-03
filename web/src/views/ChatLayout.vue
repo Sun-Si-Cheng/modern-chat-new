@@ -341,7 +341,7 @@ onUnmounted(() => {
 
 .mc-empty__title {
   margin: 16px 0 0;
-  font-size: 22px;
+  font-size: var(--mc-fs-display);
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.3;

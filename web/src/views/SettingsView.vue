@@ -351,7 +351,7 @@ function goBack() {
 .settings-body {
   max-width: 880px;
   margin: 0 auto;
-  padding: 28px 20px 0;
+  padding: 32px 20px 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -378,7 +378,7 @@ function goBack() {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--mc-hairline);
 }
 
@@ -442,7 +442,7 @@ function goBack() {
 /* 分段控件 */
 .settings-seg {
   display: inline-flex;
-  padding: 3px;
+  padding: 4px;
   border-radius: var(--mc-radius-md);
   background: var(--td-bg-color-secondarycontainer);
   flex-wrap: wrap;
@@ -482,7 +482,7 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--mc-hairline);
 }
 

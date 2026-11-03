@@ -38,8 +38,8 @@ const sizeCls = computed(() => {
   const sq = props.shape !== 'default'
   const round = props.shape === 'circle' ? 'rounded-full' : ''
   if (props.size === 'small') return `h-7 text-[13px] gap-1 ${sq ? 'w-7 p-0' : 'px-2.5'} ${round || 'rounded-sm'}`
-  if (props.size === 'large') return `h-10 text-[15px] gap-2 ${sq ? 'w-10 p-0' : 'px-4'} ${round || 'rounded-md'}`
-  return `h-8 text-[13.5px] gap-1.5 ${sq ? 'w-8 p-0' : 'px-3'} ${round || 'rounded-md'}`
+  if (props.size === 'large') return `h-10 text-[16px] gap-2 ${sq ? 'w-10 p-0' : 'px-4'} ${round || 'rounded-md'}`
+  return `h-8 text-[13px] gap-1.5 ${sq ? 'w-8 p-0' : 'px-3'} ${round || 'rounded-md'}`
 })
 
 const themeCls = computed(() => {

@@ -149,7 +149,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 .ui-dialog__title {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--mc-fs-title);
   font-weight: 600;
   color: var(--td-text-color-primary);
 }
@@ -186,7 +186,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 14px 18px 16px;
+  padding: 16px 18px 16px;
 }
 
 .ui-dlg-enter-active,

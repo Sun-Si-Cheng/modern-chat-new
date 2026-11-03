@@ -145,7 +145,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .mc-composer__hint {
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   white-space: nowrap;
   /* 不允许被右侧「字数 + 发送」挤压截断（之前会显示成 "Enter 发送 · Sh..."） */
   flex-shrink: 0;

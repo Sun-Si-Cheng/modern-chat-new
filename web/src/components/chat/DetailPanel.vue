@@ -317,7 +317,7 @@ async function leave() {
 
 .mc-detail__title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--mc-fs-title);
   letter-spacing: -0.01em;
   margin-bottom: 12px;
   display: flex;
@@ -334,7 +334,7 @@ async function leave() {
 }
 
 .mc-detail__count {
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   font-weight: 400;
   color: var(--mc-text-faint);
   white-space: nowrap;

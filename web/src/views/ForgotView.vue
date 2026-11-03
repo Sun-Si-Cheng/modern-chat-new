@@ -194,7 +194,7 @@ function backToStep1() {
   z-index: 2;
   display: flex;
   align-items: center;
-  padding: 3px 5px;
+  padding: 4px 6px;
   border-radius: var(--mc-radius-sm);
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-border);
@@ -398,7 +398,7 @@ function backToStep1() {
   }
 
   .auth-card__title {
-    font-size: 22px;
+    font-size: var(--mc-fs-heading);
   }
 
   .auth-steps {

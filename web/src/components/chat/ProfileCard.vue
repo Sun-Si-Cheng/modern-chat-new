@@ -239,7 +239,7 @@ function goSettings() {
 .profile-card__menu button {
   display: block;
   width: 100%;
-  padding: 9px 8px;
+  padding: 8px;
   border: none;
   border-radius: var(--mc-radius-sm);
   background: none;

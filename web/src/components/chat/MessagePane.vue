@@ -469,7 +469,7 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msgpane__sub {
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   font-weight: 400;
   line-height: 1.3;
 }
@@ -504,7 +504,7 @@ const senderAvatar = (m: Message) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 0 6px;
+  padding: 16px 0 6px;
   font-size: 12px;
   color: var(--mc-text-faint);
 }
@@ -548,7 +548,7 @@ const senderAvatar = (m: Message) => {
   background: var(--td-bg-color-container);
   border: 1px solid var(--mc-hairline);
   border-radius: var(--mc-radius-md);
-  padding: 9px 13px;
+  padding: 8px 12px;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -631,7 +631,7 @@ const senderAvatar = (m: Message) => {
 }
 
 .mc-msg__meta {
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   margin-top: 4px;
   user-select: none;
   letter-spacing: 0.01em;

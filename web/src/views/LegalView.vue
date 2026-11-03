@@ -184,7 +184,7 @@ function goBack() {
   }
 
   .legal-doc__title {
-    font-size: 22px;
+    font-size: var(--mc-fs-heading);
   }
 }
 </style>

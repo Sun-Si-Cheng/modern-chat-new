@@ -747,7 +747,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin {
   max-width: 980px;
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 32px 24px 48px;
 }
 
 .mc-admin__header {
@@ -773,10 +773,10 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 /* 构建版本做成一枚元信息胶囊，不再是一条游离的长文本 */
 .mc-admin__build {
-  padding: 3px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: var(--td-bg-color-secondarycontainer);
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   white-space: nowrap;
 }
 
@@ -789,12 +789,29 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-admin__ops {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  /* 5 个操作挤在一行时，12px 间距会让它们看起来连成一片文字；
+     16px + hover 底色之后每一档都能单独识别 */
+  gap: 6px 16px;
 }
 
 .mc-admin__ops a {
   font-size: 13px;
   white-space: nowrap;
+  cursor: pointer;
+  /* 负 margin 让 hover 底色外扩，但文字基线不动 */
+  padding: 2px 5px;
+  margin: -2px -5px;
+  border-radius: var(--mc-radius-sm);
+  transition: background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-admin__ops a:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-admin__ops a:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 1px;
 }
 
 .mc-admin__tabs {
@@ -867,7 +884,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 14px 16px;
+  padding: 16px 16px;
   border: 1px solid var(--mc-hairline);
   border-radius: var(--mc-radius-lg);
   background: var(--td-bg-color-container);
@@ -887,14 +904,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 }
 
 .mc-admin__stat-value {
-  font-size: 24px;
+  font-size: var(--mc-fs-display);
   line-height: 1.2;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .mc-admin__stat-sub {
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   color: var(--mc-text-faint);
 }
 

@@ -83,14 +83,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px;
+  padding: 16px 16px;
   border-bottom: 1px solid var(--mc-hairline);
 }
 
 .ui-drawer__title {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--mc-fs-title);
   font-weight: 600;
   color: var(--td-text-color-primary);
 }
@@ -120,7 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 16px 16px;
 }
 
 .ui-dw-enter-active,

@@ -257,7 +257,7 @@ async function onImageChange(ev: Event) {
 /* ===== 面板 ===== */
 .abg-panel {
   width: 288px;
-  padding: 14px;
+  padding: 16px;
 }
 
 .abg-panel__label {
@@ -419,7 +419,7 @@ async function onImageChange(ev: Event) {
 
 .abg-image__hint {
   margin: 0 0 8px;
-  font-size: 11.5px;
+  font-size: var(--mc-fs-sm);
   line-height: 1.5;
   color: var(--mc-text-faint);
 }
