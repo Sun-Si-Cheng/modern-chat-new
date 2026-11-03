@@ -10,6 +10,8 @@ import { usePrefsStore } from './stores/prefs'
 // 组件一律在 SFC 内按需 import（不 app.use(TDesign)），否则整库无法 tree-shake。
 import 'tdesign-vue-next/es/style/index.css'
 import './assets/main.css'
+// UnoCSS 工具类最后引入：迁移期需要用原子类覆盖存量组件的默认观感
+import 'virtual:uno.css'
 
 const app = createApp(App)
 const pinia = createPinia()

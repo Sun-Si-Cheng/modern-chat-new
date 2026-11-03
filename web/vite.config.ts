@@ -3,11 +3,12 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
+import UnoCSS from 'unocss/vite'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   // devtools 仅开发启用：生产构建不应包含它（体积与运行时开销）
-  plugins: [vue(), ...(mode === 'development' ? [vueDevTools()] : [])],
+  plugins: [vue(), UnoCSS(), ...(mode === 'development' ? [vueDevTools()] : [])],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

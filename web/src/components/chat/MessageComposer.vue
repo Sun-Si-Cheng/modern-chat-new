@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
-import { Button as TButton } from 'tdesign-vue-next'
+import UiButton from '@/components/ui/UiButton.vue'
 
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useConversationsStore } from '@/stores/conversations'
@@ -80,9 +80,9 @@ function onKeydown(e: KeyboardEvent) {
           <span v-if="text.length" class="mc-composer__count text-placeholder num" :class="{ 'is-near-limit': text.length >= 900 }">
             {{ text.length }}/1000
           </span>
-          <TButton theme="primary" size="small" :disabled="!text.trim()" @click="send">
+          <UiButton theme="primary" size="small" :disabled="!text.trim()" @click="send">
             {{ t('message.send') }}
-          </TButton>
+          </UiButton>
         </div>
       </div>
     </div>
