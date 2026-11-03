@@ -352,7 +352,7 @@ async function leave() {
   color: var(--td-brand-color);
   border-radius: 4px;
   padding: 1px 2px;
-  transition: background-color var(--mc-dur-fast, 120ms) ease;
+  transition: background-color var(--mc-dur-fast, 120ms) var(--mc-ease-in-out);
 }
 
 .mc-detail__actions a:hover {

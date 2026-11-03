@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 /** 滑块（原生 range + 定制轨道，替代 TDesign Slider） */
 const props = withDefaults(
@@ -29,12 +29,36 @@ function onInput(e: Event) {
   emit('update:modelValue', v)
   emit('change', v)
 }
+
+// 拖动中放大滑钮、松手回弹：Apple 的控件在「被握住」时一定有反馈，
+// 否则拖起来像在推一块没有质感的东西。
+const dragging = ref(false)
+const released = ref(false)
+let releaseTimer: ReturnType<typeof setTimeout> | undefined
+
+function onDown() {
+  dragging.value = true
+  released.value = false
+  clearTimeout(releaseTimer)
+}
+
+function onUp() {
+  if (!dragging.value) return
+  dragging.value = false
+  released.value = true
+  releaseTimer = setTimeout(() => {
+    released.value = false
+  }, 240)
+}
+
+onBeforeUnmount(() => clearTimeout(releaseTimer))
 </script>
 
 <template>
   <input
     type="range"
     class="ui-slider"
+    :class="{ 'is-dragging': dragging, 'is-released': released }"
     :min="min"
     :max="max"
     :step="step"
@@ -42,6 +66,10 @@ function onInput(e: Event) {
     :disabled="disabled"
     :style="{ '--ui-slider-percent': `${percent}%` }"
     @input="onInput"
+    @pointerdown="onDown"
+    @pointerup="onUp"
+    @pointercancel="onUp"
+    @blur="onUp"
   />
 </template>
 
@@ -83,11 +111,43 @@ function onInput(e: Event) {
   background: var(--td-bg-color-container);
   border: 2px solid var(--td-brand-color);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
-  transition: transform 120ms ease;
+  transition: transform 120ms var(--mc-ease-in-out);
 }
 
 .ui-slider:hover::-webkit-slider-thumb {
   transform: scale(1.1);
+}
+
+/* 拖动中：滑钮放大，轨道加粗（「被握住」的反馈） */
+.ui-slider.is-dragging::-webkit-slider-thumb {
+  transform: scale(1.18);
+}
+
+.ui-slider.is-dragging::-webkit-slider-runnable-track {
+  height: 5px;
+}
+
+/* 松手：带轻微 overshoot 的弹性回位 */
+.ui-slider.is-released::-webkit-slider-thumb {
+  animation: mc-thumb-release var(--mc-dur-base) var(--mc-ease-spring);
+}
+
+@keyframes mc-thumb-release {
+  from {
+    transform: scale(1.18);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-slider.is-released::-webkit-slider-thumb {
+    animation: none;
+  }
+  .ui-slider.is-dragging::-webkit-slider-thumb {
+    transform: none;
+  }
 }
 
 .ui-slider:focus-visible {

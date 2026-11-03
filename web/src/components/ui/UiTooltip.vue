@@ -60,7 +60,7 @@ function close() {
   transform: translate(-50%, -100%);
   max-width: 260px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: rgba(24, 24, 26, 0.94);
   color: #fff;
   font-size: 12px;
@@ -72,7 +72,7 @@ function close() {
 
 .ui-tip-enter-active,
 .ui-tip-leave-active {
-  transition: opacity 100ms ease;
+  transition: opacity 100ms var(--mc-ease-in-out);
 }
 
 .ui-tip-enter-from,

@@ -95,7 +95,7 @@ const prefs = usePrefsStore()
   left: -10vmax;
   top: -14vmax;
   background: rgba(126, 196, 255, 0.42);
-  animation: drift-a 24s ease-in-out infinite alternate;
+  animation: drift-a 24s var(--mc-ease-in-out) infinite alternate;
 }
 
 .glow--b {
@@ -104,7 +104,7 @@ const prefs = usePrefsStore()
   right: -8vmax;
   top: 6vmax;
   background: rgba(96, 226, 200, 0.3);
-  animation: drift-b 30s ease-in-out infinite alternate;
+  animation: drift-b 30s var(--mc-ease-in-out) infinite alternate;
 }
 
 .glow--c {
@@ -113,7 +113,7 @@ const prefs = usePrefsStore()
   left: 24%;
   bottom: -12vmax;
   background: rgba(170, 150, 255, 0.26);
-  animation: drift-c 36s ease-in-out infinite alternate;
+  animation: drift-c 36s var(--mc-ease-in-out) infinite alternate;
 }
 
 @keyframes drift-a {
@@ -152,7 +152,7 @@ const prefs = usePrefsStore()
   margin: -21vmax 0 0 -21vmax;
   border-radius: 50%;
   border: 1px solid rgba(150, 205, 255, 0.28);
-  animation: ripple 9s ease-out infinite;
+  animation: ripple 9s var(--mc-ease-out) infinite;
 }
 
 .wave--2 {
@@ -206,7 +206,7 @@ const prefs = usePrefsStore()
   border-radius: 50%;
   background: rgba(126, 196, 255, 0.22);
   filter: blur(80px);
-  animation: breathe 11s ease-in-out infinite;
+  animation: breathe 11s var(--mc-ease-in-out) infinite;
 }
 
 @keyframes breathe {

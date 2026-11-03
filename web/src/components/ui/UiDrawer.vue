@@ -74,8 +74,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   height: 100%;
   max-width: 100vw;
-  background: var(--td-bg-color-container);
-  box-shadow: -16px 0 48px -24px rgba(0, 0, 0, 0.5);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  box-shadow: var(--mc-elev-3);
 }
 
 .ui-drawer__head {
@@ -102,7 +103,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: transparent;
   color: var(--td-text-color-placeholder);
   font-size: 18px;
@@ -124,7 +125,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 .ui-dw-enter-active,
 .ui-dw-leave-active {
-  transition: opacity 160ms ease;
+  transition: opacity 160ms var(--mc-ease-in-out);
 }
 
 .ui-dw-enter-active .ui-drawer,

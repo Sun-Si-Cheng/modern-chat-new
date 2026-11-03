@@ -147,17 +147,19 @@ onBeforeUnmount(() => {
 .ui-popup__panel {
   position: fixed;
   z-index: 2000;
-  background: var(--td-bg-color-container);
+  /* 浮层材质：半透明 + 模糊，让下方内容透出来，层次比纯色更真 */
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
   border: 1px solid var(--mc-hairline);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.32);
+  border-radius: var(--mc-radius-md);
+  box-shadow: var(--mc-elev-2);
 }
 
 .ui-pop-enter-active,
 .ui-pop-leave-active {
   transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+    opacity 120ms var(--mc-ease-in-out),
+    transform 120ms var(--mc-ease-in-out);
 }
 
 .ui-pop-enter-from,

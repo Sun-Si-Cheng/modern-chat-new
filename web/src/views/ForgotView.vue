@@ -226,7 +226,7 @@ function backToStep1() {
 .auth-card__mark {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--mc-radius-sm);
   flex-shrink: 0;
   display: block;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);

@@ -50,12 +50,16 @@ export default defineConfig({
       'warning-soft': 'color-mix(in srgb, var(--td-warning-color) 12%, transparent)',
       'warning-line': 'color-mix(in srgb, var(--td-warning-color) 40%, transparent)',
     },
+    // 圆角统一走 main.css 的 --mc-radius-*：
+    // 之前这里写死 6/8/10/14，与 --mc-radius-md(10px) 冲突，
+    // 于是「rounded-md」和「var(--mc-radius-md)」给出两种圆角。
     borderRadius: {
-      sm: '6px',
-      DEFAULT: '8px',
-      md: '8px',
-      lg: '10px',
-      xl: '14px',
+      sm: 'var(--mc-radius-sm)',
+      DEFAULT: 'var(--mc-radius-md)',
+      md: 'var(--mc-radius-md)',
+      lg: 'var(--mc-radius-lg)',
+      xl: 'var(--mc-radius-xl)',
+      pill: '999px',
     },
     // 与产品既有的节奏对齐（4 的倍数）
     spacing: {

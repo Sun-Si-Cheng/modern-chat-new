@@ -74,8 +74,8 @@ const themeCls = computed(() => {
 })
 
 const cls = computed(() => [
-  'inline-flex items-center justify-center select-none whitespace-nowrap',
-  'font-[inherit] transition-colors duration-150 outline-none',
+  'ui-btn inline-flex items-center justify-center select-none whitespace-nowrap',
+  'font-[inherit] outline-none',
   'focus-visible:ring-2 focus-visible:ring-brand-ring',
   sizeCls.value,
   themeCls.value,
@@ -99,6 +99,26 @@ function onClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* 按钮：颜色 120ms、按压 100ms。按下轻微内缩，松开自然回位。
+   Apple 的按钮 hover 很安静（只变底色），但按压一定要有触感。 */
+.ui-btn {
+  transition:
+    background-color var(--mc-dur-instant) var(--mc-ease-out),
+    border-color var(--mc-dur-instant) var(--mc-ease-out),
+    color var(--mc-dur-instant) var(--mc-ease-out),
+    transform 100ms var(--mc-ease-out);
+}
+
+.ui-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
 .ui-btn__spin {
   width: 12px;
   height: 12px;

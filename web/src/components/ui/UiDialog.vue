@@ -133,8 +133,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   max-width: 100%;
   max-height: calc(100vh - 48px);
   border-radius: 12px;
-  background: var(--td-bg-color-container);
-  box-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.5);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  box-shadow: var(--mc-elev-3);
   outline: none;
 }
 
@@ -161,7 +162,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mc-radius-sm);
   background: transparent;
   color: var(--td-text-color-placeholder);
   font-size: 18px;
@@ -190,12 +191,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 .ui-dlg-enter-active,
 .ui-dlg-leave-active {
-  transition: opacity 140ms ease;
+  transition: opacity 140ms var(--mc-ease-in-out);
 }
 
 .ui-dlg-enter-active .ui-dialog,
 .ui-dlg-leave-active .ui-dialog {
-  transition: transform 140ms ease;
+  transition: transform 140ms var(--mc-ease-in-out);
 }
 
 .ui-dlg-enter-from,

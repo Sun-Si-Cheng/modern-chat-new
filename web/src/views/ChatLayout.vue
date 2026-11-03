@@ -215,7 +215,7 @@ onUnmounted(() => {
   bottom: 0;
   z-index: 30;
   box-shadow: 0 16px 48px -16px rgba(0, 0, 0, 0.38);
-  animation: mc-drawer-in 160ms ease-out;
+  animation: mc-drawer-in 160ms var(--mc-ease-out);
 }
 
 .mc-pane--left.is-drawer {
@@ -382,7 +382,7 @@ onUnmounted(() => {
   text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-color: transparent;
-  transition: text-decoration-color var(--mc-dur-fast, 120ms) ease;
+  transition: text-decoration-color var(--mc-dur-fast, 120ms) var(--mc-ease-in-out);
 }
 
 .mc-empty__link:hover {

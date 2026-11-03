@@ -46,21 +46,49 @@ a {
   --mc-app-image-scrim: rgba(255, 255, 255, 0.72);
   --mc-auth-image-scrim: rgba(4, 10, 18, 0.45);
 
-  /* 动效令牌：组件里的过渡与入场动画统一从这里取值 */
-  --mc-dur-fast: 120ms;
-  --mc-dur-base: 180ms;
-  --mc-dur-slow: 240ms;
+  /* ===== 动效令牌：组件里的过渡与入场动画统一从这里取值 =====
+     三档时长按「感知」分：状态反馈 / 位移 / 大尺度。
+     裸写 `ease-out` 用的是 cubic-bezier(0,0,.58,1)（起步急、收尾拖），
+     这里统一到重度 ease-out，才有 Apple 那种「快起缓停」。 */
+  --mc-dur-instant: 120ms; /* hover / 按压 / 颜色 */
+  --mc-dur-fast: 120ms; /* 兼容旧引用 */
+  --mc-dur-base: 200ms; /* 位移：面板滑入 / 气泡入场 */
+  --mc-dur-slow: 280ms; /* 大尺度：抽屉 / 模态 */
   --mc-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --mc-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* 回弹专用：只给开关、滑块松手、拖拽释放，不要用在普通位移上 */
+  --mc-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --mc-ease-in: cubic-bezier(0.4, 0, 1, 1);
 
-  /* 圆角：6 控件 / 10 行与按钮 / 14 卡片 */
+  /* 圆角：6 控件 / 10 行与按钮 / 14 卡片 / 20 模态 */
   --mc-radius-sm: 6px;
   --mc-radius-md: 10px;
   --mc-radius-lg: 14px;
+  --mc-radius-xl: 20px;
+  --mc-radius-pill: 999px;
 
   /* 极轻的两级阴影：只拉开层次，不做装饰 */
   --mc-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px -2px rgba(15, 23, 42, 0.06);
   --mc-shadow-2: 0 12px 32px -16px rgba(15, 23, 42, 0.24);
+
+  /* 三级层次：卡片 < 菜单 / popover < 模态 / 抽屉 */
+  --mc-elev-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 6px -2px rgba(15, 23, 42, 0.06);
+  --mc-elev-2: 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+  --mc-elev-3: 0 24px 64px -24px rgba(15, 23, 42, 0.28);
+
+  /* 浮层材质：半透明 + 背景模糊（模糊会透出下方内容，层次更真） */
+  /* 88% 而非 70-80%：太透会把下面的文字轮廓透出来，暗色下显脏；
+     真正的层次感来自模糊，不是「透」 */
+  --mc-material: color-mix(in srgb, var(--td-bg-color-container) 88%, transparent);
+  --mc-blur: saturate(180%) blur(20px);
+}
+
+/* 不支持 backdrop-filter 时回退成不透明：否则浮层会变成「看得到下面文字」的脏面板 */
+@supports not (backdrop-filter: blur(1px)) {
+  :root {
+    --mc-material: var(--td-bg-color-container);
+    --mc-blur: none;
+  }
 }
 
 :root[theme-mode='dark'] {
@@ -72,6 +100,11 @@ a {
   --mc-app-image-scrim: rgba(17, 17, 17, 0.72);
   --mc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 8px -2px rgba(0, 0, 0, 0.28);
   --mc-shadow-2: 0 12px 32px -16px rgba(0, 0, 0, 0.5);
+
+  /* 暗色下阴影要更重才看得出层次（黑底上的黑影对比弱） */
+  --mc-elev-1: 0 1px 2px rgba(0, 0, 0, 0.28), 0 2px 6px -2px rgba(0, 0, 0, 0.32);
+  --mc-elev-2: 0 10px 28px -14px rgba(0, 0, 0, 0.62);
+  --mc-elev-3: 0 28px 72px -28px rgba(0, 0, 0, 0.72);
 }
 
 /* 浏览器表面主题化（craft floor） */
