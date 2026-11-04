@@ -259,9 +259,12 @@ func (h *AdminHandler) Ban(c *gin.Context) {
 		until = time.Now().AddDate(0, 0, req.Days)
 	}
 	u.BannedUntil = &until
+	// 重新封禁时若没填原因，清掉上一次的旧原因（否则会显示与本次封禁无关的说明）
 	if req.Reason != "" {
 		r := req.Reason
 		u.BanReason = &r
+	} else {
+		u.BanReason = nil
 	}
 	u.TokenVersion++
 	if err := h.users.Save(u); err != nil {

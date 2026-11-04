@@ -5,7 +5,7 @@ import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin, MessagePlugin, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
@@ -204,6 +204,11 @@ onMounted(() => {
     .catch(() => undefined)
 })
 
+// 切到「审计」页签时重新拉取：其他站长的操作或页面打开期间的写操作也能及时看到
+watch(tab, (v) => {
+  if (v === 'audits') void fetchAudits()
+})
+
 async function fetchUsers() {
   loading.value = true
   try {
@@ -228,6 +233,16 @@ function onPageChange(info: { current: number; pageSize: number }) {
 }
 
 // ---- 概览 ----
+
+/**
+ * 写操作后的统一刷新。
+ * 审计与概览只在进入页面时拉过一次，操作后不重拉会一直显示旧数据
+ * （典型表现：封禁/公告已经成功，审计页签里却看不到记录）。
+ */
+function refreshAfterWrite() {
+  void fetchStats()
+  void fetchAudits()
+}
 
 async function fetchStats() {
   statsLoading.value = true
@@ -290,8 +305,8 @@ async function kick(row: AdminUserRow) {
   try {
     const r = await adminApi.kick(row.id)
     void MessagePlugin.success(r.wasOnline ? t('admin.kickOk') : t('admin.kickOffline'))
+    refreshAfterWrite()
     void fetchUsers()
-    void fetchStats()
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
@@ -314,7 +329,7 @@ async function doAnnounce() {
     const r = await adminApi.announce(content)
     announceText.value = ''
     void MessagePlugin.success(t('admin.announceOk', { n: r.recipients }))
-    void fetchStats()
+    refreshAfterWrite()
   } catch (e) {
     void MessagePlugin.error(te(e))
   } finally {
@@ -353,8 +368,8 @@ async function setRole(row: AdminUserRow) {
   try {
     await adminApi.setRole(row.id, next)
     void MessagePlugin.success(t('admin.setRoleOk'))
+    refreshAfterWrite()
     void fetchUsers()
-    void fetchStats()
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
@@ -371,8 +386,8 @@ async function purgePlugin(row: AdminPluginRow) {
   try {
     const r = await adminApi.purgePlugin(row.name)
     void MessagePlugin.success(t('admin.purgeOk', { n: r.affected }))
+    refreshAfterWrite()
     void fetchPlugins()
-    void fetchStats()
   } catch (e) {
     void MessagePlugin.error(te(e))
   }
@@ -460,6 +475,7 @@ async function doBan() {
     await adminApi.ban(banTarget.value.id, banDays.value, banReason.value.trim())
     banVisible.value = false
     void MessagePlugin.success(t('admin.banOk'))
+    refreshAfterWrite()
     await fetchUsers()
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -470,6 +486,7 @@ async function unban(row: AdminUserRow) {
   try {
     await adminApi.unban(row.id)
     void MessagePlugin.success(t('admin.unbanOk'))
+    refreshAfterWrite()
     await fetchUsers()
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -487,6 +504,7 @@ async function resetPassword(row: AdminUserRow) {
           header: t('admin.newPasswordTitle'),
           body: t('admin.newPasswordBody', { pwd: r.newPassword }),
         })
+        refreshAfterWrite()
         await fetchUsers()
       } catch (e) {
         void MessagePlugin.error(te(e))
@@ -514,6 +532,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         void MessagePlugin.success(
           next ? t('admin.disabledOk', { n: r.affected }) : t('admin.enabledOk'),
         )
+        refreshAfterWrite()
         await fetchPlugins()
       } catch (e) {
         void MessagePlugin.error(te(e))

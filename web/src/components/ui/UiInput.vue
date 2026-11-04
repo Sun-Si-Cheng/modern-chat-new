@@ -50,6 +50,16 @@ function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLInputElement).value)
 }
 
+/**
+ * 回车触发 enter 事件。
+ * 中文输入法选词时按回车只是上屏，不应触发提交（搜索 / 公告都会误发）。
+ */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  emit('enter')
+}
+
 function onChange(e: Event) {
   emit('change', (e.target as HTMLInputElement).value)
 }
@@ -77,7 +87,7 @@ function clear() {
       :class="inputCls"
       @input="onInput"
       @change="onChange"
-      @keydown.enter.prevent="emit('enter')"
+      @keydown.enter="onKeydown"
     />
     <button
       v-if="clearable && modelValue && !disabled"

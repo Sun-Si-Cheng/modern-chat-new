@@ -18,8 +18,8 @@ import (
 //     只返回 hasXxx 表示"是否已设置"；提交时留空表示不修改。
 //  2. SMTP 保存后立即热生效（Mailer 支持热更新）；Redis 配置在启动时构造限流器，
 //     改完必须重启，接口会显式提示。
-//  3. 对象存储目前**没有消费方**（项目还没有文件上传，头像只接受 URL 字符串），
-//     保存后不会生效，接口用 storageApplied=false 明确告知。
+//  3. 对象存储（S3 兼容）在启动时按库内配置构造，保存后需重启才切换存储实现；
+//     图片 / 语音上传会随新配置写入对象存储。
 
 type smtpSetting struct {
 	Host string `json:"host"`
@@ -190,12 +190,13 @@ func (h *AdminHandler) TestSMTP(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// reloadSMTP 把库里的 SMTP 配置套到 Mailer；库里没配过则保留环境变量配置。
+// reloadSMTP 把库里的 SMTP 配置套到 Mailer；库里没配过（含被站长清空）时回落到环境变量。
+// 注意不能直接 return：否则清空 SMTP 后 Mailer 仍保留旧配置，界面显示"已生效"却还在发信。
 func (h *AdminHandler) reloadSMTP() {
 	// 日志脱敏策略沿用启动配置（环境变量）
 	cfg, ok := h.settings.SMTPConfig(h.cfg.SMTP.LogResetLink)
 	if !ok {
-		return
+		cfg = h.cfg.SMTP
 	}
 	h.mailer.SetConfig(cfg)
 }
