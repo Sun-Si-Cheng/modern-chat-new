@@ -3,6 +3,15 @@
 const BASE = '/api'
 const TOKEN_KEY = 'mc_token'
 
+/**
+ * 请求超时。
+ * 没有超时的话，代理/扩展/后端任一环节挂住时 fetch 会永久 pending，
+ * 页面上的 loading 转圈也就永远不会停。超时后统一抛出可读错误，让调用方的
+ * finally 能正常收尾。
+ */
+const REQUEST_TIMEOUT = 15_000
+const UPLOAD_TIMEOUT = 60_000
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -40,29 +49,42 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const token = getToken()
-  const res = await fetch(buildUrl(path, opts.query), {
-    method: opts.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-  })
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT)
+  try {
+    const res = await fetch(buildUrl(path, opts.query), {
+      method: opts.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      signal: ctrl.signal,
+    })
 
-  // token 失效/被封禁：清登录态回登录页
-  if (res.status === 401) {
-    setToken('')
-    if (!location.pathname.startsWith('/login')) {
-      location.href = '/login'
+    // token 失效/被封禁：清登录态回登录页
+    if (res.status === 401) {
+      setToken('')
+      if (!location.pathname.startsWith('/login')) {
+        location.href = '/login'
+      }
+      throw new ApiError(401, '登录已失效，请重新登录')
     }
-    throw new ApiError(401, '登录已失效，请重新登录')
-  }
 
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
-  if (!res.ok) {
-    throw new ApiError(res.status, typeof data.error === 'string' ? data.error : `请求失败（${res.status}）`)
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+    if (!res.ok) {
+      throw new ApiError(
+        res.status,
+        typeof data.error === 'string' ? data.error : `请求失败（${res.status}）`,
+      )
+    }
+    return data as T
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new ApiError(0, '请求超时，请稍后重试')
+    throw e
+  } finally {
+    clearTimeout(timer)
   }
-  return data as T
 }
 
 /**
@@ -71,26 +93,36 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
  */
 async function upload<T>(path: string, form: FormData): Promise<T> {
   const token = getToken()
-  const res = await fetch(BASE + path, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  })
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), UPLOAD_TIMEOUT)
+  try {
+    const res = await fetch(BASE + path, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+      signal: ctrl.signal,
+    })
 
-  if (res.status === 401) {
-    setToken('')
-    if (!location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, '登录已失效，请重新登录')
-  }
+    if (res.status === 401) {
+      setToken('')
+      if (!location.pathname.startsWith('/login')) location.href = '/login'
+      throw new ApiError(401, '登录已失效，请重新登录')
+    }
 
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      typeof data.error === 'string' ? data.error : `上传失败（${res.status}）`,
-    )
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+    if (!res.ok) {
+      throw new ApiError(
+        res.status,
+        typeof data.error === 'string' ? data.error : `上传失败（${res.status}）`,
+      )
+    }
+    return data as T
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new ApiError(0, '上传超时，请稍后重试')
+    throw e
+  } finally {
+    clearTimeout(timer)
   }
-  return data as T
 }
 
 export const http = {

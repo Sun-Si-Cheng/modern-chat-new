@@ -59,6 +59,8 @@ const exact: Record<string, string> = {
   '插件名不合法': 'Invalid plugin name.',
   '读取上传内容失败': 'Failed to read the upload.',
   '插件拉取失败': 'Failed to fetch the plugin.',
+  '请求超时，请稍后重试': 'Request timed out. Please try again.',
+  '上传超时，请稍后重试': 'Upload timed out. Please try again.',
 }
 
 const prefixes: Array<[string, string]> = [['账号已被封禁', 'Account banned']]

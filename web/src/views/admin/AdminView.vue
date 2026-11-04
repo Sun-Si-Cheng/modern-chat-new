@@ -42,6 +42,11 @@ let settingsLoaded = false
 
 function switchTab(next: AdminTab) {
   if (tab.value === next) return
+  // 切换时先清掉上一条请求的 loading：请求若被代理/扩展挂住，
+  // 表格的遮罩会跟着页签一起残留，看起来像「一直转圈」。
+  loading.value = false
+  pluginsLoading.value = false
+  auditsLoading.value = false
   tab.value = next
   // 数据按页签懒加载：打开页面时只拉当前页签需要的内容，减少首屏请求与渲染压力
   if (next === 'plugins') void fetchPlugins()
