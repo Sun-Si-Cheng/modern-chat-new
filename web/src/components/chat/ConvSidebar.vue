@@ -269,7 +269,8 @@ function onConvMenuSelect(key: string) {
 
 const sortedConvs = computed(() => {
   const pinned = new Set(convStore.pinnedIds)
-  let list = [...convStore.conversations].sort((a, b) => {
+  // type=3 是系统公告会话：公告走弹窗提醒，不在会话列表里展示
+  let list = convStore.conversations.filter((c) => c.type !== 3).sort((a, b) => {
     // 置顶优先，其余按最后消息时间倒序
     const pa = pinned.has(a.id) ? 1 : 0
     const pb = pinned.has(b.id) ? 1 : 0

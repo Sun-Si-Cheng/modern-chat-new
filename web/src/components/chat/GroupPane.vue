@@ -9,7 +9,8 @@ const convStore = useConversationsStore()
 const { t } = useAppI18n()
 
 const items = computed(() => {
-  const convs = convStore.conversations
+  // type=3 系统公告会话不展示在列表里，计数也一并排除
+  const convs = convStore.conversations.filter((c) => c.type !== 3)
   // 计数口径统一为「会话数」，避免未读显示成消息条数而其他项是会话数
   const unread = convs.filter((c) => c.unreadCount > 0).length
   return [

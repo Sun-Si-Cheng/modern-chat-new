@@ -34,7 +34,10 @@ const { t } = useAppI18n()
 
 const profileVisible = ref(false)
 
-const hasUnread = computed(() => convStore.conversations.some((c) => c.unreadCount > 0))
+// 系统公告会话（type=3）不在列表展示，未读也不应点亮图标栏红点
+const hasUnread = computed(() =>
+  convStore.conversations.some((c) => c.type !== 3 && c.unreadCount > 0),
+)
 
 function confirmLogout() {
   profileVisible.value = false

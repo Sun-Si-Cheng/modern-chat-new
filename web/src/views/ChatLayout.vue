@@ -47,8 +47,6 @@ const addFriendVisible = ref(false)
 
 const announcementVisible = ref(false)
 const announcementContent = ref('')
-const announcementConvId = ref<number | null>(null)
-const announcementMessageId = ref(0)
 let offAnnouncement: (() => void) | null = null
 
 const systemConversation = computed(
@@ -59,25 +57,16 @@ const systemConversation = computed(
 function showAnnouncement(id: number, content: string) {
   if (!content) return
   markAnnouncementSeen(id)
-  announcementConvId.value = systemConversation.value?.id ?? null
-  announcementMessageId.value = id
   announcementContent.value = content
   announcementVisible.value = true
+  // 系统通知会话不在列表展示，但未读仍需清掉，避免后端留下永久的未读数
+  const convId = systemConversation.value?.id
+  if (convId) {
+    const conv = convStore.conversations.find((c) => c.id === convId)
+    if (conv) conv.unreadCount = 0
+    void convApi.read(convId, id).catch(() => undefined)
+  }
 }
-
-/** 关掉公告弹窗即视为已读：清掉系统会话的红点，并同步服务端已读水位 */
-function onAnnouncementClosed() {
-  const convId = announcementConvId.value
-  const msgId = announcementMessageId.value
-  if (!convId || !msgId) return
-  const conv = convStore.conversations.find((c) => c.id === convId)
-  if (conv) conv.unreadCount = 0
-  void convApi.read(convId, msgId).catch(() => undefined)
-}
-
-watch(announcementVisible, (visible) => {
-  if (!visible) onAnnouncementClosed()
-})
 
 /** 在线收到公告帧：系统会话已加载时直接弹 */
 function onAnnouncementFrame(frame: ServerFrame) {
