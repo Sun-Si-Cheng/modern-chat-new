@@ -277,6 +277,13 @@ export const useConversationsStore = defineStore('conversations', () => {
     sendFrame({ type: 'recall', messageId })
   }
 
+  /** 「仅自己删除」成功后同步本地缓存（服务端已写删除标记） */
+  function removeMessageLocal(convId: number, messageId: number) {
+    const list = messagesByConv[convId]
+    if (!list) return
+    messagesByConv[convId] = list.filter((m) => m.id !== messageId)
+  }
+
   // ===== 会话筛选（分组栏） =====
 
   const filter = ref<'all' | 'unread' | 'single' | 'group'>('all')
@@ -464,6 +471,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     resend,
     sendTyping,
     recallMessage,
+    removeMessageLocal,
     bindSender,
     handleServerFrame,
     reset,

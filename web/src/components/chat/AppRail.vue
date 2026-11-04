@@ -3,7 +3,7 @@ import UiPopup from '@/components/ui/UiPopup.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin } from 'tdesign-vue-next'
-import { ChatIcon, SettingIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
+import { ChatIcon, SettingIcon, StarIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ProfileCard from './ProfileCard.vue'
@@ -22,7 +22,10 @@ import { useWsStore } from '@/stores/ws'
  * 「加好友 / 新建群聊」是高频动作，常驻在列表栏顶部的「+」里，不藏二级菜单。
  */
 defineProps<{ view: 'chats' | 'contacts' }>()
-const emit = defineEmits<{ 'update:view': [v: 'chats' | 'contacts'] }>()
+const emit = defineEmits<{
+  'update:view': [v: 'chats' | 'contacts']
+  'open-favorites': []
+}>()
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -113,6 +116,16 @@ function setView(v: 'chats' | 'contacts') {
           <UserCircleIcon />
           <i v-if="friendsStore.requestCount > 0" class="app-rail__dot" />
         </span>
+      </button>
+
+      <button
+        type="button"
+        class="app-rail__btn"
+        :aria-label="t('chat.tabFavorites')"
+        :title="t('chat.tabFavorites')"
+        @click="emit('open-favorites')"
+      >
+        <span class="app-rail__icon"><StarIcon /></span>
       </button>
 
     </div>

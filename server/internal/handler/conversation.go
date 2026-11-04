@@ -166,12 +166,106 @@ func (h *ConversationHandler) Messages(c *gin.Context) {
 	if limit < 1 || limit > 50 {
 		limit = 30
 	}
-	rows, hasMore, err := h.msgs.PageBefore(convID, beforeID, limit)
+	rows, hasMore, err := h.msgs.PageBefore(convID, middleware.UserFrom(c).ID, beforeID, limit)
 	if err != nil {
 		internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"messages": rows, "hasMore": hasMore})
+}
+
+// DeleteMessage 仅自己删除：只从调用者的聊天记录移除，对方与其它成员仍可见。
+func (h *ConversationHandler) DeleteMessage(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	msgID, ok := parseMessageID(c)
+	if !ok {
+		return
+	}
+	if !h.requireMember(c, convID) {
+		return
+	}
+	msg, err := h.msgs.ByID(msgID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if msg == nil || msg.ConversationID != convID {
+		fail(c, http.StatusNotFound, "消息不存在")
+		return
+	}
+	me := middleware.UserFrom(c)
+	if err := h.msgs.DeleteForUser(me.ID, msg); err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("message deleted for user", "msg", msgID, "conv", convID, "uid", me.ID)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Favorite 收藏消息。
+func (h *ConversationHandler) Favorite(c *gin.Context) {
+	msg, ok := h.ownedMessage(c)
+	if !ok {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if err := h.msgs.Favorite(me.ID, msg.ID); err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Unfavorite 取消收藏。
+func (h *ConversationHandler) Unfavorite(c *gin.Context) {
+	msg, ok := h.ownedMessage(c)
+	if !ok {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if err := h.msgs.Unfavorite(me.ID, msg.ID); err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Favorites 收藏列表（按收藏时间倒序）。
+func (h *ConversationHandler) Favorites(c *gin.Context) {
+	limit := parseUint64Default(c.Query("limit"), 100)
+	if limit < 1 || limit > 200 {
+		limit = 100
+	}
+	rows, err := h.msgs.Favorites(middleware.UserFrom(c).ID, limit)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
+// ownedMessage 取路径里的消息并校验调用者是该会话成员。
+func (h *ConversationHandler) ownedMessage(c *gin.Context) (*model.Message, bool) {
+	msgID, ok := parseMessageID(c)
+	if !ok {
+		return nil, false
+	}
+	msg, err := h.msgs.ByID(msgID)
+	if err != nil {
+		internal(c, err)
+		return nil, false
+	}
+	if msg == nil {
+		fail(c, http.StatusNotFound, "消息不存在")
+		return nil, false
+	}
+	if !h.requireMember(c, msg.ConversationID) {
+		return nil, false
+	}
+	return msg, true
 }
 
 // Members 成员列表。
@@ -541,6 +635,15 @@ func parseConvID(c *gin.Context) (uint, bool) {
 func parseUint64(s string) uint64 {
 	n, _ := strconv.ParseUint(s, 10, 64)
 	return n
+}
+
+func parseMessageID(c *gin.Context) (uint, bool) {
+	id, err := strconv.ParseUint(c.Param("messageId"), 10, 64)
+	if err != nil || id == 0 {
+		fail(c, http.StatusBadRequest, "消息 id 不合法")
+		return 0, false
+	}
+	return uint(id), true
 }
 
 func parseUint64Default(s string, def int) int {

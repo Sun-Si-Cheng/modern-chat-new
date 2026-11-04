@@ -72,6 +72,24 @@ export interface Message {
   failed?: boolean
 }
 
+// ===== 收藏 =====
+
+/** 收藏夹条目（GET /api/favorites），带消息与会话的展示信息 */
+export interface FavoriteItem {
+  messageId: number
+  conversationId: number
+  convType: ConvType
+  /** 会话名：群聊为群名，单聊为对方昵称 */
+  convName: string
+  senderId: number
+  senderNickname: string
+  msgType: string
+  content: string
+  isRecalled: boolean
+  createdAt: string
+  favoritedAt: string
+}
+
 // ===== 好友 =====
 
 /** 0=待申请 1=已通过 2=已拒绝 */

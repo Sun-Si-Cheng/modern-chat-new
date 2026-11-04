@@ -10,6 +10,7 @@ import AnnouncementDialog from '@/components/chat/AnnouncementDialog.vue'
 import AppRail from '@/components/chat/AppRail.vue'
 import ConvSidebar from '@/components/chat/ConvSidebar.vue'
 import DetailPanel from '@/components/chat/DetailPanel.vue'
+import FavoriteDrawer from '@/components/chat/FavoriteDrawer.vue'
 import GroupPane from '@/components/chat/GroupPane.vue'
 import MessagePane from '@/components/chat/MessagePane.vue'
 import PluginDrawer from '@/components/chat/PluginDrawer.vue'
@@ -21,6 +22,7 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import { useFavoritesStore } from '@/stores/favorites'
 import { useFriendsStore } from '@/stores/friends'
 import { PANE_LIMITS, useLayoutStore, type PaneKey } from '@/stores/layout'
 import { usePluginsStore } from '@/stores/plugins'
@@ -33,6 +35,7 @@ const auth = useAuthStore()
 const layout = useLayoutStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const favoritesStore = useFavoritesStore()
 const pluginsStore = usePluginsStore()
 const host = usePluginHost()
 const ws = useWsStore()
@@ -42,6 +45,7 @@ const { t, te } = useAppI18n()
 const paneView = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
 const addFriendVisible = ref(false)
+const favoriteDrawerVisible = ref(false)
 
 // ===== 全站公告弹窗 =====
 
@@ -127,7 +131,12 @@ onMounted(async () => {
     return
   }
   try {
-    await Promise.all([convStore.loadConversations(), friendsStore.loadAll()])
+    await Promise.all([
+      convStore.loadConversations(),
+      friendsStore.loadAll(),
+      // 收藏 id 供消息菜单判断「收藏 / 取消收藏」，拉取失败不阻断进入聊天
+      favoritesStore.load().catch(() => undefined),
+    ])
     await host.start().catch((e) => console.warn('[plugin host] start failed:', e))
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -147,13 +156,14 @@ onUnmounted(() => {
   offAnnouncement = null
   host.stop()
   pluginsStore.reset()
+  favoritesStore.reset()
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
   <div class="mc-layout" :style="layout.vars" :class="{ 'has-conv': !!convStore.currentConv }">
-    <AppRail v-model:view="paneView" />
+    <AppRail v-model:view="paneView" @open-favorites="favoriteDrawerVisible = true" />
 
     <!-- 分组栏：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->
     <template v-if="paneView === 'chats'">
@@ -246,6 +256,7 @@ onUnmounted(() => {
       :class="{ 'is-drawer': layout.panes.detail.drawer }"
     />
     <PluginDrawer v-model="pluginDrawerVisible" />
+    <FavoriteDrawer v-model="favoriteDrawerVisible" />
     <AddFriendDialog v-model:visible="addFriendVisible" />
     <AnnouncementDialog v-model:visible="announcementVisible" :content="announcementContent" />
 

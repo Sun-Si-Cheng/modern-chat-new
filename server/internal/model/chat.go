@@ -49,6 +49,21 @@ type UserConversation struct {
 	LastReadMessageID uint64     `gorm:"default:0" json:"-"`
 }
 
+// MessageDeletion 「仅自己删除」标记：只从该用户的聊天记录中移除，消息本体保留，
+// 对方与其它成员仍可见。主键 (user_id, message_id) 保证幂等。
+type MessageDeletion struct {
+	UserID    uint      `gorm:"primaryKey;autoIncrement:false" json:"-"`
+	MessageID uint      `gorm:"primaryKey;autoIncrement:false;index" json:"-"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"-"`
+}
+
+// MessageFavorite 消息收藏（每用户独立）。主键 (user_id, message_id) 保证幂等。
+type MessageFavorite struct {
+	UserID    uint      `gorm:"primaryKey;autoIncrement:false" json:"-"`
+	MessageID uint      `gorm:"primaryKey;autoIncrement:false;index" json:"-"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"-"`
+}
+
 // Friend 好友关系：user_id 视角指向 friend_id。
 // status: 0=待申请（user 申请加 friend）1=已通过 2=已拒绝。
 type Friend struct {

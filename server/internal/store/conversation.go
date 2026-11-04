@@ -191,9 +191,39 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	}
 
 	convIDs := make([]uint, 0, len(rows))
-	lastIDs := make([]uint64, 0, len(rows))
+	rawLastIDs := make([]uint64, 0, len(rows))
 	for _, r := range rows {
 		convIDs = append(convIDs, r.ID)
+		if r.LastMessageID != nil {
+			rawLastIDs = append(rawLastIDs, *r.LastMessageID)
+		}
+	}
+
+	// 「仅自己删除」：收件箱指向的最后一条若已被本人删除，回退到仍可见的最近一条，
+	// 否则会话列表会继续显示一条聊天记录里已经看不到的消息。
+	deleted, err := s.deletedLastIDs(userID, rawLastIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if rows[i].LastMessageID == nil || !deleted[*rows[i].LastMessageID] {
+			continue
+		}
+		id, at, err := s.latestVisible(userID, rows[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		if id == 0 {
+			rows[i].LastMessageID = nil
+			rows[i].LastMessageAt = nil
+		} else {
+			rows[i].LastMessageID = &id
+			rows[i].LastMessageAt = at
+		}
+	}
+
+	lastIDs := make([]uint64, 0, len(rows))
+	for _, r := range rows {
 		if r.LastMessageID != nil {
 			lastIDs = append(lastIDs, *r.LastMessageID)
 		}
@@ -243,8 +273,43 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	return out, nil
 }
 
+// deletedLastIDs 返回这些消息里被该用户「仅自己删除」的集合。
+func (s *ConversationStore) deletedLastIDs(userID uint, ids []uint64) (map[uint64]bool, error) {
+	out := make(map[uint64]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var found []uint64
+	if err := s.db.Model(&model.MessageDeletion{}).
+		Where("user_id = ? AND message_id IN ?", userID, ids).
+		Pluck("message_id", &found).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range found {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// latestVisible 该用户在该会话仍可见的最近一条消息（已排除本人删除的消息）。
+func (s *ConversationStore) latestVisible(userID, convID uint) (uint64, *time.Time, error) {
+	var last struct {
+		ID        uint64
+		CreatedAt time.Time
+	}
+	err := s.db.Raw(`
+		SELECT m.id, m.created_at FROM messages m
+		LEFT JOIN message_deletions d ON d.message_id = m.id AND d.user_id = ?
+		WHERE m.conversation_id = ? AND d.message_id IS NULL
+		ORDER BY m.id DESC LIMIT 1`, userID, convID).Scan(&last).Error
+	if err != nil || last.ID == 0 {
+		return 0, nil, err
+	}
+	at := last.CreatedAt
+	return last.ID, &at, nil
+}
+
 // previewMap 消息预览（撤回显示固定文案）。
-// previewInfo 会话列表里的一行预览：内容 + 类型（前端据此把 URL 换成「图片/语音」）
 type previewInfo struct {
 	Content string
 	MsgType string

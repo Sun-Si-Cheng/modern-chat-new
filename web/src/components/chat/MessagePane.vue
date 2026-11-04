@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
@@ -16,14 +16,16 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import { useFavoritesStore } from '@/stores/favorites'
 import { useWsStore } from '@/stores/ws'
 import type { Message, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
+const favorites = useFavoritesStore()
 const ws = useWsStore()
 const host = usePluginHost()
-const { t } = useAppI18n()
+const { t, te } = useAppI18n()
 
 const scrollerRef = ref<{ $el: HTMLElement } | null>(null)
 const stickToBottom = ref(true)
@@ -229,9 +231,14 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   if (m.msgType === 'text' && m.content) {
     items.push({ key: 'copy', label: t('message.copy') })
   }
+  items.push({
+    key: 'favorite',
+    label: favorites.isFavorited(m.id) ? t('message.unfavorite') : t('message.favorite'),
+  })
   if (canRecall(m)) {
     items.push({ key: 'recall', label: t('message.recall'), danger: true, dividerBefore: items.length > 0 })
   }
+  items.push({ key: 'delete', label: t('message.delete'), danger: true, dividerBefore: true })
   return items
 })
 
@@ -261,6 +268,44 @@ function onMenuSelect(key: string) {
   if (!m) return
   if (key === 'copy') void copyMessage(m)
   if (key === 'recall') recall(m)
+  if (key === 'favorite') void toggleFavorite(m)
+  if (key === 'delete') confirmDelete(m)
+}
+
+// ===== 收藏 / 删除（仅自己） =====
+
+async function toggleFavorite(m: Message) {
+  try {
+    if (favorites.isFavorited(m.id)) {
+      await favorites.remove(m.id)
+      void MessagePlugin.success(t('message.unfavoriteOk'))
+    } else {
+      await favorites.add(m.id)
+      void MessagePlugin.success(t('message.favoriteOk'))
+    }
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+function confirmDelete(m: Message) {
+  const dialog = DialogPlugin.confirm({
+    header: t('message.deleteTitle'),
+    body: t('message.deleteBody'),
+    confirmBtn: { content: t('message.delete'), theme: 'danger' },
+    onConfirm: async () => {
+      try {
+        await convApi.deleteMessage(m.conversationId, m.id)
+        convStore.removeMessageLocal(m.conversationId, m.id)
+        // 会话预览与未读可能随之变化，重新拉取列表
+        await convStore.loadConversations().catch(() => undefined)
+        void MessagePlugin.success(t('message.deleteOk'))
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
 }
 
 // ===== 已读回执（单聊） =====

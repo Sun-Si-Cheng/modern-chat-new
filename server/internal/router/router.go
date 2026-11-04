@@ -138,6 +138,7 @@ func New(d Deps) *gin.Engine {
 		authed.POST("/conversations/single", convH.CreateSingle)
 		authed.POST("/conversations/group", convH.CreateGroup)
 		authed.GET("/conversations/:id/messages", convH.Messages)
+		authed.DELETE("/conversations/:id/messages/:messageId", convH.DeleteMessage)
 		authed.GET("/conversations/:id/members", convH.Members)
 		authed.POST("/conversations/:id/join", convH.Join)
 		authed.POST("/conversations/:id/leave", convH.Leave)
@@ -145,6 +146,11 @@ func New(d Deps) *gin.Engine {
 		authed.PATCH("/conversations/:id", convH.Rename)
 		authed.POST("/conversations/:id/kick", convH.Kick)
 		authed.POST("/conversations/:id/transfer", convH.Transfer)
+
+		// 收藏夹（消息收藏）
+		authed.GET("/favorites", convH.Favorites)
+		authed.POST("/messages/:messageId/favorite", convH.Favorite)
+		authed.DELETE("/messages/:messageId/favorite", convH.Unfavorite)
 
 		authed.GET("/plugins", pluginH.List)
 		authed.GET("/plugins/active", pluginH.Active)

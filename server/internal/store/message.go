@@ -42,8 +42,12 @@ func (s *MessageStore) ByClientMsg(convID uint, clientMsgID string) (*model.Mess
 }
 
 // PageBefore 游标分页：按 id 降序，beforeID=0 表示从最新开始。返回 (页, 是否还有更早)。
-func (s *MessageStore) PageBefore(convID uint, beforeID uint64, limit int) ([]model.Message, bool, error) {
-	q := s.db.Where("conversation_id = ?", convID)
+// viewerID 的「仅自己删除」记录会被排除，避免分页里再次出现被删消息。
+func (s *MessageStore) PageBefore(convID, viewerID uint, beforeID uint64, limit int) ([]model.Message, bool, error) {
+	q := s.db.Where(
+		"conversation_id = ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id)",
+		convID, viewerID,
+	)
 	if beforeID > 0 {
 		q = q.Where("id < ?", beforeID)
 	}
@@ -149,6 +153,110 @@ func (s *MessageStore) InboxOf(userID, convID uint) (*model.UserConversation, er
 		return nil, err
 	}
 	return &uc, nil
+}
+
+// DeleteForUser 「仅自己删除」：写入删除标记，并回退该用户的收件箱预览/未读。
+// 消息本体不删除，对方仍可见；同一消息重复删除是幂等的。
+func (s *MessageStore) DeleteForUser(userID uint, msg *model.Message) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&model.MessageDeletion{UserID: userID, MessageID: msg.ID}).Error; err != nil {
+			return err
+		}
+		// 删掉的是自己尚未读过的他人消息：未读 -1（与撤回的处理口径一致）
+		if msg.SenderID != userID {
+			if err := tx.Model(&model.UserConversation{}).
+				Where(
+					"user_id = ? AND conversation_id = ? AND unread_count > 0 AND last_read_message_id < ?",
+					userID, msg.ConversationID, msg.ID,
+				).
+				UpdateColumn("unread_count", gorm.Expr("GREATEST(unread_count - 1, 0)")).Error; err != nil {
+				return err
+			}
+		}
+		// 回退收件箱的「最后一条消息」到该用户仍然可见的最近一条
+		var last struct {
+			ID        uint64
+			CreatedAt time.Time
+		}
+		if err := tx.Raw(`
+			SELECT m.id, m.created_at FROM messages m
+			LEFT JOIN message_deletions d ON d.message_id = m.id AND d.user_id = ?
+			WHERE m.conversation_id = ? AND d.message_id IS NULL
+			ORDER BY m.id DESC LIMIT 1`, userID, msg.ConversationID).Scan(&last).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{"last_message_id": nil, "last_message_at": nil}
+		if last.ID > 0 {
+			updates["last_message_id"] = last.ID
+			updates["last_message_at"] = last.CreatedAt
+		}
+		return tx.Model(&model.UserConversation{}).
+			Where("user_id = ? AND conversation_id = ?", userID, msg.ConversationID).
+			Updates(updates).Error
+	})
+}
+
+// Favorite 收藏消息（幂等）。
+func (s *MessageStore) Favorite(userID uint, messageID uint) error {
+	return s.db.Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&model.MessageFavorite{UserID: userID, MessageID: messageID}).Error
+}
+
+// Unfavorite 取消收藏（幂等）。
+func (s *MessageStore) Unfavorite(userID uint, messageID uint) error {
+	return s.db.Where("user_id = ? AND message_id = ?", userID, messageID).
+		Delete(&model.MessageFavorite{}).Error
+}
+
+// Favorites 收藏列表（按收藏时间倒序）。单聊没有群名，用对方昵称作为会话名。
+func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, error) {
+	var rows []model.FavoriteView
+	if err := s.db.Table("message_favorites f").
+		Select(`f.message_id, m.conversation_id, c.type AS conv_type,
+			COALESCE(c.name, '') AS conv_name, m.sender_id, u.nickname AS sender_nickname,
+			m.msg_type, m.content, m.is_recalled, m.created_at, f.created_at AS favorited_at`).
+		Joins("JOIN messages m ON m.id = f.message_id").
+		Joins("JOIN conversations c ON c.id = m.conversation_id").
+		Joins("JOIN users u ON u.id = m.sender_id").
+		Where("f.user_id = ?", userID).
+		Order("f.created_at DESC").
+		Limit(limit).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	// 单聊会话名：对方昵称
+	convIDs := make([]uint, 0, len(rows))
+	for _, r := range rows {
+		if r.ConvType == 1 && r.ConversationID > 0 {
+			convIDs = append(convIDs, r.ConversationID)
+		}
+	}
+	if len(convIDs) > 0 {
+		var peers []struct {
+			ConversationID uint   `gorm:"column:conversation_id"`
+			Nickname       string `gorm:"column:nickname"`
+		}
+		if err := s.db.Table("conversation_members cm").
+			Select("cm.conversation_id, u.nickname").
+			Joins("JOIN users u ON u.id = cm.user_id").
+			Where("cm.conversation_id IN ? AND cm.user_id <> ?", convIDs, userID).
+			Scan(&peers).Error; err != nil {
+			return nil, err
+		}
+		peerNames := make(map[uint]string, len(peers))
+		for _, p := range peers {
+			if peerNames[p.ConversationID] == "" {
+				peerNames[p.ConversationID] = p.Nickname
+			}
+		}
+		for i := range rows {
+			if rows[i].ConvType == 1 {
+				rows[i].ConvName = peerNames[rows[i].ConversationID]
+			}
+		}
+	}
+	return rows, nil
 }
 
 // Count 消息总数（含已撤回）。

@@ -38,6 +38,21 @@ type ConversationView struct {
 	UnreadCount     int     `json:"unreadCount"`
 }
 
+// FavoriteView 收藏列表行（GET /api/favorites）。
+type FavoriteView struct {
+	MessageID      uint64    `json:"messageId"`
+	ConversationID uint      `json:"conversationId"`
+	ConvType       int8      `json:"convType"`
+	ConvName       string    `json:"convName"`
+	SenderID       uint      `json:"senderId"`
+	SenderNickname string    `json:"senderNickname"`
+	MsgType        string    `json:"msgType"`
+	Content        string    `json:"content"`
+	IsRecalled     bool      `json:"isRecalled"`
+	CreatedAt      time.Time `json:"createdAt"`
+	FavoritedAt    time.Time `json:"favoritedAt"`
+}
+
 // FriendItemView 好友列表行（GET /api/friends）。
 type FriendItemView struct {
 	ID        uint      `json:"id"` // 关系记录 id
