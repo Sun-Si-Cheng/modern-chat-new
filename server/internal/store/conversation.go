@@ -423,3 +423,68 @@ func (s *ConversationStore) EnsureSystemConversation(name string) (*model.Conver
 	}
 	return &c, nil
 }
+
+// MaxGroupMembers 群成员上限（控制 fan-out 写放大）。
+const MaxGroupMembers int64 = 200
+
+// DefaultGroupName 初始公开群名称：所有人都可以加入。
+const DefaultGroupName = "公共聊天室"
+
+// EnsureDefaultGroup 取初始公开群（type=2、无群主），不存在则创建。
+// created=true 表示本次新建，调用方据此决定是否把现有用户批量加入。
+// 不设置 owner：任何成员都能自由退群，也不会出现「群主退不了」的例外。
+func (s *ConversationStore) EnsureDefaultGroup() (*model.Conversation, bool, error) {
+	var c model.Conversation
+	err := s.db.Where("type = 2 AND name = ?", DefaultGroupName).Order("id ASC").First(&c).Error
+	if err == nil {
+		return &c, false, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+	name := DefaultGroupName
+	c = model.Conversation{Type: 2, Name: &name}
+	if err := s.db.Create(&c).Error; err != nil {
+		return nil, false, err
+	}
+	return &c, true, nil
+}
+
+// BootstrapDefaultGroup 启动时创建初始公开群，并把现有用户批量加入。
+// 只在「首次创建」时批量加入：用户之后主动退群，不会被下次启动重新拉回。
+func BootstrapDefaultGroup(db *gorm.DB) error {
+	convs := NewConversationStore(db)
+	users := NewUserStore(db)
+	msgs := NewMessageStore(db)
+
+	conv, created, err := convs.EnsureDefaultGroup()
+	if err != nil {
+		return err
+	}
+	if !created {
+		return nil
+	}
+	ids, err := users.AllIDs()
+	if err != nil {
+		return err
+	}
+	// 初始群同样受成员上限约束，超出部分仍可后续手动加入（若已满则需等空位）。
+	if int64(len(ids)) > MaxGroupMembers {
+		ids = ids[:MaxGroupMembers]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	members := make([]model.ConversationMember, 0, len(ids))
+	inbox := make([]model.UserConversation, 0, len(ids))
+	for _, id := range ids {
+		members = append(members, model.ConversationMember{
+			ConversationID: conv.ID, UserID: id, Role: "member",
+		})
+		inbox = append(inbox, model.UserConversation{UserID: id, ConversationID: conv.ID})
+	}
+	if err := convs.AddMembersIgnoreDuplicate(members); err != nil {
+		return err
+	}
+	return msgs.UpsertInbox(inbox)
+}

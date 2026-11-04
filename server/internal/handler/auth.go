@@ -26,10 +26,19 @@ type AuthHandler struct {
 	users  *store.UserStore
 	resets *store.PasswordResetStore
 	mailer *service.Mailer
+	convs  *store.ConversationStore
+	msgs   *store.MessageStore
 }
 
-func NewAuthHandler(cfg config.Config, users *store.UserStore, resets *store.PasswordResetStore, mailer *service.Mailer) *AuthHandler {
-	return &AuthHandler{cfg: cfg, users: users, resets: resets, mailer: mailer}
+func NewAuthHandler(
+	cfg config.Config,
+	users *store.UserStore,
+	resets *store.PasswordResetStore,
+	mailer *service.Mailer,
+	convs *store.ConversationStore,
+	msgs *store.MessageStore,
+) *AuthHandler {
+	return &AuthHandler{cfg: cfg, users: users, resets: resets, mailer: mailer, convs: convs, msgs: msgs}
 }
 
 type credentials struct {
@@ -108,6 +117,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// 新用户自动加入初始公开群；失败只记日志，不阻断注册
+	h.joinDefaultGroup(u.ID)
+
 	token, err := middleware.IssueToken(u.ID, u.TokenVersion, h.cfg.JWTSecret)
 	if err != nil {
 		internal(c, err)
@@ -115,6 +127,24 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	slog.Info("user registered", "uid", u.ID, "role", u.Role)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
+}
+
+// joinDefaultGroup 新注册用户自动加入初始公开群（「公共聊天室」）。
+func (h *AuthHandler) joinDefaultGroup(userID uint) {
+	conv, _, err := h.convs.EnsureDefaultGroup()
+	if err != nil {
+		slog.Warn("default group ensure failed", "uid", userID, "err", err.Error())
+		return
+	}
+	if err := h.convs.JoinGroup(conv.ID, userID, store.MaxGroupMembers); err != nil {
+		if !errors.Is(err, store.ErrGroupFull) {
+			slog.Warn("join default group failed", "uid", userID, "err", err.Error())
+		}
+		return
+	}
+	if err := h.msgs.UpsertInbox([]model.UserConversation{{UserID: userID, ConversationID: conv.ID}}); err != nil {
+		slog.Warn("default group inbox failed", "uid", userID, "err", err.Error())
+	}
 }
 
 // Login 登录；封禁用户直接拒绝。

@@ -59,6 +59,11 @@ func main() {
 		}
 	}
 
+	// 初始公开群：首次启动时创建并把现有用户加入；之后注册的新用户自动加入
+	if err := store.BootstrapDefaultGroup(db); err != nil {
+		slog.Warn("bootstrap default group failed", "err", err.Error())
+	}
+
 	// 限流后端：优先 Redis（多实例共享配额），不可用时降级为内存
 	var (
 		authLimiter   middleware.Limiter

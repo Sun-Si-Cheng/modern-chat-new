@@ -85,7 +85,7 @@ func New(d Deps) *gin.Engine {
 		slog.Info("smtp config loaded from database", "host", cfg.Host, "port", cfg.Port)
 	}
 
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs)

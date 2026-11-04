@@ -14,8 +14,7 @@ import (
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
-// maxGroupMembers 群成员上限（§3.2）。
-const maxGroupMembers int64 = 200
+// 群成员上限见 store.MaxGroupMembers（§3.2）。
 
 // ConversationHandler 会话与消息 REST。
 type ConversationHandler struct {
@@ -221,7 +220,7 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 	}
 	// 原子入群：容量判断与插入在同一事务内（SELECT ... FOR UPDATE 锁会话行），
 	// 修复并发入群可突破 200 人上限的缺陷。
-	if err := h.convs.JoinGroup(convID, me.ID, maxGroupMembers); err != nil {
+	if err := h.convs.JoinGroup(convID, me.ID, store.MaxGroupMembers); err != nil {
 		if errors.Is(err, store.ErrGroupFull) {
 			fail(c, http.StatusUnprocessableEntity, "群成员已满（200 人上限）")
 			return
