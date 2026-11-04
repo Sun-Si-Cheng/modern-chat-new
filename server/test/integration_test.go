@@ -49,7 +49,7 @@ func setup(t *testing.T) *env {
 	if err := store.AutoMigrate(db); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	for _, table := range []string{"password_resets", "plugins", "friends", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
+	for _, table := range []string{"system_settings", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("清理表 %s: %v", table, err)
 		}
@@ -64,12 +64,20 @@ func setup(t *testing.T) *env {
 	go hub.Run()
 
 	gin.SetMode(gin.TestMode)
+	// 系统设置是路由构造的必需依赖（SMTP 配置在启动时从库里覆盖环境变量），
+	// 少了它 router.New 会在启动阶段解引用 nil。
+	jwtSecret := strings.Repeat("t", 32)
+	box, err := store.NewSecretBox(jwtSecret)
+	if err != nil {
+		t.Fatalf("secret box: %v", err)
+	}
 	r := router.New(router.Deps{
-		Cfg:      config.Config{JWTSecret: strings.Repeat("t", 32), PluginMaxSize: 1 << 20},
+		Cfg:      config.Config{JWTSecret: jwtSecret, PluginMaxSize: 1 << 20},
 		DB:       db,
 		Mailer:   service.NewMailer(config.SMTPConfig{}),
 		Notifier: hub,
 		WS:       hub,
+		Settings: store.NewSettingStore(db, box),
 		// 两个限流器都必需：Deps.PluginLimiter 为零值时，RateLimit 会在请求路径上
 		// 调用 nil 接口方法直接 panic（gin.Recovery 兜成 500），插件用例永远过不了。
 		AuthLimiter:   middleware.NewLimiterStore(1000, 1000),
@@ -509,6 +517,248 @@ func TestFullChatFlow(t *testing.T) {
 	}
 	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/admin/users/%d/unban", userA.ID), adminTok, ""); code != 200 {
 		t.Fatalf("unban 应 200")
+	}
+}
+
+// TestUnreadReadAndDeleteFlow 未读/已读与新功能（仅自己删除、收藏）的交互验证：
+//   - 未读：收到消息未读 +1；
+//   - 已读上报：未读清零，发送方收到 read 帧；
+//   - 仅自己删除：删除未读消息回退未读，最后一条被删后会话预览回退，
+//     但对方聊天记录不受影响；
+//   - 收藏：仅对本人生效，取消收藏后列表为空。
+func TestUnreadReadAndDeleteFlow(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "ur-admin")
+	tokenA, userA := register(t, e, "ur-alice")
+	tokenB, userB := register(t, e, "ur-bob")
+
+	// A、B 成为好友并发起单聊
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", tokenA,
+		fmt.Sprintf(`{"toUsername":%q}`, userB.Username)); code != http.StatusOK {
+		t.Fatalf("apply status = %d", code)
+	}
+	_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", tokenB, "")
+	reqs, _ := reqsAny.([]any)
+	if len(reqs) != 1 {
+		t.Fatalf("B 应收到 1 条好友申请，got %d", len(reqs))
+	}
+	reqID := uint(reqs[0].(map[string]any)["id"].(float64))
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", tokenB,
+		fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+		t.Fatalf("handle status = %d", code)
+	}
+	code, convOut := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("createSingle status = %d", code)
+	}
+	convID := uint64(convOut["id"].(float64))
+
+	connA := wsDial(t, e, tokenA)
+	connB := wsDial(t, e, tokenB)
+
+	// 会话列表读取辅助：返回未读数、最后消息 id（无则 0）、预览文案
+	type convState struct {
+		unread      float64
+		lastMessage float64
+		preview     string
+	}
+	stateOf := func(token string) convState {
+		t.Helper()
+		_, listAny := apiAny(t, e, "GET", "/api/conversations", token, "")
+		list, _ := listAny.([]any)
+		for _, cv := range list {
+			m, _ := cv.(map[string]any)
+			if m == nil || uint64(m["id"].(float64)) != convID {
+				continue
+			}
+			st := convState{unread: m["unreadCount"].(float64)}
+			if v, ok := m["lastMessageId"].(float64); ok {
+				st.lastMessage = v
+			}
+			if v, ok := m["lastMessagePreview"].(string); ok {
+				st.preview = v
+			}
+			return st
+		}
+		t.Fatalf("会话 %d 不在列表中", convID)
+		return convState{}
+	}
+	messageIDs := func(token string) []uint64 {
+		t.Helper()
+		code, page := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=20", convID), token, "")
+		if code != http.StatusOK {
+			t.Fatalf("messages status = %d", code)
+		}
+		var ids []uint64
+		// 空结果时服务端返回 null，不能直接断言为数组
+		if list, ok := page["messages"].([]any); ok {
+			for _, it := range list {
+				ids = append(ids, uint64(it.(map[string]any)["id"].(float64)))
+			}
+		}
+		return ids
+	}
+	contains := func(ids []uint64, want uint64) bool {
+		for _, id := range ids {
+			if id == want {
+				return true
+			}
+		}
+		return false
+	}
+	// apiAny 对空数组返回 nil（JSON null），统一转成切片再断言
+	listOf := func(v any) []any {
+		l, _ := v.([]any)
+		return l
+	}
+
+	// A 发消息 → B 未读 1
+	send := func(content, clientID string) uint64 {
+		t.Helper()
+		if err := connA.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(
+				`{"type":"chat","convId":%d,"clientMsgId":%q,"content":%q}`,
+				convID, clientID, content,
+			))); err != nil {
+			t.Fatalf("ws send: %v", err)
+		}
+		echo := readFrame(t, connA, "message")
+		readFrame(t, connB, "message")
+		return uint64(echo["id"].(float64))
+	}
+	msg1 := send("第一条", "ur-msg-1")
+	if st := stateOf(tokenB); st.unread != 1 || uint64(st.lastMessage) != msg1 {
+		t.Fatalf("B 未读/预览异常：%+v", st)
+	}
+
+	// B 上报已读 → 未读清零，A 收到 read 帧
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/read", convID), tokenB,
+		fmt.Sprintf(`{"upToId":%d}`, msg1))
+	if code != http.StatusOK {
+		t.Fatalf("read status = %d", code)
+	}
+	if f := readFrame(t, connA, "read"); uint64(f["upToId"].(float64)) != msg1 {
+		t.Fatalf("read 帧异常: %v", f)
+	}
+	if st := stateOf(tokenB); st.unread != 0 {
+		t.Fatalf("已读后 B 未读应为 0，got %v", st.unread)
+	}
+	// 重复上报已读：幂等，不报错
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/read", convID), tokenB,
+		fmt.Sprintf(`{"upToId":%d}`, msg1)); code != http.StatusOK {
+		t.Fatalf("重复已读应 200，got %d", code)
+	}
+
+	msg2 := send("第二条", "ur-msg-2")
+	msg3 := send("第三条", "ur-msg-3")
+	if st := stateOf(tokenB); st.unread != 2 || uint64(st.lastMessage) != msg3 || st.preview != "第三条" {
+		t.Fatalf("两条新消息后 B 状态异常：%+v", st)
+	}
+	if st := stateOf(tokenA); st.unread != 0 || uint64(st.lastMessage) != msg3 {
+		t.Fatalf("发送方 A 不应有未读：%+v", st)
+	}
+
+	// B 删除未读消息 msg3：未读回退到 1，B 预览回退到 msg2，A 不受影响
+	if code, _ := apiJSON(t, e, "DELETE",
+		fmt.Sprintf("/api/conversations/%d/messages/%d", convID, msg3), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("delete msg3 status = %d", code)
+	}
+	if st := stateOf(tokenB); st.unread != 1 || uint64(st.lastMessage) != msg2 || st.preview != "第二条" {
+		t.Fatalf("删除 msg3 后 B 状态异常：%+v", st)
+	}
+	if st := stateOf(tokenA); uint64(st.lastMessage) != msg3 || st.preview != "第三条" {
+		t.Fatalf("B 的删除不应影响 A：%+v", st)
+	}
+	if ids := messageIDs(tokenB); contains(ids, msg3) || len(ids) != 2 {
+		t.Fatalf("B 的消息列表应排除 msg3，got %v", ids)
+	}
+	if ids := messageIDs(tokenA); !contains(ids, msg3) || len(ids) != 3 {
+		t.Fatalf("A 的消息列表应保留 msg3，got %v", ids)
+	}
+
+	// B 删除 msg2（此时已是最后一条可见消息）：未读清零，预览回退到 msg1
+	if code, _ := apiJSON(t, e, "DELETE",
+		fmt.Sprintf("/api/conversations/%d/messages/%d", convID, msg2), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("delete msg2 status = %d", code)
+	}
+	if st := stateOf(tokenB); st.unread != 0 || uint64(st.lastMessage) != msg1 || st.preview != "第一条" {
+		t.Fatalf("删除 msg2 后 B 状态异常：%+v", st)
+	}
+
+	// A 删除自己的 msg1（非最后一条）：仅影响 A 自己，A 的预览仍是 msg3，B 不受影响
+	if code, _ := apiJSON(t, e, "DELETE",
+		fmt.Sprintf("/api/conversations/%d/messages/%d", convID, msg1), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("delete own msg1 status = %d", code)
+	}
+	if st := stateOf(tokenA); uint64(st.lastMessage) != msg3 || st.preview != "第三条" {
+		t.Fatalf("A 删除非最后一条消息后预览应保持第三条：%+v", st)
+	}
+	if ids := messageIDs(tokenA); len(ids) != 2 || contains(ids, msg1) {
+		t.Fatalf("A 的消息列表应排除 msg1，got %v", ids)
+	}
+	if ids := messageIDs(tokenB); len(ids) != 1 || !contains(ids, msg1) {
+		t.Fatalf("B 仍应可见 msg1（B 自己删过的 msg2/msg3 不回来），got %v", ids)
+	}
+	// 重复删除：幂等
+	if code, _ := apiJSON(t, e, "DELETE",
+		fmt.Sprintf("/api/conversations/%d/messages/%d", convID, msg1), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("重复删除应 200，got %d", code)
+	}
+
+	// A 删光自己可见的剩余消息：A 的会话预览清空，B 仍能看到全部 3 条
+	for _, id := range []uint64{msg2, msg3} {
+		if code, _ := apiJSON(t, e, "DELETE",
+			fmt.Sprintf("/api/conversations/%d/messages/%d", convID, id), tokenA, ""); code != http.StatusOK {
+			t.Fatalf("A 删除 msg%d status = %d", id, code)
+		}
+	}
+	if st := stateOf(tokenA); st.unread != 0 || uint64(st.lastMessage) != 0 || st.preview != "" {
+		t.Fatalf("A 删光消息后会话应无预览：%+v", st)
+	}
+	if ids := messageIDs(tokenA); len(ids) != 0 {
+		t.Fatalf("A 的消息列表应为空，got %v", ids)
+	}
+	if ids := messageIDs(tokenB); len(ids) != 1 || !contains(ids, msg1) {
+		t.Fatalf("A 的删除不应影响 B 可见的 msg1，got %v", ids)
+	}
+
+	// 收藏：B 收藏 msg1（msg1 对 B 仍可见），列表带会话名；A 的收藏夹不受影响
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/favorite", msg1), tokenB, "")
+	if code != http.StatusOK {
+		t.Fatalf("favorite status = %d", code)
+	}
+	_, favAny := apiAny(t, e, "GET", "/api/favorites", tokenB, "")
+	favs := listOf(favAny)
+	if len(favs) != 1 {
+		t.Fatalf("B 收藏夹应有 1 条，got %v", favAny)
+	}
+	item := favs[0].(map[string]any)
+	if uint64(item["messageId"].(float64)) != msg1 ||
+		uint64(item["conversationId"].(float64)) != convID ||
+		item["convName"] != userA.Nickname {
+		t.Fatalf("收藏条目异常：%v", item)
+	}
+	_, favAAny := apiAny(t, e, "GET", "/api/favorites", tokenA, "")
+	if len(listOf(favAAny)) != 0 {
+		t.Fatalf("A 的收藏夹不应受 B 影响，got %v", favAAny)
+	}
+	// 重复收藏幂等
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/favorite", msg1), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("重复收藏应 200，got %d", code)
+	}
+	if _, favAny2 := apiAny(t, e, "GET", "/api/favorites", tokenB, ""); len(listOf(favAny2)) != 1 {
+		t.Fatalf("重复收藏不应产生多条记录")
+	}
+	// 取消收藏：列表清空，取消不存在的收藏同样幂等
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/messages/%d/favorite", msg1), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("unfavorite status = %d", code)
+	}
+	if _, favAny3 := apiAny(t, e, "GET", "/api/favorites", tokenB, ""); len(listOf(favAny3)) != 0 {
+		t.Fatalf("取消收藏后收藏夹应为空")
+	}
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/messages/%d/favorite", msg1), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("重复取消收藏应 200，got %d", code)
 	}
 }
 
