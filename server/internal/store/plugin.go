@@ -78,7 +78,9 @@ func (s *PluginStore) AdminList(page, pageSize int) ([]AdminRow, int64, error) {
 	if err := s.db.Model(&model.Plugin{}).Distinct("name").Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var rows []AdminRow
+	// 必须初始化为空切片而不是 nil：Raw().Scan 在无结果时不会改写目标，
+	// nil slice 经 encoding/json 会变成 null，前端表格拿到 data=null 会直接报错。
+	rows := make([]AdminRow, 0)
 	// 修复缺陷：原 MAX(version) 是字符串比较，'9.0.0' > '10.0.0'，会展示过期版本号。
 	// 这里按语义版本数值化排序后取第一：major*1000000 + minor*1000 + patch。
 	// GREATEST 与 COALESCE 防止 GROUP_CONCAT 生成 NULL（无行时不返回行，安全）。

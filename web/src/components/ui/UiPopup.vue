@@ -20,6 +20,13 @@ const props = withDefaults(
 
 const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
 
+/**
+ * 组件有两个根节点（触发元素 + Teleport 浮层），默认不会自动继承 attrs。
+ * 手动把 attrs 绑到触发元素上，既消除 Vue 的 "Extraneous non-props attributes"
+ * 警告，也让外部传入的 style（例如 UiSelect 的宽度）真正生效。
+ */
+defineOptions({ inheritAttrs: false })
+
 const anchorEl = ref<HTMLElement | null>(null)
 const panelEl = ref<HTMLElement | null>(null)
 const innerOpen = ref(false)
@@ -122,7 +129,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <span ref="anchorEl" class="ui-popup__anchor" @click="toggle">
+  <span ref="anchorEl" class="ui-popup__anchor" v-bind="$attrs" @click="toggle">
     <slot />
   </span>
 

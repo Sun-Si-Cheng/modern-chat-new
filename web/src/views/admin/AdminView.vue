@@ -246,7 +246,7 @@ async function fetchUsers() {
       role: roleFilter.value,
       status: statusFilter.value,
     })
-    users.value = page.users
+    users.value = page.users ?? []
     pagination.value.total = page.total
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -431,7 +431,7 @@ async function fetchAudits() {
       auditPagination.value.current,
       auditPagination.value.pageSize,
     )
-    audits.value = page.audits
+    audits.value = page.audits ?? []
     auditPagination.value.total = page.total
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -469,7 +469,8 @@ async function fetchPlugins() {
       pluginPagination.value.current,
       pluginPagination.value.pageSize,
     )
-    plugins.value = page.plugins
+    // 后端空列表历史上可能序列化成 null（Go nil slice），TDesign 表格拿到 null 会抛错
+    plugins.value = page.plugins ?? []
     pluginPagination.value.total = page.total
   } catch (e) {
     void MessagePlugin.error(te(e))
