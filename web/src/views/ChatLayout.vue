@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { ChatDoubleFilledIcon, UsergroupIcon } from 'tdesign-icons-vue-next'
 
 import AddFriendDialog from '@/components/chat/AddFriendDialog.vue'
+import AnnouncementDialog from '@/components/chat/AnnouncementDialog.vue'
 import AppRail from '@/components/chat/AppRail.vue'
 import ConvSidebar from '@/components/chat/ConvSidebar.vue'
 import DetailPanel from '@/components/chat/DetailPanel.vue'
@@ -14,13 +15,17 @@ import MessagePane from '@/components/chat/MessagePane.vue'
 import PluginDrawer from '@/components/chat/PluginDrawer.vue'
 import PaneResizer from '@/components/common/PaneResizer.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
+import { lastSeenAnnouncementId, markAnnouncementSeen } from '@/composables/announcement'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
 import { PANE_LIMITS, useLayoutStore, type PaneKey } from '@/stores/layout'
 import { usePluginsStore } from '@/stores/plugins'
+import { useWsStore } from '@/stores/ws'
+import type { ServerFrame } from '@/types/proto'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,12 +35,71 @@ const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
 const pluginsStore = usePluginsStore()
 const host = usePluginHost()
+const ws = useWsStore()
 const { t, te } = useAppI18n()
 
 /** 第二栏视图：会话列表 / 联系人（由图标栏驱动） */
 const paneView = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
 const addFriendVisible = ref(false)
+
+// ===== 全站公告弹窗 =====
+
+const announcementVisible = ref(false)
+const announcementContent = ref('')
+const announcementConvId = ref<number | null>(null)
+const announcementMessageId = ref(0)
+let offAnnouncement: (() => void) | null = null
+
+const systemConversation = computed(
+  () => convStore.conversations.find((c) => c.type === 3) ?? null,
+)
+
+/** 有新公告时弹窗；已读位置存本地，同一条公告只弹一次 */
+function showAnnouncement(id: number, content: string) {
+  if (!content) return
+  markAnnouncementSeen(id)
+  announcementConvId.value = systemConversation.value?.id ?? null
+  announcementMessageId.value = id
+  announcementContent.value = content
+  announcementVisible.value = true
+}
+
+/** 关掉公告弹窗即视为已读：清掉系统会话的红点，并同步服务端已读水位 */
+function onAnnouncementClosed() {
+  const convId = announcementConvId.value
+  const msgId = announcementMessageId.value
+  if (!convId || !msgId) return
+  const conv = convStore.conversations.find((c) => c.id === convId)
+  if (conv) conv.unreadCount = 0
+  void convApi.read(convId, msgId).catch(() => undefined)
+}
+
+watch(announcementVisible, (visible) => {
+  if (!visible) onAnnouncementClosed()
+})
+
+/** 在线收到公告帧：系统会话已加载时直接弹 */
+function onAnnouncementFrame(frame: ServerFrame) {
+  if (frame.type !== 'message' || !systemConversation.value) return
+  if (frame.convId !== systemConversation.value.id) return
+  // 自己发出的公告不弹（站长发完公告回到聊天页时不该看到自己的公告）
+  if (frame.from.id === auth.user?.id) {
+    markAnnouncementSeen(frame.id)
+    return
+  }
+  showAnnouncement(frame.id, frame.content)
+}
+
+// 离线期间产生的公告没有 WS 帧：以系统会话最后一条消息为准补弹
+watch(
+  () => systemConversation.value?.lastMessageId ?? null,
+  (id) => {
+    if (id === null || id <= lastSeenAnnouncementId()) return
+    showAnnouncement(id, systemConversation.value?.lastMessagePreview ?? '')
+  },
+  { immediate: true },
+)
 
 /** 详情面板是否显示（依赖当前会话） */
 const showDetail = computed(() => !!convStore.currentConv)
@@ -84,11 +148,14 @@ onMounted(async () => {
     pluginDrawerVisible.value = true
     void router.replace({ path: '/chat' })
   }
+  offAnnouncement = ws.onFrame(onAnnouncementFrame)
   window.addEventListener('keydown', onKeydown)
 })
 
 // 离开聊天页（登出 / 切到设置或后台 / 被踢）：停掉插件宿主并卸载 iframe 与监听器
 onUnmounted(() => {
+  offAnnouncement?.()
+  offAnnouncement = null
   host.stop()
   pluginsStore.reset()
   window.removeEventListener('keydown', onKeydown)
@@ -191,6 +258,7 @@ onUnmounted(() => {
     />
     <PluginDrawer v-model="pluginDrawerVisible" />
     <AddFriendDialog v-model:visible="addFriendVisible" />
+    <AnnouncementDialog v-model:visible="announcementVisible" :content="announcementContent" />
 
     <!-- 抽屉遮罩：点击空白处收起 -->
     <div v-if="hasOpenDrawer" class="mc-layout__scrim" @click="layout.closeAll()" />

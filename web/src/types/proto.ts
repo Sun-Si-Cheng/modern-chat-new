@@ -25,8 +25,8 @@ export interface AuthPayload {
 
 // ===== 会话 =====
 
-/** 1=单聊 2=群聊 */
-export type ConvType = 1 | 2
+/** 1=单聊 2=群聊 3=系统公告会话 */
+export type ConvType = 1 | 2 | 3
 
 export interface Conversation {
   id: number

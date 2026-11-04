@@ -11,6 +11,10 @@ export default {
     more: '更多',
     saveFailed: '保存失败',
   },
+  announcement: {
+    title: '全站公告',
+    gotIt: '知道了',
+  },
   auth: {
     brand: {
       lead: '开箱即用的纯文本聊天内核，装上插件，它就是你要的样子。',

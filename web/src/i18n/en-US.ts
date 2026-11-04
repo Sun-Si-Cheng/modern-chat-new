@@ -11,6 +11,10 @@ export default {
     more: 'More',
     saveFailed: 'Failed to save',
   },
+  announcement: {
+    title: 'Announcement',
+    gotIt: 'Got it',
+  },
   auth: {
     brand: {
       lead: 'A plain-text chat core out of the box. Install plugins and it becomes whatever you need.',

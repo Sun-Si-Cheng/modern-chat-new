@@ -12,6 +12,7 @@ import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
+import { markAnnouncementSeen } from '@/composables/announcement'
 import {
   adminApi,
   systemApi,
@@ -357,6 +358,8 @@ async function doAnnounce() {
   try {
     const r = await adminApi.announce(content)
     announceText.value = ''
+    // 站长自己也会收到 message 帧：记下已读位置，回到聊天页时不再弹自己的公告
+    markAnnouncementSeen(r.messageId)
     void MessagePlugin.success(t('admin.announceOk', { n: r.recipients }))
     refreshAfterWrite()
   } catch (e) {
