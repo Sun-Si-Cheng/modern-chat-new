@@ -38,10 +38,57 @@ interface DisplayItem {
   msg?: Message
 }
 
+// ===== 撤回提示 =====
+//
+// 撤回后先显示「XXX 撤回了一条消息」，满 3 分钟把整条提示从聊天记录移除。
+// 撤回时间由服务端下发并落库（recalledAt），跨刷新/跨设备一致；
+// 历史遗留的撤回消息没有时间信息，按「已过期」处理（不再显示）。
+const RECALL_TTL = 3 * 60 * 1000
+const nowTick = ref(Date.now())
+let recallTimer: ReturnType<typeof setTimeout> | undefined
+
+function recallVisible(m: Message): boolean {
+  if (!m.isRecalled) return true
+  if (!m.recalledAt) return false
+  const at = new Date(m.recalledAt).getTime()
+  return Number.isFinite(at) && nowTick.value < at + RECALL_TTL
+}
+
+/** 撤回提示文案：自己显示「你」，别人显示其昵称 */
+function recallLabel(m: Message): string {
+  return senderOf(m)
+    ? t('message.recalledByYou')
+    : t('message.recalledBy', { name: senderName(m) })
+}
+
+// 精确调度到最近的到期时刻，不做每秒轮询（有 2000 条历史的会话也不该空转）。
+// nowTick 到期后 computed 重算，提示随之下线。
+watch(
+  () => {
+    const deadlines = messages.value
+      .filter((m) => m.isRecalled && recallVisible(m))
+      .map((m) => new Date(m.recalledAt as string).getTime() + RECALL_TTL)
+    return deadlines.length ? Math.min(...deadlines) : 0
+  },
+  (deadline) => {
+    clearTimeout(recallTimer)
+    if (!deadline) return
+    recallTimer = setTimeout(
+      () => {
+        nowTick.value = Date.now()
+      },
+      Math.max(50, deadline - Date.now() + 30),
+    )
+  },
+  { immediate: true },
+)
+
 const displayItems = computed<DisplayItem[]>(() => {
   const out: DisplayItem[] = []
   let lastDate = ''
   for (const m of messages.value) {
+    // 过期（或无时间的）撤回提示：整条从聊天记录里移除
+    if (!recallVisible(m)) continue
     const d = new Date(m.createdAt).toDateString()
     if (d !== lastDate) {
       lastDate = d
@@ -154,7 +201,10 @@ watch(previewSrc, (v) => {
   else window.removeEventListener('keydown', onPreviewKey)
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onPreviewKey))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onPreviewKey)
+  clearTimeout(recallTimer)
+})
 
 // ===== 消息右键菜单 =====
 
@@ -369,23 +419,30 @@ const senderName = (m: Message) => {
           <template v-else-if="item.msg">
             <div
               class="mc-msg"
-              :class="{ mine: senderOf(item.msg) }"
+              :class="{ mine: senderOf(item.msg), 'is-recalled': item.msg.isRecalled }"
               @contextmenu.prevent="openMenu($event, item.msg)"
             >
-              <!-- 头像：自己的消息也显示（.mine 的 row-reverse 会把它排到最右） -->
+              <!-- 头像：自己的消息也显示（.mine 的 row-reverse 会把它排到最右）。
+                   撤回提示是系统文案，居中显示，不带头像。 -->
               <AvatarBadge
+                v-if="!item.msg.isRecalled"
                 :name="senderName(item.msg)"
                 :src="senderAvatar(item.msg)"
                 :color="senderAvatarColor(item.msg)"
                 :size="32"
               />
               <div class="mc-msg__body">
-                <div v-if="conv?.type === 2 && !senderOf(item.msg)" class="mc-msg__sender text-placeholder">
+                <div
+                  v-if="conv?.type === 2 && !senderOf(item.msg) && !item.msg.isRecalled"
+                  class="mc-msg__sender text-placeholder"
+                >
                   {{ memberName(item.msg.senderId) }}
                 </div>
 
-                <!-- 撤回 -->
-                <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">{{ t('message.recalled') }}</div>
+                <!-- 撤回：满 3 分钟后整条从列表中过滤掉 -->
+                <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">
+                  {{ recallLabel(item.msg) }}
+                </div>
 
                 <!-- 图片：点击放大 -->
                 <div v-else-if="item.msg.msgType === 'image'" class="mc-msg__media">
@@ -688,6 +745,32 @@ const senderName = (m: Message) => {
   border-color: transparent;
   box-shadow: none;
   padding: 2px 0;
+}
+
+/* 必须盖过 .mc-msg.mine .mc-msg__bubble（3 类选择器）：
+   否则自己撤回的提示会被染成品牌蓝底白字，看起来像一条真消息。 */
+.mc-msg.is-recalled .mc-msg__bubble.recalled {
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* 撤回提示是一行系统文案：居中、不带头像、不带已读/时间戳。
+   padding 而不是 margin：虚拟列表里相邻两条的 margin 会折叠，
+   实测会变成 0 间隙、两行提示看起来像重影。 */
+.mc-msg.is-recalled {
+  justify-content: center;
+  padding: 5px 0;
+}
+
+.mc-msg.is-recalled .mc-msg__body {
+  max-width: 100%;
+  align-items: center;
+}
+
+.mc-msg.is-recalled .mc-msg__meta {
+  display: none;
 }
 
 .mc-msg__bubble.custom {

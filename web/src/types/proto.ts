@@ -63,6 +63,8 @@ export interface Message {
   msgType: string
   content: string
   isRecalled: boolean
+  /** 服务端撤回时间（RFC3339）；撤回提示显示满 3 分钟后前端不再渲染该条消息 */
+  recalledAt?: string | null
   createdAt: string
   /** 前端本地状态：已发出未确认 */
   pending?: boolean
@@ -125,7 +127,7 @@ export type ServerFrame =
       clientMsgId?: string
       createdAt: string
     }
-  | { type: 'recall'; messageId: number; convId: number }
+  | { type: 'recall'; messageId: number; convId: number; recalledAt?: string }
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }

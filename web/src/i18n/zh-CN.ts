@@ -170,6 +170,8 @@ export default {
     recordUnsupported: '当前浏览器不支持录音',
     recall: '撤回',
     recalled: '消息已撤回',
+    recalledBy: '{name}撤回了一条消息',
+    recalledByYou: '你撤回了一条消息',
     recalledPreview: '消息已撤回',
     resend: '重发',
     read: '已读',

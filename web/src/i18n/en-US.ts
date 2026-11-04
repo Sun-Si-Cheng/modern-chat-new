@@ -169,6 +169,8 @@ export default {
     recordUnsupported: 'Recording is not supported in this browser',
     recall: 'Recall',
     recalled: 'Message recalled',
+    recalledBy: '{name} recalled a message',
+    recalledByYou: 'You recalled a message',
     recalledPreview: 'Message recalled',
     resend: 'Resend',
     read: 'Read',

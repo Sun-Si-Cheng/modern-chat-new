@@ -343,7 +343,11 @@ export const useConversationsStore = defineStore('conversations', () => {
       case 'recall': {
         const list = messagesByConv[frame.convId]
         const msg = list?.find((m) => m.id === frame.messageId)
-        if (msg) msg.isRecalled = true
+        if (msg) {
+          msg.isRecalled = true
+          // 服务端时间优先；老服务端/丢字段时用本地时间兜底
+          msg.recalledAt = frame.recalledAt ?? new Date().toISOString()
+        }
         const conv = conversations.value.find((c) => c.id === frame.convId)
         if (conv && conv.lastMessageId === frame.messageId) {
           conv.lastMessagePreview = '消息已撤回'

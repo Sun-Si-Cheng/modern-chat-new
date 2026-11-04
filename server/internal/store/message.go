@@ -1,6 +1,8 @@
 package store
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -62,11 +64,17 @@ func (s *MessageStore) PageBefore(convID uint, beforeID uint64, limit int) ([]mo
 // 幂等性很关键：调用方据此决定是否回退未读数与广播 recall 帧。
 // 原实现无条件 UPDATE，重复撤回（连点、重发帧）会让 RecallUnreadAdjust
 // 对同一消息再扣一次未读，把接收方其它消息的未读计数吃掉。
-func (s *MessageStore) MarkRecalled(id uint) (bool, error) {
+// MarkRecalled 标记撤回并记录撤回时间。
+//
+// 时间必须由服务端产生并落库：前端需要跨刷新、跨设备一致地判断
+// 「撤回提示显示满 3 分钟了吗」，用客户端时钟会在多端之间打架。
+// 返回值第二个是撤回时间，供 WS 广播帧带上。
+func (s *MessageStore) MarkRecalled(id uint) (bool, time.Time, error) {
+	now := time.Now()
 	res := s.db.Model(&model.Message{}).
 		Where("id = ? AND is_recalled = ?", id, false).
-		Update("is_recalled", true)
-	return res.RowsAffected > 0, res.Error
+		Updates(map[string]any{"is_recalled": true, "recalled_at": now})
+	return res.RowsAffected > 0, now, res.Error
 }
 
 // UpsertInbox 批量更新收件箱行的 last_message_*（新成员行不存在则插入，unread 保持初始值）。

@@ -26,14 +26,17 @@ type ConversationMember struct {
 // ConversationID 的普通索引即等效 (conversation_id, id) 复合，支撑游标分页。
 // (conversation_id, client_msg_id) 唯一：服务端幂等键。
 type Message struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	ConversationID uint      `gorm:"index;uniqueIndex:idx_conv_clientmsg,priority:1" json:"conversationId"`
-	SenderID       uint      `json:"senderId"`
-	ClientMsgID    string    `gorm:"size:36;uniqueIndex:idx_conv_clientmsg,priority:2" json:"clientMsgId"`
-	MsgType        string    `gorm:"size:32;default:text" json:"msgType"`
-	Content        string    `gorm:"size:1000" json:"content"`
-	IsRecalled     bool      `json:"isRecalled"`
-	CreatedAt      time.Time `gorm:"type:datetime(3)" json:"createdAt"`
+	ID             uint   `gorm:"primaryKey" json:"id"`
+	ConversationID uint   `gorm:"index;uniqueIndex:idx_conv_clientmsg,priority:1" json:"conversationId"`
+	SenderID       uint   `json:"senderId"`
+	ClientMsgID    string `gorm:"size:36;uniqueIndex:idx_conv_clientmsg,priority:2" json:"clientMsgId"`
+	MsgType        string `gorm:"size:32;default:text" json:"msgType"`
+	Content        string `gorm:"size:1000" json:"content"`
+	IsRecalled     bool   `json:"isRecalled"`
+	// RecalledAt 撤回时间。前端据此显示「XXX 撤回了一条消息」并在 3 分钟后把
+	// 这条提示从聊天记录里移除；为 NULL 表示历史遗留的撤回消息（无时间信息）。
+	RecalledAt *time.Time `gorm:"type:datetime(3)" json:"recalledAt"`
+	CreatedAt  time.Time  `gorm:"type:datetime(3)" json:"createdAt"`
 }
 
 // UserConversation 收件箱冗余行（每用户每会话一行）：会话列表排序与未读数来源。

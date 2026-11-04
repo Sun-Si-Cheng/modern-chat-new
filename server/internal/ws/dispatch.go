@@ -227,7 +227,7 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 		return
 	}
 	// 幂等：已经撤回过的直接返回，既不重复扣未读、也不重复广播
-	changed, err := h.deps.Messages.MarkRecalled(msg.ID)
+	changed, recalledAt, err := h.deps.Messages.MarkRecalled(msg.ID)
 	if err != nil {
 		slog.Error("ws recall", "err", err.Error())
 		return
@@ -243,7 +243,13 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 	if err != nil {
 		return
 	}
-	h.ToUsers(ids, ginH{"type": "recall", "messageId": msg.ID, "convId": msg.ConversationID})
+	// 广播带上服务端撤回时间：所有端用同一个时间点计算「提示显示满 3 分钟」
+	h.ToUsers(ids, ginH{
+		"type":       "recall",
+		"messageId":  msg.ID,
+		"convId":     msg.ConversationID,
+		"recalledAt": recalledAt.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 // checkConnState 连接级封禁 / token_version 复核（handleChat 落库前调用）。
