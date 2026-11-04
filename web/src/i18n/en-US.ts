@@ -97,6 +97,8 @@ export default {
     offline: 'Offline',
     connecting: 'Connecting…',
     noMessage: 'No messages yet',
+    previewImage: '[Image]',
+    previewVoice: '[Voice]',
     noConversation: 'No conversations yet. Search for a user to start',
     scrollToLatest: 'Jump to latest',
     profileAria: 'Edit profile',

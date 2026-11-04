@@ -221,7 +221,10 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 		}
 		if r.LastMessageID != nil {
 			if p, ok := previews[*r.LastMessageID]; ok {
-				v.LastMessagePreview = &p
+				content := p.Content
+				msgType := p.MsgType
+				v.LastMessagePreview = &content
+				v.LastMessageType = &msgType
 			}
 		}
 		ms := members[r.ID]
@@ -241,28 +244,36 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 }
 
 // previewMap 消息预览（撤回显示固定文案）。
-func (s *ConversationStore) previewMap(ids []uint64) (map[uint64]string, error) {
-	out := make(map[uint64]string, len(ids))
+// previewInfo 会话列表里的一行预览：内容 + 类型（前端据此把 URL 换成「图片/语音」）
+type previewInfo struct {
+	Content string
+	MsgType string
+}
+
+func (s *ConversationStore) previewMap(ids []uint64) (map[uint64]previewInfo, error) {
+	out := make(map[uint64]previewInfo, len(ids))
 	if len(ids) == 0 {
 		return out, nil
 	}
 	var rows []struct {
 		ID         uint64
 		Content    string
+		MsgType    string
 		IsRecalled bool
 	}
 	if err := s.db.Model(&model.Message{}).
-		Select("id, content, is_recalled").
+		Select("id, content, msg_type, is_recalled").
 		Where("id IN ?", ids).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
 		if r.IsRecalled {
-			out[r.ID] = "消息已撤回"
-		} else {
-			out[r.ID] = r.Content
+			out[r.ID] = previewInfo{Content: "消息已撤回", MsgType: "text"}
+			continue
 		}
+		// 图片/语音的 content 是文件地址，直接当预览会把 URL 显示在列表里
+		out[r.ID] = previewInfo{Content: r.Content, MsgType: r.MsgType}
 	}
 	return out, nil
 }

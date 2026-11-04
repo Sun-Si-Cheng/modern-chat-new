@@ -97,6 +97,8 @@ export default {
     offline: '离线',
     connecting: '连接中…',
     noMessage: '暂无消息',
+    previewImage: '[图片]',
+    previewVoice: '[语音]',
     noConversation: '还没有会话，搜索用户开始聊天',
     scrollToLatest: '回到最新消息',
     profileAria: '编辑个人资料',

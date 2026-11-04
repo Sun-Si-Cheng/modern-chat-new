@@ -33,7 +33,9 @@ type ConversationView struct {
 	LastMessageID      *uint64    `json:"lastMessageId"`
 	LastMessageAt      *time.Time `json:"lastMessageAt"`
 	LastMessagePreview *string    `json:"lastMessagePreview"`
-	UnreadCount        int        `json:"unreadCount"`
+	// LastMessageType 最后一条消息的类型：前端据此把图片/语音的 URL 预览换成占位文案
+	LastMessageType *string `json:"lastMessageType"`
+	UnreadCount     int     `json:"unreadCount"`
 }
 
 // FriendItemView 好友列表行（GET /api/friends）。

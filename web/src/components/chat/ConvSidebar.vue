@@ -200,6 +200,18 @@ async function doCreateGroup() {
   }
 }
 
+/**
+ * 会话列表的预览文案。
+ * 图片/语音的 content 是文件地址，直接显示会在列表里出现一串 /uploads/xxx.png，
+ * 这里按 msgType 换成占位文案。
+ */
+function previewText(c: Conversation): string {
+  if (!c.lastMessagePreview) return t('chat.noMessage')
+  if (c.lastMessageType === 'image') return t('chat.previewImage')
+  if (c.lastMessageType === 'audio') return t('chat.previewVoice')
+  return c.lastMessagePreview
+}
+
 // ===== 会话右键菜单 =====
 
 const convMenuVisible = ref(false)
@@ -366,7 +378,7 @@ const sortedConvs = computed(() => {
         />
         <span class="mc-conv-item__mid">
           <span class="mc-conv-item__name">{{ convName(c) }}</span>
-          <span class="mc-conv-item__preview text-secondary">{{ c.lastMessagePreview || t('chat.noMessage') }}</span>
+          <span class="mc-conv-item__preview text-secondary">{{ previewText(c) }}</span>
         </span>
         <span class="mc-conv-item__right">
           <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>

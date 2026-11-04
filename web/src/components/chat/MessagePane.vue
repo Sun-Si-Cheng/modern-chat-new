@@ -8,6 +8,7 @@ import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
+import VoiceMessage from './VoiceMessage.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
@@ -390,10 +391,12 @@ const senderAvatar = (m: Message) => {
                   />
                 </div>
 
-                <!-- 语音 -->
-                <div v-else-if="item.msg.msgType === 'audio'" class="mc-msg__voice">
-                  <audio :src="item.msg.content" controls preload="metadata" />
-                </div>
+                <!-- 语音：自定义气泡（宽度随时长、进度条、同时只播一条） -->
+                <VoiceMessage
+                  v-else-if="item.msg.msgType === 'audio'"
+                  :src="item.msg.content"
+                  :mine="senderOf(item.msg)"
+                />
 
                 <!-- 自定义类型：插件白名单渲染 -->
                 <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">

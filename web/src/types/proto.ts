@@ -40,6 +40,8 @@ export interface Conversation {
   lastMessageId: number | null
   lastMessageAt: string | null
   lastMessagePreview: string | null
+  /** 最后一条消息的类型：image/audio 时列表里显示占位文案而不是文件地址 */
+  lastMessageType: string | null
   unreadCount: number
 }
 
