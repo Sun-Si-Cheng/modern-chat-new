@@ -10,9 +10,21 @@
 
 ### 新增
 
+- **图片与语音消息**：输入框新增图片 / 语音入口。图片选后经 canvas 压缩（最大边 1600、webp q0.82，小于 300 KB 不动、压完更大则用原图）再上传，点击弹出灯箱；语音用 `MediaRecorder` 录制（点击开始/再点结束、60 秒上限、<1 秒丢弃），自定义气泡随时间长、进度条用 `scaleX`、同一时刻只播一条。`msg_type` 扩展 `image` / `audio`，消息里**只存 URL**
+- **文件存储抽象（本地 / 对象存储）**：`service.Storage` 接口 + `LocalStorage` / `S3Storage`（minio-go，兼容 AWS S3 / MinIO / OSS / COS）。后台配 `storage.endpoint` + `bucket` 即切到对象存储，未配则写 `DATA_DIR/uploads/年/月/`；**按文件头判定真实类型**（伪装扩展名的 HTML 会被拒），WS 落库前校验 URL 必须属于本站存储（禁止外链）；配了 S3 就明确报错、不静默回退本地
+- **后台「系统设置」页签**：SMTP / Redis / 对象存储可视化配置，保存后写 `system_settings` 表并**覆盖环境变量**；密钥类字段（SMTP 密码 / Redis 密码 / 对象存储 SecretKey）以 **AES-256-GCM 加密**落库（密钥由 `JWT_SECRET` 派生），接口**永不回显**明文、提交留空表示不修改；SMTP 保存即热生效并提供「发送测试邮件」（失败透出邮件服务器原始错误），写操作进审计
+- **消息收藏**：右键消息收藏 / 取消收藏，收藏夹抽屉按收藏时间倒序、可跳回原会话，空态带操作引导
+- **布局可调**：分组栏 / 会话列表 / 详情面板均可拖拽调宽（`PaneResizer`，支持键盘 ←/→），双击分隔条在「常驻 / 抽屉」间切换（切成抽屉时立即展开，避免"功能丢失"手感）；宽度、形态与展开态存 `localStorage`，设置页「布局」分区可滑块调宽、切形态、一键恢复默认
+- **UI 框架迁移（TDesign → UnoCSS + 自研控件）**：新增 `components/ui/` 13 个控件（UiButton / UiInput / UiTag / UiBadge / UiSelect / UiSlider / UiSwitch / UiCheckbox / UiInputNumber / UiTooltip / UiPopup / UiDialog / UiDrawer），`tdesign-vue-next` 只剩后台表格页签与认证页表单
+- **Apple 风格动效与材质**：字号收敛到 7 档、圆角 4 档、时长 3 档、缓动 3 条（含 spring）、阴影 3 档；滑块拖动放大 + 松手回弹、开关滑钮 spring、按钮按压 `scale(0.97)`；浮层改半透明 88% + `backdrop-filter: blur(20px)`（带 `@supports` 回退）
+- **静态资源预压缩**：`npm run build` 自动为 js/css/html/json/svg 生成 `.gz` / `.br`（Node 内置 zlib，零依赖），nginx 配 `gzip_static on` 优先发预压缩文件。实测原始 1288 KB → gzip 358 KB → brotli 311 KB，首屏 161 KB → 约 65 KB
+- **撤回提示自动移除**：撤回后显示「XXX 撤回了一条消息」（自己显示「你」），**满 3 分钟把该提示从聊天记录移除**；新增 `messages.recalled_at`（服务端时间并随 `recall` 帧广播），保证跨刷新、跨设备一致
+- **信息架构重整**：图标栏 6 项精简为 4 项（头像 / 聊天 / 联系人 / 设置）；「加好友 / 建群」提到列表栏顶部常驻；插件管理、站长后台收进设置页；页面背景入口只在设置页
+- **UI 方案文档**（`docs/UI设计方案.md`）：量化诊断、令牌方案、逐组件动效规范、可量化验收标准与实施记录
+
 - **全站公告弹窗提醒**：用户在线收到公告时立即弹窗展示；离线期间产生的公告在下次进入聊天页时补弹。关闭弹窗即标记已读并清除系统会话红点，同一条公告只弹一次（已读位置存本地）；站长发布公告后回到聊天页不会看到自己的公告弹窗。「系统通知」会话仅作为公告存储，不再出现在会话列表与未读计数中
 - **初始公共群聊「公共聊天室」**：服务首次启动时自动创建（无群主），并把现有用户全部加入；之后新注册用户自动加入。用户主动退群后不会被重启重新拉回，仍可通过群搜索重新加入
-- **全站页面背景自定义**：预设 / 自定义颜色 + 四种纹理（无 / 网格 / 圆点 / 斜纹），支持上传本地图片（自动压缩至 webp / jpeg 并限制体积），颜色以 30% 透明度叠加在主题底色上保证可读；聊天、设置、后台、协议、登录/找回页统一生效（认证页在自身场景色与特效之上叠加），入口同时放在聊天标题栏与设置页「外观」分区，偏好存 `localStorage`（`AppBackgroundPicker.vue`）
+- **全站页面背景自定义**：预设 / 自定义颜色 + 四种纹理（无 / 网格 / 圆点 / 斜纹），支持上传本地图片（自动压缩至 webp / jpeg 并限制体积），颜色以 30% 透明度叠加在主题底色上保证可读；聊天、设置、后台、协议、登录/找回页统一生效（认证页在自身场景色与特效之上叠加），**入口只在设置页「外观」分区**（聊天标题栏的悬浮按钮已移除），偏好存 `localStorage`（`AppBackgroundPicker.vue`）
 - 前端技术方案文档（`docs/前端技术方案.md`）：结构、状态管理、实时链路、性能约定与常见坑
 - 运维手册（`docs/运维手册.md`）：环境变量全表、部署、备份升级、日志与排障 FAQ
 - 本更新日志（`CHANGELOG.md`）
@@ -50,6 +62,13 @@
 
 ### 修复
 
+- **同一好友重复出现两次**：`PendingToUser` 只查 `status=0 AND friend_id=我`，未排除"已经是好友"的对；互发申请的竞态或历史残留会让同一个人同时出现在「好友申请」与「我的好友」。改为 `NOT EXISTS` 排除 + 按申请人去重，同意好友时顺带清理这对的其它待处理记录，前端再兜一层去重
+- **收藏夹打开即白屏**：后端 `Favorites` 用 `var rows []`，无收藏时 nil slice 序列化成 `null`，前端 `items.map()` 抛 `Cannot read properties of null`。后端初始化空切片 + handler 兜底，前端 store 用 `Array.isArray()` 收敛；同类问题的消息列表（空会话）、好友列表也一并修
+- **消息时间戳行显示不全**：`.mc-msg` 用 `margin` 做间距，而 `DynamicScroller` 按 wrapper 高度测量 item，margin 不计入 → 相邻消息的 meta 行互相贴边；`opacity: 0.9` 还会创建合成层把 12px 小字渲染成模糊残影。改用 `padding`、明确行高、去掉 opacity
+- **UnoCSS 透明度修饰对 CSS 变量无效**：`bg-success/12` 退化成实心色，配合同色文字变成"绿底绿字"（后台状态列、插件权限标签不可读）。改用 `color-mix` 预定义的 `*-soft` / `*-line` 档位，共修 15 处
+- **有 admin 权限却进不去后台**：路由守卫直接读内存态 `auth.user`，刷新或直接访问 `/admin` 时为空 → 判定无权限弹回聊天页。改为有 token 但 user 为空时先 `fetchMe()` 再判
+- **详情面板「退群」按钮被压扁成细线**：面板是 flex column 且整体滚动，子项默认 `flex-shrink: 1`，成员一多就等比压缩。给 section/footer 加 `flex-shrink: 0`
+- **`<button>` 默认边框在暗色下像白圈**：浏览器默认 `2px outset`，输入框清除按钮尤其明显。所有自研按钮补 `border-none`，描边变体用 `border-1 border-solid`
 - **转让群主未同步 `owner_id`**：前端读 `ownerId` 判管理权、后端读成员 `role` 判权限，两边结论相反 → 原群主仍显示管理入口（点了 403）、新群主看不到入口；现改为同一事务内同步
 - **插件抽屉打不开**：TDesign `Drawer` 只有 `visible` prop，裸 `v-model` 的值落到 DOM 属性上，抽屉停在屏幕外 → 改用 `v-model:visible`
 - **`FRONTEND_URL` 尾随空格导致斜杠未去除**：白名单与浏览器 Origin 不一致，WS 握手被拒
