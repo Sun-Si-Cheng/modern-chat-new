@@ -284,6 +284,7 @@ function renderedNodes(m: Message): RenderedDesc['nodes'] {
 
 const senderOf = (m: Message) => m.senderId === auth.user?.id
 const senderAvatarColor = (m: Message) => {
+  if (senderOf(m)) return auth.user?.avatarColor || '#0052d9'
   const c = conv.value
   if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatarColor
   return '#7b8290'
@@ -291,9 +292,17 @@ const senderAvatarColor = (m: Message) => {
 
 /** 对方自定义头像（单聊取 peer；群聊成员头像由详情面板展示） */
 const senderAvatar = (m: Message) => {
+  if (senderOf(m)) return auth.user?.avatar ?? ''
   const c = conv.value
   if (c?.type === 1 && c.peer?.id === m.senderId) return c.peer.avatar ?? ''
   return ''
+}
+
+/** 头像下的名字：自己用昵称，单聊用对方昵称，群聊查成员表 */
+const senderName = (m: Message) => {
+  if (senderOf(m)) return auth.user?.nickname || auth.user?.username || '?'
+  if (conv.value?.type === 1) return conv.value.peer?.nickname ?? '?'
+  return memberName(m.senderId)
 }
 </script>
 
@@ -363,9 +372,9 @@ const senderAvatar = (m: Message) => {
               :class="{ mine: senderOf(item.msg) }"
               @contextmenu.prevent="openMenu($event, item.msg)"
             >
+              <!-- 头像：自己的消息也显示（.mine 的 row-reverse 会把它排到最右） -->
               <AvatarBadge
-                v-if="!senderOf(item.msg)"
-                :name="conv?.type === 1 ? conv.peer?.nickname ?? '?' : memberName(item.msg.senderId)"
+                :name="senderName(item.msg)"
                 :src="senderAvatar(item.msg)"
                 :color="senderAvatarColor(item.msg)"
                 :size="32"
