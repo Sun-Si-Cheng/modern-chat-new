@@ -218,6 +218,14 @@ func detectType(kind string, data []byte) (string, error) {
 	if ext, ok := allowed[mime]; ok {
 		return ext, nil
 	}
+	// DetectContentType 把 WebM 容器统一判为 video/webm（浏览器 MediaRecorder 录的
+	// 音频也是这个容器），Ogg 判为 application/ogg，纯音频 mp4 也可能判成 video/mp4。
+	// 语音上传已限定 kind=audio 且 ≤5MB，这里按容器特征兜底识别为音频扩展名。
+	if kind == "audio" && (strings.HasPrefix(mime, "video/") || mime == "application/ogg") {
+		if ext := guessAudioExt(data); ext != "" {
+			return ext, nil
+		}
+	}
 	// DetectContentType 对 webm / m4a 常返回 application/octet-stream
 	if kind == "audio" && strings.HasPrefix(mime, "application/octet-stream") {
 		if ext := guessAudioExt(data); ext != "" {
