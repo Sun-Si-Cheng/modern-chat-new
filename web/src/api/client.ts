@@ -65,8 +65,37 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   return data as T
 }
 
+/**
+ * multipart 上传。不能复用 request()：那里固定写死 Content-Type: application/json，
+ * 而 FormData 必须让浏览器自己补 boundary（手工设会导致后端解析失败）。
+ */
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken()
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+
+  if (res.status === 401) {
+    setToken('')
+    if (!location.pathname.startsWith('/login')) location.href = '/login'
+    throw new ApiError(401, '登录已失效，请重新登录')
+  }
+
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      typeof data.error === 'string' ? data.error : `上传失败（${res.status}）`,
+    )
+  }
+  return data as T
+}
+
 export const http = {
   get: <T>(path: string, query?: RequestOptions['query']) => request<T>(path, { query }),
+  upload,
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),

@@ -3,6 +3,7 @@ package router
 
 import (
 	"log/slog"
+	"net/http"
 
 	"github.com/gin-contrib/gzip"
 	"gorm.io/gorm"
@@ -46,6 +47,8 @@ func New(d Deps) *gin.Engine {
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.BodyLimit(1<<20, map[string]int64{
 		"/api/plugins/upload": d.Cfg.PluginMaxSize + 64*1024,
+		// 图片/语音上传走 multipart，单独放宽（上限由 handler 再按 kind 细分）
+		"/api/upload": service.MaxImageBytes + (1 << 20),
 	}))
 	// REST 响应压缩（设计文档 §9.2）。
 	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
@@ -90,6 +93,24 @@ func New(d Deps) *gin.Engine {
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 
+	// 上传文件存储（图片 / 语音）。初始化失败不阻断启动：聊天文本仍可用，
+	// 只是上传接口会返回 503——比整个服务起不来要好。
+	storage, stErr := service.NewStorage(d.Cfg.DataDir)
+	if stErr != nil {
+		slog.Error("init upload storage failed; upload API disabled", "err", stErr.Error())
+	}
+	var uploadH *handler.UploadHandler
+	if storage != nil {
+		uploadH = handler.NewUploadHandler(storage)
+		// 静态服务：文件名是 128 位随机 + 内容不可变，可以长缓存
+		r.Group("/uploads").
+			Use(func(c *gin.Context) {
+				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				c.Next()
+			}).
+			StaticFS("/", http.Dir(storage.Root()))
+	}
+
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
 	api.GET("/version", handler.Version)
@@ -133,6 +154,12 @@ func New(d Deps) *gin.Engine {
 		authed.GET("/plugins/:id/code", pluginH.Code)
 		pluginLimit := middleware.RateLimit(d.PluginLimiter, middleware.KeyByUID)
 		authed.POST("/plugins/upload", pluginLimit, pluginH.Upload)
+
+		// 图片 / 语音上传：按用户限流（10 次/分），避免被当图床刷
+		if uploadH != nil {
+			uploadLimit := middleware.RateLimit(middleware.NewLimiterStore(10, 10), middleware.KeyByUID)
+			authed.POST("/upload", uploadLimit, uploadH.Upload)
+		}
 		authed.POST("/plugins/from-url", pluginLimit, pluginH.FromURL)
 		authed.PATCH("/plugins/:id", pluginH.SetEnabled)
 		authed.DELETE("/plugins/:id", pluginH.Remove)

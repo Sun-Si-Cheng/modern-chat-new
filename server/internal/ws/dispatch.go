@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 )
 
 // 上行帧（§7）：宽松解析，按 type 路由。
@@ -79,6 +80,13 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 	if l := len(msgType); l > 32 || !isSafeMsgType(msgType) {
 		h.sendError(c, "msgType 不合法")
+		return
+	}
+	// 图片/语音的 content 必须是本站上传目录下的相对地址。
+	// 不校验的话用户可以塞 https://evil.com/x.png，接收方客户端会去加载外部资源
+	// （泄露 IP、可被打点统计），而消息看起来完全正常。
+	if (msgType == "image" || msgType == "audio") && !service.IsUploadURL(string(content)) {
+		h.sendError(c, "图片/语音消息的内容必须是本站上传地址")
 		return
 	}
 

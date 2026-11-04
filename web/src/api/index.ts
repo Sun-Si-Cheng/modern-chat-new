@@ -51,6 +51,15 @@ export interface MessagesPage {
   hasMore: boolean
 }
 
+/** 图片 / 语音上传：先传文件拿到 URL，再发消息（消息里只存 URL） */
+export const mediaApi = {
+  upload: (kind: 'image' | 'audio', file: Blob, filename = 'file') => {
+    const form = new FormData()
+    form.append('file', file, filename)
+    return http.upload<{ url: string; size: number; kind: string }>(`/upload?kind=${kind}`, form)
+  },
+}
+
 export const convApi = {
   list: () => http.get<Conversation[]>('/conversations'),
   searchGroups: (kw: string) => http.get<Conversation[]>('/conversations/search', { kw }),

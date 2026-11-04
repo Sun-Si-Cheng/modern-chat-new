@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => ({
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      // 上传的图片/语音由后端静态服务提供；不代理的话 <img src="/uploads/...">
+      // 会打到 dev server 上 404（图片消息区域空着但不报错，很难排查）
+      '/uploads': 'http://localhost:8080',
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,
@@ -28,6 +31,7 @@ export default defineConfig(({ mode }) => ({
   preview: {
     proxy: {
       '/api': 'http://localhost:8080',
+      '/uploads': 'http://localhost:8080',
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,

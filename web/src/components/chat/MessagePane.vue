@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
@@ -139,6 +139,21 @@ function recall(m: Message) {
   convStore.recallMessage(m.id)
   void MessagePlugin.success(t('message.recallOk'))
 }
+
+// ===== 图片预览（灯箱）=====
+
+const previewSrc = ref('')
+
+function onPreviewKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') previewSrc.value = ''
+}
+
+watch(previewSrc, (v) => {
+  if (v) window.addEventListener('keydown', onPreviewKey)
+  else window.removeEventListener('keydown', onPreviewKey)
+})
+
+onBeforeUnmount(() => window.removeEventListener('keydown', onPreviewKey))
 
 // ===== 消息右键菜单 =====
 
@@ -362,6 +377,24 @@ const senderAvatar = (m: Message) => {
                 <!-- 撤回 -->
                 <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">{{ t('message.recalled') }}</div>
 
+                <!-- 图片：点击放大 -->
+                <div v-else-if="item.msg.msgType === 'image'" class="mc-msg__media">
+                  <!-- 不能用 loading="lazy"：DynamicScroller 依赖测量 item 高度，
+                       图片未加载时高度为 0 → 永远进不了视口 → 永远不会加载（死循环）。
+                       虚拟滚动本身已经保证只渲染视口附近的消息，无需再 lazy。 -->
+                  <img
+                    :src="item.msg.content"
+                    alt=""
+                    decoding="async"
+                    @click="previewSrc = item.msg.content"
+                  />
+                </div>
+
+                <!-- 语音 -->
+                <div v-else-if="item.msg.msgType === 'audio'" class="mc-msg__voice">
+                  <audio :src="item.msg.content" controls preload="metadata" />
+                </div>
+
                 <!-- 自定义类型：插件白名单渲染 -->
                 <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">
                   <DeclarativeNodes v-if="isRenderedOk(item.msg)" :nodes="renderedNodes(item.msg)" />
@@ -397,7 +430,16 @@ const senderAvatar = (m: Message) => {
             </div>
           </template>
         </DynamicScrollerItem>
-      </template>
+
+        <!-- 图片放大：点任意处或 Esc 关闭 -->
+        <Teleport to="body">
+          <Transition name="mc-lb">
+            <div v-if="previewSrc" class="mc-lightbox" @click="previewSrc = ''">
+              <img :src="previewSrc" alt="" />
+            </div>
+          </Transition>
+        </Teleport>
+        </template>
     </DynamicScroller>
 
     <!-- 新会话 / 空会话：给一个明确的开始提示，而不是一片空白 -->
@@ -541,6 +583,60 @@ const senderAvatar = (m: Message) => {
 .mc-msg__sender {
   font-size: 12px;
   margin-bottom: 2px;
+}
+
+/* ===== 图片 / 语音消息 ===== */
+.mc-msg__media {
+  max-width: 240px;
+  /* 加载完成前先占一块高度，避免图片到达时消息列表整体跳动 */
+  min-height: 80px;
+  border-radius: var(--mc-radius-lg);
+  overflow: hidden;
+  background: var(--td-bg-color-container);
+  line-height: 0;
+}
+
+.mc-msg__media img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.mc-msg__voice audio {
+  height: 34px;
+  max-width: 240px;
+  border-radius: var(--mc-radius-md);
+}
+
+.mc-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.mc-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--mc-radius-lg);
+  box-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.6);
+}
+
+.mc-lb-enter-active,
+.mc-lb-leave-active {
+  transition: opacity 160ms var(--mc-ease-out);
+}
+
+.mc-lb-enter-from,
+.mc-lb-leave-to {
+  opacity: 0;
 }
 
 .mc-msg__bubble {

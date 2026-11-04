@@ -20,6 +20,7 @@ type Config struct {
 	FrontendURLs   []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
 	TrustedProxies []string // 可信反向代理网段；空表示不信任任何代理（不使用 XFF 判定 ClientIP）
 	LogDir         string   // 日志目录；留空则只输出 stdout
+	DataDir        string   // 数据目录（图片/语音等上传文件），默认 ./data
 	LogRetainDays  int      // 日志保留天数（默认 15）
 	Redis          RedisConfig
 	SMTP           SMTPConfig
@@ -59,6 +60,7 @@ func Load() (Config, error) {
 		Migrate:       getv("MIGRATE", "false") == "true",
 		PluginMaxSize: geti("PLUGIN_MAX_SIZE", 1<<20),
 		LogDir:        getv("LOG_DIR", "logs"),
+		DataDir:       getv("DATA_DIR", "data"),
 		LogRetainDays: int(geti("LOG_RETAIN_DAYS", 15)),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),

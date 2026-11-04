@@ -209,31 +209,45 @@ export const useConversationsStore = defineStore('conversations', () => {
     pendingTimers.set(msg.clientMsgId, timer)
   }
 
-  function sendText(convId: number, content: string) {
-    const trimmed = content.trim()
-    if (!trimmed || trimmed.length > 1000) return
+  /** 乐观插入 + 发帧。文本与媒体共用同一条链路，只是 msgType/content 不同。 */
+  function pushAndSend(convId: number, msgType: string, content: string) {
     const clientMsgId = crypto.randomUUID()
     const optimistic: Message = {
       id: -Date.now(),
       conversationId: convId,
       senderId: auth.user?.id ?? 0,
       clientMsgId,
-      msgType: 'text',
-      content: trimmed,
+      msgType,
+      content,
       isRecalled: false,
       createdAt: new Date().toISOString(),
       pending: true,
     }
     ;(messagesByConv[convId] ??= []).push(optimistic)
     // 连接不可用时立即标记失败，避免消息永远停在"发送中"
-    const sent = sendFrame({ type: 'chat', convId, clientMsgId, content: trimmed })
+    const sent = sendFrame({ type: 'chat', convId, clientMsgId, msgType, content })
     if (!sent) {
       optimistic.pending = false
       optimistic.failed = true
       return
     }
     armPendingTimer(optimistic)
-    }
+  }
+
+  function sendText(convId: number, content: string) {
+    const trimmed = content.trim()
+    if (!trimmed || trimmed.length > 1000) return
+    pushAndSend(convId, 'text', trimmed)
+  }
+
+  /**
+   * 发送图片 / 语音。content 是上传接口返回的相对地址，
+   * 后端会再校验它必须落在本站 /uploads/ 下。
+   */
+  function sendMedia(convId: number, msgType: 'image' | 'audio', url: string) {
+    if (!url) return
+    pushAndSend(convId, msgType, url)
+  }
 
   function resend(msg: Message) {
     msg.pending = true
@@ -242,6 +256,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       type: 'chat',
       convId: msg.conversationId,
       clientMsgId: msg.clientMsgId,
+      // 必须带上 msgType：否则重发图片/语音会被后端按默认 text 处理，
+      // 变成一条内容是 URL 的文本消息
+      msgType: msg.msgType,
       content: msg.content,
     })
     if (!sent) {
@@ -439,6 +456,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     setFilter,
     markRead,
     sendText,
+    sendMedia,
     resend,
     sendTyping,
     recallMessage,
