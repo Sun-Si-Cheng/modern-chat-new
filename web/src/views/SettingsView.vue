@@ -486,6 +486,14 @@ function goBack() {
   border-bottom: 1px solid var(--mc-hairline);
 }
 
+/* UiInput 根元素带本组件的 scope id，可直接命中。
+   输入框的 bg-surface 与卡片同色、8% 白的边框在暗色下几乎不可见，
+   改成「凹下去」的底色 + 明显一点的描边，输入边界才可辨认。 */
+.settings-field > div {
+  background: var(--td-bg-color-page);
+  border-color: var(--td-component-border);
+}
+
 .settings-field__label {
   font-size: 14px;
 }
