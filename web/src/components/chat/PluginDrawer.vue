@@ -20,6 +20,17 @@ const { t, te } = useAppI18n()
 
 const urlInput = ref('')
 const installing = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+
+/**
+ * 用按钮主动触发隐藏的文件选择框。
+ * 不能把按钮放进 <label> 里：button 属于交互内容，浏览器会抑制 label 的
+ * 默认激活行为，点击「上传」不会打开文件选择框（点击外层空白才有效）。
+ */
+function pickFile() {
+  if (installing.value) return
+  fileInput.value?.click()
+}
 
 /**
  * 抽屉打开时拉全量清单（含已停用）：宿主的 active 列表只有启用项，
@@ -71,7 +82,12 @@ async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: b
     return
   }
   installing.value = false
-  await pluginsStore.load()
+  // 安装已经成功：即便清单刷新失败，也要继续弹权限确认，否则用户以为没装上
+  try {
+    await pluginsStore.load()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
 
   const permText = plugin.permissions.length
     ? plugin.permissions.map((p) => permLabel(p)).join(', ')
@@ -155,10 +171,17 @@ async function uninstall(plugin: Plugin) {
     <div class="mc-plugins">
       <!-- 安装 -->
       <div class="mc-plugins__install">
-        <label class="mc-plugins__upload">
-          <input type="file" accept=".js,application/javascript,text/javascript" @change="onPickFile" />
-          <UiButton variant="outline" size="small" :loading="installing">{{ t('plugin.upload') }}</UiButton>
-        </label>
+        <div class="mc-plugins__upload">
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".js,application/javascript,text/javascript"
+            @change="onPickFile"
+          />
+          <UiButton variant="outline" size="small" :loading="installing" @click="pickFile">
+            {{ t('plugin.upload') }}
+          </UiButton>
+        </div>
         <div class="mc-plugins__url">
           <UiInput v-model="urlInput" :placeholder="t('plugin.urlPlaceholder')" clearable @enter="installFromUrl" />
           <UiButton variant="outline" size="small" :loading="installing" @click="installFromUrl">
