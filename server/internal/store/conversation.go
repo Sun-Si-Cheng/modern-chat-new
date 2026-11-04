@@ -91,6 +91,39 @@ func (s *ConversationStore) RemoveMember(convID, userID uint) error {
 }
 
 // Rename 群主改群名。
+// SetPrefs 更新「我对这个会话」的个人设置（置顶 / 免打扰）。
+//
+// 存在 user_conversations 而不是 conversations：这是每人一份的偏好，
+// 我置顶不代表别人也置顶。nil 表示该项不修改。
+func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted *bool) error {
+	updates := map[string]any{}
+	if pinned != nil {
+		updates["pinned"] = *pinned
+	}
+	if muted != nil {
+		updates["muted"] = *muted
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.db.Model(&model.UserConversation{}).
+		Where("user_id = ? AND conversation_id = ?", userID, convID).
+		Updates(updates).Error
+}
+
+// PrefsOf 读取会话的个人设置（置顶 / 免打扰）。
+func (s *ConversationStore) PrefsOf(userID, convID uint) (pinned, muted bool, err error) {
+	var row struct {
+		Pinned bool
+		Muted  bool
+	}
+	err = s.db.Model(&model.UserConversation{}).
+		Select("pinned, muted").
+		Where("user_id = ? AND conversation_id = ?", userID, convID).
+		Scan(&row).Error
+	return row.Pinned, row.Muted, err
+}
+
 func (s *ConversationStore) Rename(convID uint, name string) error {
 	return s.db.Model(&model.Conversation{}).Where("id = ?", convID).Update("name", name).Error
 }
@@ -174,6 +207,9 @@ type convRow struct {
 	LastMessageID *uint64
 	LastMessageAt *time.Time
 	UnreadCount   int
+	Pinned        bool
+	Muted         bool
+	MentionUnread bool
 }
 
 // ListFor 用户会话列表：收件箱行 join 会话，再聚合预览 / 成员数 / peer。
@@ -181,11 +217,12 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	var rows []convRow
 	err := s.db.Raw(`
 		SELECT c.id, c.type, c.name, c.owner_id,
-		       uc.last_message_id, uc.last_message_at, uc.unread_count
+		       uc.last_message_id, uc.last_message_at, uc.unread_count,
+		       uc.pinned, uc.muted, uc.mention_unread
 		FROM user_conversations uc
 		JOIN conversations c ON c.id = uc.conversation_id
 		WHERE uc.user_id = ?
-		ORDER BY uc.last_message_at DESC`, userID).Scan(&rows).Error
+		ORDER BY uc.pinned DESC, uc.last_message_at DESC`, userID).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +285,9 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 			LastMessageID: r.LastMessageID,
 			LastMessageAt: r.LastMessageAt,
 			UnreadCount:   r.UnreadCount,
+			Pinned:        r.Pinned,
+			Muted:         r.Muted,
+			MentionUnread: r.MentionUnread,
 		}
 		if r.LastMessageID != nil {
 			if p, ok := previews[*r.LastMessageID]; ok {

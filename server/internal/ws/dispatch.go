@@ -19,6 +19,9 @@ type clientFrame struct {
 	MsgType     string `json:"msgType"`
 	UpToID      uint64 `json:"upToId"`
 	MessageID   uint64 `json:"messageId"`
+	// ReplyToID 引用消息 id；Mentions 被 @ 的用户 id（均为可选）
+	ReplyToID *uint64 `json:"replyToId"`
+	Mentions  []uint  `json:"mentions"`
 }
 
 // Dispatch 上行帧路由：非成员一律 error 帧。
@@ -110,12 +113,37 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		return
 	}
 
+	// 成员列表：@ 校验与收件箱冗余都要用，只取一次
+	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	if err != nil {
+		slog.Error("ws members", "err", err.Error())
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+
+	// 引用必须指向同一条会话里的消息：
+	// 不校验的话可以引用别的会话的消息 id，把那个会话的内容透出来。
+	var replyTo *uint64
+	if f.ReplyToID != nil && *f.ReplyToID > 0 {
+		target, tErr := h.deps.Messages.ByID(uint(*f.ReplyToID))
+		if tErr != nil || target == nil || target.ConversationID != f.ConvID {
+			h.sendError(c, "引用的消息不存在")
+			return
+		}
+		replyTo = f.ReplyToID
+	}
+
+	// @ 只保留「确实在群里」的 id，并去掉自己
+	mentions := resolveMentions(memberIDs, c.UserID, f.Mentions)
+
 	msg := &model.Message{
 		ConversationID: f.ConvID,
 		SenderID:       c.UserID,
 		ClientMsgID:    f.ClientMsgID,
 		MsgType:        msgType,
 		Content:        string(content),
+		ReplyToID:      replyTo,
+		Mentions:       mentions,
 		CreatedAt:      time.Now(),
 	}
 	if err := h.deps.Messages.Create(msg); err != nil {
@@ -123,17 +151,18 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		h.sendError(c, "服务器开小差了，请稍后再试")
 		return
 	}
+	// 广播帧要带引用摘要：单条装配一次（复用批量实现，避免再写一套查询）
+	one := []model.Message{*msg}
+	if aErr := h.deps.Messages.AttachReply(one); aErr == nil {
+		msg.ReplyTo = one[0].ReplyTo
+	}
+
 	// 消息正文不入日志（隐私），只记元数据
 	slog.Debug("message stored",
 		"msg", msg.ID, "conv", msg.ConversationID, "from", msg.SenderID,
 		"type", msg.MsgType, "chars", len([]rune(msg.Content)))
 
-	// 收件箱冗余：全员 last=新消息；新成员行在此首次创建
-	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
-	if err != nil {
-		slog.Error("ws members", "err", err.Error())
-		return
-	}
+	// 收件箱冗余：全员 last=新消息；新成员行在此首次创建（memberIDs 已在上方取过）
 	rows := make([]model.UserConversation, 0, len(memberIDs))
 	for _, uid := range memberIDs {
 		rows = append(rows, model.UserConversation{
@@ -148,6 +177,12 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 	if err := h.deps.Messages.BumpUnread(f.ConvID, c.UserID, uint64(msg.ID)); err != nil {
 		slog.Error("ws bump unread", "err", err.Error())
+	}
+	// 被 @ 的人即使把会话设成免打扰，也要看到「有人@我」
+	if len(msg.Mentions) > 0 {
+		if err := h.deps.Messages.MarkMention(f.ConvID, msg.Mentions); err != nil {
+			slog.Error("ws mark mention", "err", err.Error())
+		}
 	}
 
 	// fan-out：message 帧；非发送者额外 conv_change
@@ -324,6 +359,38 @@ func (h *Hub) sendError(c *Client, reason string) {
 	c.trySend(mustJSON(ginH{"type": "error", "reason": reason}))
 }
 
+// resolveMentions 过滤 @ 目标：只留会话成员、去重、排除发送者，上限 20 个。
+//
+// 不校验的话客户端可以 @ 任意 user id，把「有人@我」的提示推给无关的人。
+func resolveMentions(memberIDs []uint, senderID uint, want []uint) []uint {
+	if len(want) == 0 {
+		return nil
+	}
+	allowed := make(map[uint]struct{}, len(memberIDs))
+	for _, id := range memberIDs {
+		allowed[id] = struct{}{}
+	}
+	out := make([]uint, 0, len(want))
+	seen := make(map[uint]struct{}, len(want))
+	for _, id := range want {
+		if id == 0 || id == senderID {
+			continue
+		}
+		if _, ok := allowed[id]; !ok {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+		if len(out) >= 20 {
+			break
+		}
+	}
+	return out
+}
+
 func messageFrame(m *model.Message, clientMsgID string) ginH {
 	frame := ginH{
 		"type":      "message",
@@ -336,6 +403,16 @@ func messageFrame(m *model.Message, clientMsgID string) ginH {
 	}
 	if clientMsgID != "" {
 		frame["clientMsgId"] = clientMsgID
+	}
+	// 引用摘要随帧下发：接收方不用再回查，直接能渲染引用块
+	if m.ReplyTo != nil {
+		frame["replyTo"] = m.ReplyTo
+	}
+	if m.ReplyToID != nil {
+		frame["replyToId"] = *m.ReplyToID
+	}
+	if len(m.Mentions) > 0 {
+		frame["mentions"] = m.Mentions
 	}
 	return frame
 }

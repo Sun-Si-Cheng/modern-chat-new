@@ -60,7 +60,83 @@ func (s *MessageStore) PageBefore(convID, viewerID uint, beforeID uint64, limit 
 		rows = rows[:limit]
 		hasMore = true
 	}
+	// 引用摘要在查询层统一装配，前端拿到就能直接渲染引用块
+	if err := s.AttachReply(rows); err != nil {
+		return nil, false, err
+	}
 	return rows, hasMore, nil
+}
+
+// AttachReply 为一批消息装配引用摘要。
+//
+// 批量查而不是逐条查：消息列表一次 30-50 条，N+1 会让翻页变慢。
+// 被引用消息若已撤回，摘要里直接标记，前端渲染成「引用内容已撤回」。
+func (s *MessageStore) AttachReply(rows []model.Message) error {
+	ids := make([]uint64, 0, len(rows))
+	for _, m := range rows {
+		if m.ReplyToID != nil {
+			ids = append(ids, *m.ReplyToID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	var targets []struct {
+		ID         uint64
+		SenderID   uint
+		MsgType    string
+		Content    string
+		IsRecalled bool
+		Nickname   string
+	}
+	if err := s.db.Table("messages AS m").
+		Select("m.id, m.sender_id, m.msg_type, m.content, m.is_recalled, COALESCE(u.nickname, '') AS nickname").
+		Joins("LEFT JOIN users u ON u.id = m.sender_id").
+		Where("m.id IN ?", ids).
+		Scan(&targets).Error; err != nil {
+		return err
+	}
+
+	briefs := make(map[uint64]model.ReplyBrief, len(targets))
+	for _, t := range targets {
+		content := t.Content
+		if t.IsRecalled {
+			content = ""
+		} else if r := []rune(content); len(r) > 60 {
+			// 引用块只做提示，截断避免撑破气泡
+			content = string(r[:60]) + "…"
+		}
+		briefs[t.ID] = model.ReplyBrief{
+			ID:             t.ID,
+			SenderID:       t.SenderID,
+			SenderNickname: t.Nickname,
+			MsgType:        t.MsgType,
+			Content:        content,
+			IsRecalled:     t.IsRecalled,
+		}
+	}
+	for i := range rows {
+		if rows[i].ReplyToID == nil {
+			continue
+		}
+		if b, ok := briefs[*rows[i].ReplyToID]; ok {
+			brief := b
+			rows[i].ReplyTo = &brief
+		}
+	}
+	return nil
+}
+
+// MarkMention 把这些用户的收件箱标记为「有未读 @我」。
+// 免打扰的会话也靠它显示「有人@我」，所以不能只靠未读数。
+func (s *MessageStore) MarkMention(convID uint, userIDs []uint) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	return s.db.Model(&model.UserConversation{}).
+		Where("conversation_id = ? AND user_id IN ?", convID, userIDs).
+		UpdateColumn("mention_unread", true).Error
 }
 
 // MarkRecalled 撤回软标记。返回本次是否真的由「未撤回」变为「已撤回」。
@@ -122,7 +198,12 @@ func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) (int64, erro
 			"user_id = ? AND conversation_id = ? AND (last_read_message_id < ? OR unread_count > 0)",
 			userID, convID, upToID,
 		).
-		Updates(map[string]any{"unread_count": 0, "last_read_message_id": upToID})
+		Updates(map[string]any{
+			"unread_count":         0,
+			"last_read_message_id": upToID,
+			// 已读即清掉「有人@我」：否则提示会一直挂着
+			"mention_unread": false,
+		})
 	return res.RowsAffected, res.Error
 }
 

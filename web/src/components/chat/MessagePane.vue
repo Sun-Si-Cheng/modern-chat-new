@@ -18,7 +18,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useWsStore } from '@/stores/ws'
-import type { Message, UIDescNode } from '@/types/proto'
+import type { Message, ReplyBrief, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
@@ -190,6 +190,51 @@ function recall(m: Message) {
   void MessagePlugin.success(t('message.recallOk'))
 }
 
+// ===== @ 高亮 =====
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * 把正文按「@昵称」切段，高亮其中的 @ 部分。
+ * 只在消息确实带 mentions 时才做，普通文本走原样渲染，不额外开销。
+ */
+function textParts(m: Message): { t: string; at: boolean }[] {
+  if (m.msgType !== 'text' || !m.mentions?.length) return [{ t: m.content, at: false }]
+  const names = m.mentions.map((id) => memberName(id)).filter(Boolean)
+  if (!names.length) return [{ t: m.content, at: false }]
+  const re = new RegExp(`(@(?:${names.map(escapeRe).join('|')}))`, 'g')
+  return m.content
+    .split(re)
+    .filter((s) => s !== '')
+    .map((s) => ({ t: s, at: names.some((n) => s === `@${n}`) }))
+}
+
+// ===== 引用 =====
+
+/** 引用块里显示的文本：媒体与已撤回要给占位，不能直接甩 URL */
+function quoteText(r: ReplyBrief): string {
+  if (r.isRecalled) return t('message.quoteRecalled')
+  if (r.msgType === 'image') return t('message.quoteImage')
+  if (r.msgType === 'audio') return t('message.quoteAudio')
+  return r.content
+}
+
+/** 被点中的引用目标，短暂高亮一下，否则跳过去也找不到是哪条 */
+const flashId = ref(0)
+
+function jumpToMessage(id: number) {
+  const idx = displayItems.value.findIndex((it) => it.kind === 'msg' && it.msg?.id === id)
+  if (idx < 0) return
+  const sc = scrollerRef.value as unknown as { scrollToItem?: (i: number) => void } | null
+  sc?.scrollToItem?.(idx)
+  flashId.value = id
+  window.setTimeout(() => {
+    if (flashId.value === id) flashId.value = 0
+  }, 1200)
+}
+
 // ===== 图片预览（灯箱）=====
 
 const previewSrc = ref('')
@@ -218,18 +263,69 @@ const menuTarget = ref<Message | null>(null)
 /** 已撤回、尚未落库（pending）的消息不弹菜单：没有可执行的操作 */
 function openMenu(e: MouseEvent, m: Message) {
   if (m.isRecalled || m.id <= 0) return
+  imageTarget.value = null
   menuTarget.value = m
   menuX.value = e.clientX
   menuY.value = e.clientY
   menuVisible.value = true
 }
 
+/** 图片右键菜单：与消息菜单共用一套定位状态，只是条目不同 */
+const imageTarget = ref<Message | null>(null)
+
+function openImageMenu(e: MouseEvent, m: Message) {
+  imageTarget.value = m
+  menuTarget.value = null
+  menuX.value = e.clientX
+  menuY.value = e.clientY
+  menuVisible.value = true
+}
+
+async function saveImage(m: Message) {
+  try {
+    // 走 fetch 取 blob 再下载：<a download> 对跨域（对象存储）不生效
+    const res = await fetch(m.content)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    const ext = /\.(\w{2,5})(?:\?|$)/.exec(m.content)?.[1] ?? 'png'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `image-${m.id}.${ext}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    void MessagePlugin.success(t('message.saveImageOk'))
+  } catch (e) {
+    void MessagePlugin.error(`${t('message.saveImageFailed')}：${String(e)}`)
+  }
+}
+
 const menuItems = computed<ContextMenuItem[]>(() => {
+  // 图片菜单：保存 / 查看大图 / 收藏
+  const img = imageTarget.value
+  if (img) {
+    return [
+      { key: 'imgOpen', label: t('message.openImage') },
+      { key: 'imgSave', label: t('message.saveImage') },
+      {
+        key: 'imgFavorite',
+        label: favorites.isFavorited(img.id) ? t('message.unfavorite') : t('message.favorite'),
+        dividerBefore: true,
+      },
+    ]
+  }
+
   const m = menuTarget.value
   if (!m) return []
   const items: ContextMenuItem[] = []
   if (m.msgType === 'text' && m.content) {
     items.push({ key: 'copy', label: t('message.copy') })
+  }
+  // 撤回提示、未落库的乐观消息不参与引用
+  if (!m.isRecalled && m.id > 0) {
+    items.push({ key: 'quote', label: t('message.quote') })
   }
   items.push({
     key: 'favorite',
@@ -264,9 +360,18 @@ async function copyMessage(m: Message) {
 }
 
 function onMenuSelect(key: string) {
+  const img = imageTarget.value
+  if (img) {
+    if (key === 'imgOpen') previewSrc.value = img.content
+    if (key === 'imgSave') void saveImage(img)
+    if (key === 'imgFavorite') void toggleFavorite(img)
+    return
+  }
+
   const m = menuTarget.value
   if (!m) return
   if (key === 'copy') void copyMessage(m)
+  if (key === 'quote') convStore.setReplyTarget(m)
   if (key === 'recall') recall(m)
   if (key === 'favorite') void toggleFavorite(m)
   if (key === 'delete') confirmDelete(m)
@@ -464,7 +569,11 @@ const senderName = (m: Message) => {
           <template v-else-if="item.msg">
             <div
               class="mc-msg"
-              :class="{ mine: senderOf(item.msg), 'is-recalled': item.msg.isRecalled }"
+              :class="{
+                mine: senderOf(item.msg),
+                'is-recalled': item.msg.isRecalled,
+                'is-flash': flashId === item.msg.id,
+              }"
               @contextmenu.prevent="openMenu($event, item.msg)"
             >
               <!-- 头像：自己的消息也显示（.mine 的 row-reverse 会把它排到最右）。
@@ -484,6 +593,19 @@ const senderName = (m: Message) => {
                   {{ memberName(item.msg.senderId) }}
                 </div>
 
+                <!-- 引用：点一下跳到原消息 -->
+                <div
+                  v-if="item.msg.replyTo && !item.msg.isRecalled"
+                  class="mc-msg__quote"
+                  role="button"
+                  tabindex="0"
+                  @click="jumpToMessage(item.msg.replyTo.id)"
+                  @keydown.enter="jumpToMessage(item.msg.replyTo.id)"
+                >
+                  <span class="mc-msg__quote-name">{{ item.msg.replyTo.senderNickname || '…' }}</span>
+                  <span class="mc-msg__quote-text">{{ quoteText(item.msg.replyTo) }}</span>
+                </div>
+
                 <!-- 撤回：满 3 分钟后整条从列表中过滤掉 -->
                 <div v-if="item.msg.isRecalled" class="mc-msg__bubble recalled">
                   {{ recallLabel(item.msg) }}
@@ -499,6 +621,7 @@ const senderName = (m: Message) => {
                     alt=""
                     decoding="async"
                     @click="previewSrc = item.msg.content"
+                    @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />
                 </div>
 
@@ -519,7 +642,12 @@ const senderName = (m: Message) => {
 
                 <!-- 普通文本 -->
                 <div v-else class="mc-msg__bubble" :class="{ pending: item.msg.pending, failed: item.msg.failed }">
-                  <span class="mc-msg__text">{{ item.msg.content }}</span>
+                  <span class="mc-msg__text">
+                    <template v-for="(p, pi) in textParts(item.msg)" :key="pi">
+                      <span v-if="p.at" class="mc-msg__at">{{ p.t }}</span>
+                      <template v-else>{{ p.t }}</template>
+                    </template>
+                  </span>
                   <span
                     v-if="canRecall(item.msg)"
                     class="mc-msg__recall"
@@ -701,6 +829,60 @@ const senderName = (m: Message) => {
   margin-bottom: 2px;
 }
 
+/* ===== 引用块 ===== */
+.mc-msg__quote {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--td-brand-color);
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  cursor: pointer;
+  transition: background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-msg__quote:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-msg__quote-name {
+  font-size: var(--mc-fs-caption);
+  color: var(--td-brand-color);
+}
+
+.mc-msg__quote-text {
+  font-size: var(--mc-fs-sm);
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 跳转后的短暂高亮 */
+.mc-msg.is-flash {
+  animation: mc-msg-flash 1.2s var(--mc-ease-out);
+}
+
+@keyframes mc-msg-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--td-brand-color) 14%, transparent);
+    border-radius: var(--mc-radius-md);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-msg.is-flash {
+    animation: none;
+  }
+}
+
 /* ===== 图片 / 语音消息 ===== */
 .mc-msg__media {
   max-width: 240px;
@@ -826,6 +1008,18 @@ const senderName = (m: Message) => {
 
 .mc-msg__text {
   user-select: text;
+}
+
+/* 被 @ 的昵称：微信里是蓝色，这里跟随气泡前景色加粗，亮暗都可读 */
+.mc-msg__at {
+  font-weight: 600;
+  color: var(--td-brand-color);
+}
+
+.mc-msg.mine .mc-msg__at {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .mc-msg__recall,

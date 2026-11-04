@@ -43,6 +43,12 @@ export interface Conversation {
   /** 最后一条消息的类型：image/audio 时列表里显示占位文案而不是文件地址 */
   lastMessageType: string | null
   unreadCount: number
+  /** 置顶（个人设置，不影响其他成员） */
+  pinned: boolean
+  /** 免打扰：红点显示为小圆点，不显示数字 */
+  muted: boolean
+  /** 有未读的 @我 消息：免打扰时也要提示「有人@我」 */
+  mentionUnread: boolean
 }
 
 export interface ConversationMember {
@@ -53,6 +59,16 @@ export interface ConversationMember {
 }
 
 // ===== 消息 =====
+
+/** 引用消息的摘要（服务端截断到 60 字，只用于渲染引用块） */
+export interface ReplyBrief {
+  id: number
+  senderId: number
+  senderNickname: string
+  msgType: string
+  content: string
+  isRecalled: boolean
+}
 
 export interface Message {
   id: number
@@ -65,6 +81,12 @@ export interface Message {
   isRecalled: boolean
   /** 服务端撤回时间（RFC3339）；撤回提示显示满 3 分钟后前端不再渲染该条消息 */
   recalledAt?: string | null
+  /** 引用的消息 id（须同会话） */
+  replyToId?: number | null
+  /** 引用消息的摘要（服务端装配，前端直接渲染） */
+  replyTo?: ReplyBrief | null
+  /** 被 @ 的用户 id（仅群聊） */
+  mentions?: number[]
   createdAt: string
   /** 前端本地状态：已发出未确认 */
   pending?: boolean
@@ -127,7 +149,17 @@ export interface Plugin {
 // ===== WebSocket 帧（§7） =====
 
 export type ClientFrame =
-  | { type: 'chat'; convId: number; clientMsgId: string; content: string; msgType?: string }
+  | {
+      type: 'chat'
+      convId: number
+      clientMsgId: string
+      content: string
+      msgType?: string
+      /** 引用的消息 id（须同会话） */
+      replyToId?: number
+      /** 被 @ 的用户 id（仅群聊） */
+      mentions?: number[]
+    }
   | { type: 'typing'; convId: number }
   | { type: 'read'; convId: number; upToId: number }
   | { type: 'recall'; messageId: number }
@@ -143,6 +175,11 @@ export type ServerFrame =
       /** 'text' 或插件注册的自定义类型 */
       msgType: string
       clientMsgId?: string
+      /** 引用摘要（服务端随帧下发，无需回查） */
+      replyToId?: number
+      replyTo?: ReplyBrief
+      /** 被 @ 的用户 id */
+      mentions?: number[]
       createdAt: string
     }
   | { type: 'recall'; messageId: number; convId: number; recalledAt?: string }

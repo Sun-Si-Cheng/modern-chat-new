@@ -73,6 +73,12 @@ export const convApi = {
   leave: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/leave`),
   read: (convId: number, upToId: number) => http.post<{ ok: true }>(`/conversations/${convId}/read`, { upToId }),
   rename: (convId: number, name: string) => http.patch<{ ok: true }>(`/conversations/${convId}`, { name }),
+  /** 会话个人设置（置顶 / 免打扰）：不传的字段表示不修改 */
+  setPrefs: (convId: number, prefs: { pinned?: boolean; muted?: boolean }) =>
+    http.patch<{ ok: true; pinned: boolean; muted: boolean }>(
+      `/conversations/${convId}/prefs`,
+      prefs,
+    ),
   kick: (convId: number, userId: number) => http.post<{ ok: true }>(`/conversations/${convId}/kick`, { userId }),
   transfer: (convId: number, userId: number) =>
     http.post<{ ok: true }>(`/conversations/${convId}/transfer`, { userId }),

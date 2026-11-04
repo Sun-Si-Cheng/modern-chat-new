@@ -231,7 +231,8 @@ const convMenuItems = computed<ContextMenuItem[]>(() => {
   if (!c) return []
   const items: ContextMenuItem[] = [
     { key: 'pin', label: convStore.isPinned(c.id) ? t('chat.unpin') : t('chat.pin') },
-  ]
+    { key: 'mute', label: convStore.isMuted(c.id) ? t('chat.unmute') : t('chat.mute') },
+    ]
   if (c.unreadCount > 0) items.push({ key: 'read', label: t('chat.markRead') })
   items.push({ key: 'copyName', label: t('chat.copyName'), dividerBefore: true })
   return items
@@ -262,7 +263,8 @@ async function copyName(text: string) {
 function onConvMenuSelect(key: string) {
   const c = convMenuTarget.value
   if (!c) return
-  if (key === 'pin') convStore.togglePin(c.id)
+  if (key === 'pin') void convStore.togglePin(c.id).catch((e) => MessagePlugin.error(te(e)))
+  if (key === 'mute') void convStore.toggleMute(c.id).catch((e) => MessagePlugin.error(te(e)))
   if (key === 'read') void markConvRead(c)
   if (key === 'copyName') void copyName(convName(c))
 }
@@ -378,12 +380,39 @@ const sortedConvs = computed(() => {
           :online="c.type === 1 && c.peer ? ws.onlineUsers.has(c.peer.id) : false"
         />
         <span class="mc-conv-item__mid">
-          <span class="mc-conv-item__name">{{ convName(c) }}</span>
-          <span class="mc-conv-item__preview text-secondary">{{ previewText(c) }}</span>
+          <span class="mc-conv-item__name">
+            {{ convName(c) }}
+            <!-- 免打扰：名称后一个小铃铛划掉，让人一眼看出「这个不响」 -->
+            <svg
+              v-if="c.muted"
+              class="mc-conv-item__mute"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 3.5a2 2 0 0 1 2 2v5.2l2.2 2.6a1 1 0 0 1-.77 1.64H8.57a1 1 0 0 1-.77-1.64L10 10.7V5.5a2 2 0 0 1 2-2Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <path d="M4 4l16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span class="mc-conv-item__preview text-secondary">
+            <span v-if="c.mentionUnread" class="mc-conv-item__mention">{{ t('chat.someoneAtMe') }}</span>
+            <span v-else-if="convStore.draftOf(c.id)" class="mc-conv-item__draft">
+              {{ t('chat.draft') }}
+            </span>
+            {{ previewText(c) }}
+          </span>
         </span>
         <span class="mc-conv-item__right">
           <span class="text-placeholder mc-conv-item__time num">{{ fmtTime(c.lastMessageAt) }}</span>
-          <UiBadge v-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
+          <!-- 免打扰：只显示小圆点，不显示数字（避免用未读数制造焦虑） -->
+          <span v-if="c.muted && c.unreadCount > 0" class="mc-conv-item__dot" aria-hidden="true" />
+          <UiBadge v-else-if="c.unreadCount > 0" :count="c.unreadCount" size="small" />
         </span>
       </button>
       <div v-if="!sortedConvs.length" class="mc-sidebar__empty">
@@ -690,6 +719,35 @@ const sortedConvs = computed(() => {
 
 .mc-conv-item__time {
   font-size: 11px;
+}
+
+/* 免打扰 / @我 / 草稿 三个小标记 */
+.mc-conv-item__mute {
+  flex-shrink: 0;
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: var(--td-text-color-placeholder);
+}
+
+.mc-conv-item__mention,
+.mc-conv-item__draft {
+  margin-right: 3px;
+}
+
+.mc-conv-item__mention {
+  color: var(--td-error-color);
+}
+
+.mc-conv-item__draft {
+  color: var(--td-brand-color);
+}
+
+/* 免打扰只显示小圆点 */
+.mc-conv-item__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--td-error-color);
 }
 
 .mc-friend-item {

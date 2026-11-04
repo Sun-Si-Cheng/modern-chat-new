@@ -36,6 +36,11 @@ type ConversationView struct {
 	// LastMessageType 最后一条消息的类型：前端据此把图片/语音的 URL 预览换成占位文案
 	LastMessageType *string `json:"lastMessageType"`
 	UnreadCount     int     `json:"unreadCount"`
+	// 会话级个人设置（存在 user_conversations，不影响其他成员）
+	Pinned bool `json:"pinned"`
+	Muted  bool `json:"muted"`
+	// MentionUnread 有未读的 @我 消息：即使免打扰也要显示「有人@我」
+	MentionUnread bool `json:"mentionUnread"`
 }
 
 // FavoriteView 收藏列表行（GET /api/favorites）。

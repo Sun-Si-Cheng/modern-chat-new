@@ -2,7 +2,7 @@ import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { convApi } from '@/api'
-import type { Conversation, Message } from '@/types/proto'
+import type { Conversation, ConversationMember, Message, ReplyBrief } from '@/types/proto'
 import { useAuthStore } from './auth'
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 
@@ -26,35 +26,76 @@ export const useConversationsStore = defineStore('conversations', () => {
     else delete drafts[convId]
   }
 
-  // ===== 会话置顶（服务端无该字段，按浏览器本地保存） =====
+  /**
+   * 待引用的消息。
+   * 放在 store 而不是 MessagePane 本地：输入区（Composer）是同级组件，
+   * 右键「引用」要跨组件传，走 store 比一路 emit 干净。
+   */
+  const replyTarget = ref<Message | null>(null)
 
-  const PINNED_KEY = 'mc_pinned_convs'
-
-  function loadPinned(): number[] {
-    try {
-      const raw = localStorage.getItem(PINNED_KEY)
-      const arr = raw ? (JSON.parse(raw) as unknown) : []
-      return Array.isArray(arr) ? arr.filter((x): x is number => typeof x === 'number') : []
-    } catch {
-      return []
-    }
+  function setReplyTarget(m: Message | null) {
+    replyTarget.value = m
   }
 
-  const pinnedIds = ref<number[]>(loadPinned())
+  // ===== 会话置顶 / 免打扰（服务端个人设置，跨设备一致）=====
+  //
+  // 之前置顶只存 localStorage：换设备就没了，而且和「免打扰」这类
+  // 同类偏好分散在两处。现在统一走 user_conversations。
+
+  /** 置顶会话 id（从服务端字段派生，列表排序用） */
+  const pinnedIds = computed(() =>
+    conversations.value.filter((c) => c.pinned).map((c) => c.id),
+  )
 
   function isPinned(convId: number): boolean {
-    return pinnedIds.value.includes(convId)
+    return conversations.value.find((c) => c.id === convId)?.pinned === true
   }
 
-  function togglePin(convId: number) {
-    pinnedIds.value = isPinned(convId)
-      ? pinnedIds.value.filter((id) => id !== convId)
-      : [...pinnedIds.value, convId]
-    try {
-      localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedIds.value))
-    } catch {
-      /* 隐私模式：忽略 */
+  function isMuted(convId: number): boolean {
+    return conversations.value.find((c) => c.id === convId)?.muted === true
+  }
+
+  /** 更新个人设置：只改传了的字段，返回服务端确认后的值 */
+  async function setPrefs(convId: number, prefs: { pinned?: boolean; muted?: boolean }) {
+    const r = await convApi.setPrefs(convId, prefs)
+    const c = conversations.value.find((x) => x.id === convId)
+    if (c) {
+      c.pinned = r.pinned
+      c.muted = r.muted
     }
+  }
+
+  async function togglePin(convId: number) {
+    await setPrefs(convId, { pinned: !isPinned(convId) })
+  }
+
+  async function toggleMute(convId: number) {
+    await setPrefs(convId, { muted: !isMuted(convId) })
+  }
+
+  // ===== 会话成员缓存（@ 选人 / 引用摘要里的昵称）=====
+
+  const membersByConv = reactive<Record<number, ConversationMember[]>>({})
+  const membersLoading = reactive<Record<number, boolean>>({})
+
+  async function loadMembers(convId: number, force = false): Promise<ConversationMember[]> {
+    if (!force && membersByConv[convId]) return membersByConv[convId]
+    if (membersLoading[convId]) return membersByConv[convId] ?? []
+    membersLoading[convId] = true
+    try {
+      const list = await convApi.members(convId)
+      membersByConv[convId] = Array.isArray(list) ? list : []
+      return membersByConv[convId]
+    } catch {
+      return membersByConv[convId] ?? []
+    } finally {
+      membersLoading[convId] = false
+    }
+  }
+
+  /** 按 userId 取昵称；未加载时返回空串（调用方自行兜底） */
+  function memberNickname(convId: number, userId: number): string {
+    return membersByConv[convId]?.find((m) => m.user.id === userId)?.user.nickname ?? ''
   }
 
   /** 读回草稿 */
@@ -171,7 +212,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (!list) return
     const maxId = maxMessageId(list)
     const conv = conversations.value.find((c) => c.id === convId)
-    if (conv) conv.unreadCount = 0
+    if (conv) {
+      conv.unreadCount = 0
+      // 服务端在 MarkRead 时一并清掉；本地同步置 false，否则「有人@我」要等刷新才消失
+      conv.mentionUnread = false
+    }
     if (maxId > 0 && maxId !== lastReportedReadByConv.get(convId)) {
       lastReportedReadByConv.set(convId, maxId)
       sendFrame({ type: 'read', convId, upToId: maxId })
@@ -209,8 +254,14 @@ export const useConversationsStore = defineStore('conversations', () => {
     pendingTimers.set(msg.clientMsgId, timer)
   }
 
+  /** 发送附加信息：引用与 @ 都是可选 */
+  interface SendExtra {
+    replyToId?: number
+    mentions?: number[]
+  }
+
   /** 乐观插入 + 发帧。文本与媒体共用同一条链路，只是 msgType/content 不同。 */
-  function pushAndSend(convId: number, msgType: string, content: string) {
+  function pushAndSend(convId: number, msgType: string, content: string, extra?: SendExtra) {
     const clientMsgId = crypto.randomUUID()
     const optimistic: Message = {
       id: -Date.now(),
@@ -220,12 +271,27 @@ export const useConversationsStore = defineStore('conversations', () => {
       msgType,
       content,
       isRecalled: false,
+      replyToId: extra?.replyToId ?? null,
+      mentions: extra?.mentions,
       createdAt: new Date().toISOString(),
       pending: true,
     }
+    // 引用块要立刻显示：从当前缓存里找被引用的消息，拼一个本地摘要
+    if (extra?.replyToId) {
+      const target = (messagesByConv[convId] ?? []).find((m) => m.id === extra.replyToId)
+      if (target) optimistic.replyTo = localReplyBrief(convId, target)
+    }
     ;(messagesByConv[convId] ??= []).push(optimistic)
     // 连接不可用时立即标记失败，避免消息永远停在"发送中"
-    const sent = sendFrame({ type: 'chat', convId, clientMsgId, msgType, content })
+    const sent = sendFrame({
+      type: 'chat',
+      convId,
+      clientMsgId,
+      msgType,
+      content,
+      replyToId: extra?.replyToId,
+      mentions: extra?.mentions,
+    })
     if (!sent) {
       optimistic.pending = false
       optimistic.failed = true
@@ -234,19 +300,36 @@ export const useConversationsStore = defineStore('conversations', () => {
     armPendingTimer(optimistic)
   }
 
-  function sendText(convId: number, content: string) {
+  /** 本地构造引用摘要（仅乐观消息用；服务端回来的帧自带完整版本） */
+  function localReplyBrief(convId: number, m: Message): ReplyBrief {
+    const name =
+      m.senderId === auth.user?.id
+        ? (auth.user?.nickname ?? '')
+        : memberNickname(convId, m.senderId)
+    const text = m.isRecalled ? '' : [...m.content].slice(0, 60).join('')
+    return {
+      id: m.id,
+      senderId: m.senderId,
+      senderNickname: name,
+      msgType: m.msgType,
+      content: text,
+      isRecalled: m.isRecalled,
+    }
+  }
+
+  function sendText(convId: number, content: string, extra?: SendExtra) {
     const trimmed = content.trim()
     if (!trimmed || trimmed.length > 1000) return
-    pushAndSend(convId, 'text', trimmed)
+    pushAndSend(convId, 'text', trimmed, extra)
   }
 
   /**
    * 发送图片 / 语音。content 是上传接口返回的相对地址，
    * 后端会再校验它必须落在本站 /uploads/ 下。
    */
-  function sendMedia(convId: number, msgType: 'image' | 'audio', url: string) {
+  function sendMedia(convId: number, msgType: 'image' | 'audio', url: string, extra?: SendExtra) {
     if (!url) return
-    pushAndSend(convId, msgType, url)
+    pushAndSend(convId, msgType, url, extra)
   }
 
   function resend(msg: Message) {
@@ -394,6 +477,9 @@ export const useConversationsStore = defineStore('conversations', () => {
         msgType: frame.msgType,
         content: frame.content,
         isRecalled: false,
+        replyToId: frame.replyToId ?? null,
+        replyTo: frame.replyTo ?? null,
+        mentions: frame.mentions,
         createdAt: frame.createdAt,
       }
       if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
@@ -413,6 +499,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       msgType: frame.msgType,
       content: frame.content,
       isRecalled: false,
+      replyToId: frame.replyToId ?? null,
+      replyTo: frame.replyTo ?? null,
+      mentions: frame.mentions,
       createdAt: frame.createdAt,
     })
 
@@ -448,9 +537,17 @@ export const useConversationsStore = defineStore('conversations', () => {
     drafts,
     setDraft,
     draftOf,
+    replyTarget,
+    setReplyTarget,
     pinnedIds,
     isPinned,
+    isMuted,
+    setPrefs,
     togglePin,
+    toggleMute,
+    membersByConv,
+    loadMembers,
+    memberNickname,
     messagesByConv,
     currentMessages,
     loadingMessages,

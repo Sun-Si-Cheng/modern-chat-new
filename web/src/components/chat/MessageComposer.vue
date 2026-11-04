@@ -3,11 +3,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'
 
+import AvatarBadge from './AvatarBadge.vue'
 import { mediaApi } from '@/api'
 import { useAppI18n } from '@/composables/useAppI18n'
+import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import type { ConversationMember } from '@/types/proto'
 
 const convStore = useConversationsStore()
+const auth = useAuthStore()
 const { t } = useAppI18n()
 
 // 从草稿恢复：切换会话回来时，之前打了一半的内容还在
@@ -32,7 +36,11 @@ watch(text, (v) => {
   if (convStore.currentConvId) convStore.setDraft(convStore.currentConvId, v)
 })
 
-onMounted(resize)
+onMounted(() => {
+  resize()
+  // @ 选人需要成员列表；进会话时预热一次，输入 @ 就不用等接口
+  if (convStore.currentConvId) void convStore.loadMembers(convStore.currentConvId)
+})
 
 // ===== 图片上传 =====
 
@@ -204,13 +212,89 @@ function onInput() {
     lastTypingAt.value = now
     convStore.sendTyping(convStore.currentConvId)
   }
+  detectMention()
 }
 
 function send() {
   const content = text.value.trim()
-  if (!content || !convStore.currentConvId) return
-  convStore.sendText(convStore.currentConvId, content)
+  const convId = convStore.currentConvId
+  if (!content || !convId) return
+  convStore.sendText(convId, content, {
+    replyToId: convStore.replyTarget?.id || undefined,
+    mentions: mentionIds.value.length ? [...mentionIds.value] : undefined,
+  })
   text.value = ''
+  mentionIds.value = []
+  mentionQuery.value = null
+  convStore.setReplyTarget(null)
+}
+
+// ===== 引用 =====
+
+/** 引用条上的名字：自己显示「我」，别人查成员缓存 */
+const replyName = computed(() => {
+  const r = convStore.replyTarget
+  if (!r) return ''
+  if (r.senderId === auth.user?.id) return t('message.quoteMe')
+  const convId = convStore.currentConvId
+  return (convId ? convStore.memberNickname(convId, r.senderId) : '') || '…'
+})
+
+const replyText = computed(() => {
+  const r = convStore.replyTarget
+  if (!r) return ''
+  if (r.msgType === 'image') return t('message.quoteImage')
+  if (r.msgType === 'audio') return t('message.quoteAudio')
+  return [...r.content].slice(0, 40).join('')
+})
+
+// ===== @ 提醒 =====
+
+const mentionIds = ref<number[]>([])
+/** null = 未在输入 @；'' = 刚打 @ 还没输入名字 */
+const mentionQuery = ref<string | null>(null)
+
+const mentionCandidates = computed(() => {
+  const q = mentionQuery.value
+  const convId = convStore.currentConvId
+  // @ 只对群聊有意义
+  if (q === null || !convId || convStore.currentConv?.type !== 2) return []
+  const kw = q.trim().toLowerCase()
+  return (convStore.membersByConv[convId] ?? [])
+    .filter((m) => m.user.id !== auth.user?.id)
+    .filter((m) => !kw || m.user.nickname.toLowerCase().includes(kw))
+    .slice(0, 8)
+})
+
+/** 光标前是否是「@xxx」形式：只认最后一个 @ 且不含空格 */
+function detectMention() {
+  if (convStore.currentConv?.type !== 2) {
+    mentionQuery.value = null
+    return
+  }
+  const el = inputRef.value
+  const pos = el?.selectionStart ?? text.value.length
+  const before = text.value.slice(0, pos)
+  const m = /@([^\s@]{0,12})$/.exec(before)
+  mentionQuery.value = m ? (m[1] ?? '') : null
+}
+
+function pickMention(m: ConversationMember) {
+  const el = inputRef.value
+  const pos = el?.selectionStart ?? text.value.length
+  const before = text.value.slice(0, pos)
+  const match = /@([^\s@]{0,12})$/.exec(before)
+  if (!match) return
+  const start = pos - match[0].length
+  const inserted = `@${m.user.nickname} `
+  text.value = text.value.slice(0, start) + inserted + text.value.slice(pos)
+  if (!mentionIds.value.includes(m.user.id)) mentionIds.value = [...mentionIds.value, m.user.id]
+  mentionQuery.value = null
+  void nextTick(() => {
+    el?.focus()
+    const p = start + inserted.length
+    el?.setSelectionRange(p, p)
+  })
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -224,6 +308,43 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <footer class="mc-composer">
     <div class="mc-composer__box">
+      <!-- 引用条：右键「引用」后出现，发送/取消即消失 -->
+      <div v-if="convStore.replyTarget" class="mc-composer__quote">
+        <span class="mc-composer__quote-name">{{ replyName }}：</span>
+        <span class="mc-composer__quote-text">{{ replyText }}</span>
+        <button
+          type="button"
+          class="mc-composer__quote-close"
+          :aria-label="t('common.cancel')"
+          @click="convStore.setReplyTarget(null)"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- @ 选人：输入 @ 后浮在输入框上方 -->
+      <div v-if="mentionCandidates.length" class="mc-composer__mention" role="listbox">
+        <button
+          v-for="m in mentionCandidates"
+          :key="m.user.id"
+          type="button"
+          class="mc-composer__mention-item"
+          role="option"
+          :aria-selected="false"
+          @click="pickMention(m)"
+        >
+          <AvatarBadge
+            :name="m.user.nickname"
+            :src="m.user.avatar"
+            :color="m.user.avatarColor"
+            :size="22"
+          />
+          <span class="mc-composer__mention-name">{{ m.user.nickname }}</span>
+        </button>
+      </div>
+
       <textarea
         ref="inputRef"
         v-model="text"
@@ -338,6 +459,7 @@ function onKeydown(e: KeyboardEvent) {
 
 /* 输入区做成一块完整的输入面板，聚焦时整块响应，而不是只给底边变色 */
 .mc-composer__box {
+  position: relative;
   border: 1px solid var(--td-component-border);
   border-radius: var(--mc-radius-lg);
   background: var(--td-bg-color-container);
@@ -346,6 +468,97 @@ function onKeydown(e: KeyboardEvent) {
   transition:
     border-color var(--mc-dur-fast) var(--mc-ease-out),
     box-shadow var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+/* ===== 引用条 ===== */
+.mc-composer__quote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--td-brand-color);
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: var(--mc-fs-sm);
+  line-height: 1.4;
+}
+
+.mc-composer__quote-name {
+  flex-shrink: 0;
+  color: var(--td-brand-color);
+}
+
+.mc-composer__quote-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-composer__quote-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  cursor: pointer;
+}
+
+.mc-composer__quote-close:hover {
+  background: var(--td-bg-color-container-hover);
+  color: var(--td-text-color-primary);
+}
+
+/* ===== @ 选人浮层 ===== */
+.mc-composer__mention {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 208px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  box-shadow: var(--mc-elev-2);
+}
+
+.mc-composer__mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--mc-fs-body);
+  color: var(--td-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mc-composer__mention-item:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-composer__mention-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mc-composer__box:focus-within {

@@ -380,6 +380,42 @@ func (h *ConversationHandler) Leave(c *gin.Context) {
 }
 
 // Read 上报已读。
+// SetPrefs 会话个人设置：置顶 / 免打扰。
+//
+// 存在 user_conversations（每人一份），我置顶不代表别人也置顶。
+// 字段用指针接收：不传表示「不改这项」，显式 false 才会取消。
+func (h *ConversationHandler) SetPrefs(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Pinned *bool `json:"pinned"`
+		Muted  *bool `json:"muted"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	if req.Pinned == nil && req.Muted == nil {
+		fail(c, http.StatusBadRequest, "没有要修改的设置")
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireMember(c, convID) {
+		return
+	}
+	if err := h.convs.SetPrefs(me.ID, convID, req.Pinned, req.Muted); err != nil {
+		internal(c, err)
+		return
+	}
+	pinned, muted, err := h.convs.PrefsOf(me.ID, convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "pinned": pinned, "muted": muted})
+}
+
 func (h *ConversationHandler) Read(c *gin.Context) {
 	convID, ok := parseConvID(c)
 	if !ok {

@@ -36,7 +36,23 @@ type Message struct {
 	// RecalledAt 撤回时间。前端据此显示「XXX 撤回了一条消息」并在 3 分钟后把
 	// 这条提示从聊天记录里移除；为 NULL 表示历史遗留的撤回消息（无时间信息）。
 	RecalledAt *time.Time `gorm:"type:datetime(3)" json:"recalledAt"`
-	CreatedAt  time.Time  `gorm:"type:datetime(3)" json:"createdAt"`
+	// ReplyToID 引用的消息 id（须在同会话内）。NULL 表示普通消息。
+	ReplyToID *uint64 `gorm:"index" json:"replyToId,omitempty"`
+	// Mentions 被 @ 的用户 id（仅群聊使用）。JSON 序列化存 text，便于扩展。
+	Mentions []uint `gorm:"type:text;serializer:json" json:"mentions,omitempty"`
+	// ReplyTo 引用消息的摘要，不落库：查询与广播时按需装配。
+	ReplyTo   *ReplyBrief `gorm:"-" json:"replyTo,omitempty"`
+	CreatedAt time.Time   `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
+// ReplyBrief 引用消息的摘要快照（只渲染用，不回表取全文）。
+type ReplyBrief struct {
+	ID             uint64 `json:"id"`
+	SenderID       uint   `json:"senderId"`
+	SenderNickname string `json:"senderNickname"`
+	MsgType        string `json:"msgType"`
+	Content        string `json:"content"`
+	IsRecalled     bool   `json:"isRecalled"`
 }
 
 // UserConversation 收件箱冗余行（每用户每会话一行）：会话列表排序与未读数来源。
@@ -47,6 +63,12 @@ type UserConversation struct {
 	LastMessageAt     *time.Time `gorm:"type:datetime(3)" json:"-"`
 	UnreadCount       int        `gorm:"default:0" json:"-"`
 	LastReadMessageID uint64     `gorm:"default:0" json:"-"`
+	// Pinned 置顶：会话列表置顶，排序优先于时间。
+	Pinned bool `gorm:"default:false" json:"-"`
+	// Muted 免打扰：只压红点数字（显示为小圆点），未读数照常累加。
+	Muted bool `gorm:"default:false" json:"-"`
+	// MentionUnread 有未读的 @我消息：即使免打扰也要提示「有人@我」。
+	MentionUnread bool `gorm:"default:false" json:"-"`
 }
 
 // MessageDeletion 「仅自己删除」标记：只从该用户的聊天记录中移除，消息本体保留，

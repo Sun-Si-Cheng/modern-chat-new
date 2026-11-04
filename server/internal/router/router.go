@@ -148,6 +148,8 @@ func New(d Deps) *gin.Engine {
 		authed.POST("/conversations/:id/transfer", convH.Transfer)
 
 		// 收藏夹（消息收藏）
+		// 会话个人设置（置顶 / 免打扰）
+		authed.PATCH("/conversations/:id/prefs", convH.SetPrefs)
 		authed.GET("/favorites", convH.Favorites)
 		authed.POST("/messages/:messageId/favorite", convH.Favorite)
 		authed.DELETE("/messages/:messageId/favorite", convH.Unfavorite)
