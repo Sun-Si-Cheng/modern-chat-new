@@ -47,11 +47,34 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return BASE + path + (qs ? `?${qs}` : '')
 }
 
+/**
+ * 强制超时包装。
+ * 只用 AbortController 不够：第三方扩展若包装了 window.fetch 却没有把 signal
+ * 透传下去，abort 不会让它的 Promise 结算，页面 loading 就会永久转圈。
+ * 这里用 Promise.race 保证调用方一定在超时时间内拿到结果，并顺手 abort 清理底层请求。
+ */
+function withTimeout<T>(
+  task: Promise<T>,
+  ms: number,
+  message: string,
+  ctrl: AbortController,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort()
+      reject(new ApiError(0, message))
+    }, ms)
+  })
+  return Promise.race([task, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const token = getToken()
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT)
-  try {
+  const run = async (): Promise<T> => {
     const res = await fetch(buildUrl(path, opts.query), {
       method: opts.method ?? 'GET',
       headers: {
@@ -79,12 +102,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       )
     }
     return data as T
-  } catch (e) {
-    if (ctrl.signal.aborted) throw new ApiError(0, '请求超时，请稍后重试')
-    throw e
-  } finally {
-    clearTimeout(timer)
   }
+  return withTimeout(run(), REQUEST_TIMEOUT, '请求超时，请稍后重试', ctrl)
 }
 
 /**
@@ -94,8 +113,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 async function upload<T>(path: string, form: FormData): Promise<T> {
   const token = getToken()
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), UPLOAD_TIMEOUT)
-  try {
+  const run = async (): Promise<T> => {
     const res = await fetch(BASE + path, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -117,12 +135,8 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
       )
     }
     return data as T
-  } catch (e) {
-    if (ctrl.signal.aborted) throw new ApiError(0, '上传超时，请稍后重试')
-    throw e
-  } finally {
-    clearTimeout(timer)
   }
+  return withTimeout(run(), UPLOAD_TIMEOUT, '上传超时，请稍后重试', ctrl)
 }
 
 export const http = {
