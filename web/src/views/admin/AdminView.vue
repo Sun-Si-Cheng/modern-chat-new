@@ -5,9 +5,9 @@ import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { DialogPlugin, MessagePlugin, TabPanel as TTabPanel, Tabs as TTabss, Table as TTable } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
@@ -29,7 +29,37 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-const tab = ref<'users' | 'plugins' | 'audits' | 'settings'>('users')
+type AdminTab = 'users' | 'plugins' | 'audits' | 'settings'
+const tab = ref<AdminTab>('users')
+
+/**
+ * 页签切换。
+ * 这里不用 TDesign Tabs：四个页签里各有一张表格，Tabs 会同时挂载全部面板，
+ * 点击切换时所有表格都会重渲染（隐藏面板还要做宽度测量），在低配机器 / 大数据量下
+ * 会造成明显的卡顿甚至页面无响应。改用轻量页签 + v-if 只挂载当前面板。
+ */
+let settingsLoaded = false
+
+function switchTab(next: AdminTab) {
+  if (tab.value === next) return
+  tab.value = next
+  // 数据按页签懒加载：打开页面时只拉当前页签需要的内容，减少首屏请求与渲染压力
+  if (next === 'plugins') void fetchPlugins()
+  // 审计记录会随操作持续增长，进入页签时重新拉取，避免显示旧数据
+  if (next === 'audits') void fetchAudits()
+  // 设置只加载一次：反复拉取会把用户尚未保存的修改覆盖掉
+  if (next === 'settings' && !settingsLoaded) {
+    settingsLoaded = true
+    void fetchSettings()
+  }
+}
+
+const tabItems = computed<Array<{ value: AdminTab; label: string }>>(() => [
+  { value: 'users', label: t('admin.tabUsers') },
+  { value: 'plugins', label: t('admin.tabPlugins') },
+  { value: 'audits', label: t('admin.tabAudits') },
+  { value: 'settings', label: t('admin.tabSettings') },
+])
 
 // ---- 全站公告 ----
 const announceText = ref('')
@@ -192,10 +222,7 @@ onMounted(() => {
   }
   buildColumns()
   void fetchUsers()
-  void fetchPlugins()
   void fetchStats()
-  void fetchAudits()
-  void fetchSettings()
   systemApi
     .version()
     .then((v) => {
@@ -204,10 +231,7 @@ onMounted(() => {
     .catch(() => undefined)
 })
 
-// 切到「审计」页签时重新拉取：其他站长的操作或页面打开期间的写操作也能及时看到
-watch(tab, (v) => {
-  if (v === 'audits') void fetchAudits()
-})
+// 切到「审计」页签时重新拉取（见 switchTab）
 
 async function fetchUsers() {
   loading.value = true
@@ -563,7 +587,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         >
           <template #icon><SettingIcon /></template>
         </UiButton>
-        <UiButton variant="text" @click="router.push('/chat')">{{ t('admin.backToChat') }}</UiButton>
+        <UiButton variant="text" @click="router.push('/chat')">{{
+          t('admin.backToChat')
+        }}</UiButton>
       </div>
     </header>
 
@@ -631,295 +657,302 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       </UiButton>
     </div>
 
-    <TTabss v-model="tab" class="mc-admin__tabs">
-      <TTabPanel value="users" :label="t('admin.tabUsers')">
-        <div class="mc-admin__panel">
-          <div class="mc-admin__filters">
-            <UiInput
-              v-model="keyword"
-              class="mc-admin__search"
-              :placeholder="t('admin.searchUser')"
-              clearable
-              @enter="applyFilter"
-              @clear="applyFilter"
-            />
-            <UiSelect
-              v-model="roleFilter"
-              :options="filterRoleOptions()"
-              :placeholder="t('admin.filterRole')"
-              style="width: 130px"
-              @change="applyFilter"
-            />
-            <UiSelect
-              v-model="statusFilter"
-              :options="filterStatusOptions()"
-              :placeholder="t('admin.filterStatus')"
-              style="width: 130px"
-              @change="applyFilter"
-            />
-            <UiButton size="small" variant="outline" @click="resetFilter">
-              {{ t('admin.resetFilter') }}
-            </UiButton>
-          </div>
+    <div class="mc-admin__tabs">
+      <div class="mc-admin__tabbar" role="tablist">
+        <button
+          v-for="item in tabItems"
+          :key="item.value"
+          type="button"
+          role="tab"
+          class="mc-admin__tab"
+          :class="{ 'is-active': tab === item.value }"
+          :aria-selected="tab === item.value"
+          @click="switchTab(item.value)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
 
-          <TTable
-            row-key="id"
-            :data="users"
-            :columns="columns"
-            :loading="loading"
-            :pagination="pagination"
-            @page-change="onPageChange"
-          >
-            <template #user="{ row }">
-              <div class="mc-admin__user">
-                <AvatarBadge
-                  :name="row.nickname"
-                  :src="row.avatar"
-                  :color="row.avatarColor"
-                  :size="30"
-                />
-                <span>{{ row.nickname }}</span>
-              </div>
-            </template>
-
-            <template #role="{ row }">
-              {{ row.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser') }}
-            </template>
-
-            <template #status="{ row }">
-              <UiTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
-                {{
-                  row.banReason
-                    ? t('admin.banned', { reason: row.banReason })
-                    : t('admin.bannedShort')
-                }}
-              </UiTag>
-              <UiTag v-else theme="success" variant="light" size="small">{{
-                t('admin.normal')
-              }}</UiTag>
-            </template>
-
-            <template #ops="{ row }">
-              <div class="mc-admin__ops">
-                <a @click="openDetail(row)">{{ t('admin.detail') }}</a>
-                <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
-                <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
-                <a @click="kick(row)">{{ t('admin.kick') }}</a>
-                <a @click="setRole(row)">
-                  {{ row.role === 'admin' ? t('admin.revokeAdmin') : t('admin.grantAdmin') }}
-                </a>
-                <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
-              </div>
-            </template>
-          </TTable>
+      <div v-if="tab === 'users'" class="mc-admin__panel" role="tabpanel">
+        <div class="mc-admin__filters">
+          <UiInput
+            v-model="keyword"
+            class="mc-admin__search"
+            :placeholder="t('admin.searchUser')"
+            clearable
+            @enter="applyFilter"
+            @clear="applyFilter"
+          />
+          <UiSelect
+            v-model="roleFilter"
+            :options="filterRoleOptions()"
+            :placeholder="t('admin.filterRole')"
+            style="width: 130px"
+            @change="applyFilter"
+          />
+          <UiSelect
+            v-model="statusFilter"
+            :options="filterStatusOptions()"
+            :placeholder="t('admin.filterStatus')"
+            style="width: 130px"
+            @change="applyFilter"
+          />
+          <UiButton size="small" variant="outline" @click="resetFilter">
+            {{ t('admin.resetFilter') }}
+          </UiButton>
         </div>
-      </TTabPanel>
 
-      <TTabPanel value="plugins" :label="t('admin.tabPlugins')">
-        <div class="mc-admin__panel">
-          <p class="mc-admin__hint text-placeholder">{{ t('admin.pluginHint') }}</p>
-          <TTable
-            row-key="name"
-            :data="plugins"
-            :columns="pluginColumns"
-            :loading="pluginsLoading"
-            :pagination="{ ...pluginPagination }"
-            @page-change="onPluginPageChange"
-          >
-            <template #name="{ row }">
-              <span class="mc-admin__plugin-name">{{ row.name }}</span>
-            </template>
-            <template #installCount="{ row }">
-              <span class="mc-admin__num">{{ row.installCount }}</span>
-            </template>
-            <template #enabledCount="{ row }">
-              <span class="mc-admin__num">{{ row.enabledCount }}</span>
-            </template>
-            <template #globalStatus="{ row }">
-              <UiTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
-                {{ t('admin.disabledTag') }}
-              </UiTag>
-              <UiTag v-else theme="success" variant="light" size="small">{{
-                t('admin.globalNormal')
-              }}</UiTag>
-            </template>
-            <template #ops="{ row }">
-              <div class="mc-admin__ops">
-                <a @click="toggleGlobalDisabled(row)">
-                  {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
-                </a>
-                <a class="mc-admin__danger" @click="purgePlugin(row)">{{ t('admin.purge') }}</a>
-              </div>
-            </template>
-          </TTable>
-        </div>
-      </TTabPanel>
-
-      <TTabPanel value="audits" :label="t('admin.tabAudits')">
-        <div class="mc-admin__panel">
-          <p class="mc-admin__hint text-placeholder">{{ t('admin.auditHint') }}</p>
-          <TTable
-            row-key="id"
-            :data="audits"
-            :columns="auditColumns"
-            :loading="auditsLoading"
-            :pagination="auditPagination"
-            @page-change="onAuditPageChange"
-          >
-            <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
-            <template #action="{ row }">
-              <UiTag variant="outline" size="small">{{ actionLabel(row.action) }}</UiTag>
-            </template>
-            <template #targetName="{ row }">
-              {{ row.targetName || '—' }}
-            </template>
-            <template #detail="{ row }">
-              <span class="mc-admin__audit-detail">{{ row.detail || '—' }}</span>
-            </template>
-            <template #ip="{ row }">
-              <span class="text-placeholder num">{{ row.ip || '—' }}</span>
-            </template>
-          </TTable>
-        </div>
-      </TTabPanel>
-
-      <TTabPanel value="settings" :label="t('admin.tabSettings')">
-        <div class="mc-admin__panel">
-          <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
-
-          <!-- 邮件（SMTP）：找回密码依赖它 -->
-          <section class="mc-settings">
-            <div class="mc-settings__head">
-              <h3 class="mc-settings__title">{{ t('admin.smtpTitle') }}</h3>
-              <UiTag :theme="settingsMeta.smtpEnabled ? 'success' : 'default'" variant="light">
-                {{ settingsMeta.smtpEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
-              </UiTag>
-            </div>
-            <p class="mc-settings__desc text-placeholder">{{ t('admin.smtpDesc') }}</p>
-            <div class="mc-settings__grid">
-              <label class="mc-settings__field">
-                <span>{{ t('admin.smtpHost') }}</span>
-                <UiInput v-model="settingsForm.smtp.host" placeholder="smtp.qq.com" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.smtpPort') }}</span>
-                <UiInput v-model="settingsForm.smtp.port" placeholder="465" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.smtpUser') }}</span>
-                <UiInput v-model="settingsForm.smtp.user" placeholder="you@qq.com" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.smtpPass') }}</span>
-                <UiInput
-                  v-model="settingsForm.smtp.pass"
-                  type="password"
-                  :placeholder="t('admin.secretPlaceholder')"
-                />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.smtpFrom') }}</span>
-                <UiInput v-model="settingsForm.smtp.from" :placeholder="t('admin.smtpFromHint')" />
-              </label>
-            </div>
-            <div class="mc-settings__actions">
-              <UiInput
-                v-model="testEmail"
-                class="mc-settings__test-to"
-                :placeholder="t('admin.testMailPlaceholder')"
+        <TTable
+          row-key="id"
+          :data="users"
+          :columns="columns"
+          :loading="loading"
+          :pagination="pagination"
+          @page-change="onPageChange"
+        >
+          <template #user="{ row }">
+            <div class="mc-admin__user">
+              <AvatarBadge
+                :name="row.nickname"
+                :src="row.avatar"
+                :color="row.avatarColor"
+                :size="30"
               />
-              <UiButton variant="outline" :loading="testingSMTP" @click="sendTestMail">
-                {{ t('admin.sendTestMail') }}
-              </UiButton>
+              <span>{{ row.nickname }}</span>
             </div>
-          </section>
+          </template>
 
-          <!-- Redis：限流共享配额 -->
-          <section class="mc-settings">
-            <div class="mc-settings__head">
-              <h3 class="mc-settings__title">{{ t('admin.redisTitle') }}</h3>
-              <UiTag :theme="settingsMeta.redisEnabled ? 'success' : 'default'" variant="light">
-                {{ settingsMeta.redisEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
-              </UiTag>
-            </div>
-            <p class="mc-settings__desc text-placeholder">{{ t('admin.redisDesc') }}</p>
-            <div class="mc-settings__grid">
-              <label class="mc-settings__field mc-settings__field--wide">
-                <span>{{ t('admin.redisAddr') }}</span>
-                <UiInput v-model="settingsForm.redis.addr" placeholder="127.0.0.1:6379" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.redisDB') }}</span>
-                <UiInput v-model="settingsForm.redis.db" placeholder="0" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.redisPass') }}</span>
-                <UiInput
-                  v-model="settingsForm.redis.pass"
-                  type="password"
-                  :placeholder="t('admin.secretPlaceholder')"
-                />
-              </label>
-            </div>
-            <p class="mc-settings__warn">{{ t('admin.redisRestartHint') }}</p>
-          </section>
+          <template #role="{ row }">
+            {{ row.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser') }}
+          </template>
 
-          <!-- 对象存储：暂无消费方 -->
-          <section class="mc-settings">
-            <div class="mc-settings__head">
-              <h3 class="mc-settings__title">{{ t('admin.storageTitle') }}</h3>
-              <UiTag :theme="settingsMeta.storageApplied ? 'success' : 'default'" variant="light">
-                {{ settingsMeta.storageApplied ? t('admin.cfgActive') : t('admin.cfgInactive') }}
-              </UiTag>
-            </div>
-            <p class="mc-settings__desc text-placeholder">{{ t('admin.storageDesc') }}</p>
-            <div class="mc-settings__grid">
-              <label class="mc-settings__field mc-settings__field--wide">
-                <span>{{ t('admin.storageEndpoint') }}</span>
-                <UiInput
-                  v-model="settingsForm.storage.endpoint"
-                  placeholder="https://s3.example.com"
-                />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.storageRegion') }}</span>
-                <UiInput v-model="settingsForm.storage.region" placeholder="us-east-1" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.storageBucket') }}</span>
-                <UiInput v-model="settingsForm.storage.bucket" placeholder="modernchat" />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.storageAK') }}</span>
-                <UiInput v-model="settingsForm.storage.accessKey" placeholder="AKIA..." />
-              </label>
-              <label class="mc-settings__field">
-                <span>{{ t('admin.storageSK') }}</span>
-                <UiInput
-                  v-model="settingsForm.storage.secretKey"
-                  type="password"
-                  :placeholder="t('admin.secretPlaceholder')"
-                />
-              </label>
-              <label class="mc-settings__field mc-settings__field--wide">
-                <span>{{ t('admin.storagePublicBase') }}</span>
-                <UiInput
-                  v-model="settingsForm.storage.publicBase"
-                  :placeholder="t('admin.storagePublicBaseHint')"
-                />
-              </label>
-            </div>
-            <p class="mc-settings__warn">{{ t('admin.storageRestartHint') }}</p>
-          </section>
+          <template #status="{ row }">
+            <UiTag v-if="isBanned(row)" theme="danger" variant="light" size="small">
+              {{
+                row.banReason
+                  ? t('admin.banned', { reason: row.banReason })
+                  : t('admin.bannedShort')
+              }}
+            </UiTag>
+            <UiTag v-else theme="success" variant="light" size="small">{{
+              t('admin.normal')
+            }}</UiTag>
+          </template>
 
-          <div class="mc-settings__save">
-            <UiButton theme="primary" :loading="savingSettings" @click="saveSettings">
-              {{ t('admin.saveSettings') }}
+          <template #ops="{ row }">
+            <div class="mc-admin__ops">
+              <a @click="openDetail(row)">{{ t('admin.detail') }}</a>
+              <a v-if="!isBanned(row)" @click="openBan(row)">{{ t('admin.ban') }}</a>
+              <a v-else @click="unban(row)">{{ t('admin.unban') }}</a>
+              <a @click="kick(row)">{{ t('admin.kick') }}</a>
+              <a @click="setRole(row)">
+                {{ row.role === 'admin' ? t('admin.revokeAdmin') : t('admin.grantAdmin') }}
+              </a>
+              <a @click="resetPassword(row)">{{ t('admin.resetPassword') }}</a>
+            </div>
+          </template>
+        </TTable>
+      </div>
+
+      <div v-if="tab === 'plugins'" class="mc-admin__panel" role="tabpanel">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.pluginHint') }}</p>
+        <TTable
+          row-key="name"
+          :data="plugins"
+          :columns="pluginColumns"
+          :loading="pluginsLoading"
+          :pagination="pluginPagination"
+          @page-change="onPluginPageChange"
+        >
+          <template #name="{ row }">
+            <span class="mc-admin__plugin-name">{{ row.name }}</span>
+          </template>
+          <template #installCount="{ row }">
+            <span class="mc-admin__num">{{ row.installCount }}</span>
+          </template>
+          <template #enabledCount="{ row }">
+            <span class="mc-admin__num">{{ row.enabledCount }}</span>
+          </template>
+          <template #globalStatus="{ row }">
+            <UiTag v-if="row.globalDisabled" theme="danger" variant="light" size="small">
+              {{ t('admin.disabledTag') }}
+            </UiTag>
+            <UiTag v-else theme="success" variant="light" size="small">{{
+              t('admin.globalNormal')
+            }}</UiTag>
+          </template>
+          <template #ops="{ row }">
+            <div class="mc-admin__ops">
+              <a @click="toggleGlobalDisabled(row)">
+                {{ row.globalDisabled ? t('admin.globalEnable') : t('admin.globalDisable') }}
+              </a>
+              <a class="mc-admin__danger" @click="purgePlugin(row)">{{ t('admin.purge') }}</a>
+            </div>
+          </template>
+        </TTable>
+      </div>
+
+      <div v-if="tab === 'audits'" class="mc-admin__panel" role="tabpanel">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.auditHint') }}</p>
+        <TTable
+          row-key="id"
+          :data="audits"
+          :columns="auditColumns"
+          :loading="auditsLoading"
+          :pagination="auditPagination"
+          @page-change="onAuditPageChange"
+        >
+          <template #createdAt="{ row }">{{ formatDate(row.createdAt) }}</template>
+          <template #action="{ row }">
+            <UiTag variant="outline" size="small">{{ actionLabel(row.action) }}</UiTag>
+          </template>
+          <template #targetName="{ row }">
+            {{ row.targetName || '—' }}
+          </template>
+          <template #detail="{ row }">
+            <span class="mc-admin__audit-detail">{{ row.detail || '—' }}</span>
+          </template>
+          <template #ip="{ row }">
+            <span class="text-placeholder num">{{ row.ip || '—' }}</span>
+          </template>
+        </TTable>
+      </div>
+
+      <div v-if="tab === 'settings'" class="mc-admin__panel" role="tabpanel">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
+
+        <!-- 邮件（SMTP）：找回密码依赖它 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.smtpTitle') }}</h3>
+            <UiTag :theme="settingsMeta.smtpEnabled ? 'success' : 'default'" variant="light">
+              {{ settingsMeta.smtpEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+            </UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.smtpDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field">
+              <span>{{ t('admin.smtpHost') }}</span>
+              <UiInput v-model="settingsForm.smtp.host" placeholder="smtp.qq.com" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.smtpPort') }}</span>
+              <UiInput v-model="settingsForm.smtp.port" placeholder="465" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.smtpUser') }}</span>
+              <UiInput v-model="settingsForm.smtp.user" placeholder="you@qq.com" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.smtpPass') }}</span>
+              <UiInput
+                v-model="settingsForm.smtp.pass"
+                type="password"
+                :placeholder="t('admin.secretPlaceholder')"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.smtpFrom') }}</span>
+              <UiInput v-model="settingsForm.smtp.from" :placeholder="t('admin.smtpFromHint')" />
+            </label>
+          </div>
+          <div class="mc-settings__actions">
+            <UiInput
+              v-model="testEmail"
+              class="mc-settings__test-to"
+              :placeholder="t('admin.testMailPlaceholder')"
+            />
+            <UiButton variant="outline" :loading="testingSMTP" @click="sendTestMail">
+              {{ t('admin.sendTestMail') }}
             </UiButton>
           </div>
+        </section>
+
+        <!-- Redis：限流共享配额 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.redisTitle') }}</h3>
+            <UiTag :theme="settingsMeta.redisEnabled ? 'success' : 'default'" variant="light">
+              {{ settingsMeta.redisEnabled ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+            </UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.redisDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field mc-settings__field--wide">
+              <span>{{ t('admin.redisAddr') }}</span>
+              <UiInput v-model="settingsForm.redis.addr" placeholder="127.0.0.1:6379" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.redisDB') }}</span>
+              <UiInput v-model="settingsForm.redis.db" placeholder="0" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.redisPass') }}</span>
+              <UiInput
+                v-model="settingsForm.redis.pass"
+                type="password"
+                :placeholder="t('admin.secretPlaceholder')"
+              />
+            </label>
+          </div>
+          <p class="mc-settings__warn">{{ t('admin.redisRestartHint') }}</p>
+        </section>
+
+        <!-- 对象存储：暂无消费方 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.storageTitle') }}</h3>
+            <UiTag :theme="settingsMeta.storageApplied ? 'success' : 'default'" variant="light">
+              {{ settingsMeta.storageApplied ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+            </UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.storageDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field mc-settings__field--wide">
+              <span>{{ t('admin.storageEndpoint') }}</span>
+              <UiInput
+                v-model="settingsForm.storage.endpoint"
+                placeholder="https://s3.example.com"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.storageRegion') }}</span>
+              <UiInput v-model="settingsForm.storage.region" placeholder="us-east-1" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.storageBucket') }}</span>
+              <UiInput v-model="settingsForm.storage.bucket" placeholder="modernchat" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.storageAK') }}</span>
+              <UiInput v-model="settingsForm.storage.accessKey" placeholder="AKIA..." />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.storageSK') }}</span>
+              <UiInput
+                v-model="settingsForm.storage.secretKey"
+                type="password"
+                :placeholder="t('admin.secretPlaceholder')"
+              />
+            </label>
+            <label class="mc-settings__field mc-settings__field--wide">
+              <span>{{ t('admin.storagePublicBase') }}</span>
+              <UiInput
+                v-model="settingsForm.storage.publicBase"
+                :placeholder="t('admin.storagePublicBaseHint')"
+              />
+            </label>
+          </div>
+          <p class="mc-settings__warn">{{ t('admin.storageRestartHint') }}</p>
+        </section>
+
+        <div class="mc-settings__save">
+          <UiButton theme="primary" :loading="savingSettings" @click="saveSettings">
+            {{ t('admin.saveSettings') }}
+          </UiButton>
         </div>
-      </TTabPanel>
-    </TTabss>
+      </div>
+    </div>
 
     <!-- 封禁弹窗 -->
     <UiDialog v-model:visible="banVisible" :header="t('admin.banTitle')" @confirm="doBan">
@@ -941,7 +974,7 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       :header="t('admin.detailTitle')"
       width="520px"
       :footer="false"
-      >
+    >
       <p v-if="detailLoading" class="text-placeholder">{{ t('admin.loading') }}</p>
       <div v-else-if="detail" class="mc-admin__detail">
         <div class="mc-admin__detail-head">
@@ -1060,6 +1093,55 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 .mc-admin__tabs {
   margin-top: 4px;
+}
+
+/* 轻量页签：视觉与 TDesign 下划线页签一致，但不渲染隐藏面板 */
+.mc-admin__tabbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.mc-admin__tab {
+  position: relative;
+  padding: 10px 12px 9px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--mc-fs-emphasis);
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  border-radius: var(--mc-radius-sm) var(--mc-radius-sm) 0 0;
+  transition:
+    color var(--mc-dur-instant) var(--mc-ease-out),
+    background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-admin__tab:hover {
+  color: var(--td-text-color-primary);
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-admin__tab.is-active {
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
+.mc-admin__tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--td-brand-color);
+}
+
+.mc-admin__tab:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 2px;
 }
 
 .mc-admin__hint {
