@@ -112,7 +112,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       loadingMessages.value = true
       try {
         const page = await convApi.messages(convId)
-        messagesByConv[convId] = page.messages.slice().reverse()
+        messagesByConv[convId] = (page.messages ?? []).slice().reverse()
         hasMoreByConv[convId] = page.hasMore
       } catch (e) {
         // 会话已失效（被踢 / 已退群）或网络异常：回退选择，避免停在空白会话
@@ -137,8 +137,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     try {
       const page = await convApi.messages(convId, oldest.id)
       hasMoreByConv[convId] = page.hasMore
-      if (page.messages.length) {
-        messagesByConv[convId] = [...page.messages.slice().reverse(), ...list]
+      if ((page.messages ?? []).length) {
+        messagesByConv[convId] = [...(page.messages ?? []).slice().reverse(), ...list]
       }
     } catch (e) {
       // 分页失败不影响已有消息，下次滚动会重试
@@ -298,7 +298,7 @@ export const useConversationsStore = defineStore('conversations', () => {
   async function loadLatest(convId: number) {
     const page = await convApi.messages(convId)
     // 接口按 id 倒序返回（新→旧），本地列表是正序，需先反转
-    const incoming = page.messages.slice().reverse()
+    const incoming = (page.messages ?? []).slice().reverse()
     const list = (messagesByConv[convId] ??= [])
     const knownIds = new Set(list.map((m) => m.id))
     const byClientId = new Map(list.filter((m) => m.clientMsgId).map((m) => [m.clientMsgId, m] as const))

@@ -171,6 +171,11 @@ func (h *ConversationHandler) Messages(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 空会话时 rows 可能是 nil → 序列化成 "messages": null，
+	// 前端拿到后 .slice() 会崩（打开空会话直接白屏）。统一给空数组。
+	if rows == nil {
+		rows = []model.Message{}
+	}
 	c.JSON(http.StatusOK, gin.H{"messages": rows, "hasMore": hasMore})
 }
 
@@ -243,6 +248,10 @@ func (h *ConversationHandler) Favorites(c *gin.Context) {
 	if err != nil {
 		internal(c, err)
 		return
+	}
+	// 兜底：nil slice 会被序列化成 null（客户端 `.map` 会崩），统一给空数组
+	if rows == nil {
+		rows = []model.FavoriteView{}
 	}
 	c.JSON(http.StatusOK, rows)
 }

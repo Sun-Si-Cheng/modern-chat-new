@@ -30,6 +30,10 @@ func (h *FriendHandler) List(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// nil slice 会序列化成 null，客户端 `.filter/.map` 直接抛错；统一给空数组
+	if rows == nil {
+		rows = []model.FriendItemView{}
+	}
 	c.JSON(http.StatusOK, rows)
 }
 
@@ -39,6 +43,9 @@ func (h *FriendHandler) Requests(c *gin.Context) {
 	if err != nil {
 		internal(c, err)
 		return
+	}
+	if rows == nil {
+		rows = []model.FriendRequestView{}
 	}
 	c.JSON(http.StatusOK, rows)
 }

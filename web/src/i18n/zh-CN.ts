@@ -207,7 +207,8 @@ export default {
   },
   favorites: {
     title: '收藏夹',
-    empty: '还没有收藏的消息。右键点击消息即可收藏。',
+    emptyTitle: '暂无收藏',
+    empty: '右键点击消息即可收藏到这里',
     open: '打开会话',
     remove: '取消收藏',
     removed: '已取消收藏',

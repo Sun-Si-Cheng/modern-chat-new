@@ -119,7 +119,23 @@ async function unfavorite(item: FavoriteItem) {
         </div>
 
         <div v-if="!favorites.items.length" class="mc-fav__empty">
-          <p class="text-placeholder">{{ t('favorites.empty') }}</p>
+          <svg
+            class="mc-fav__empty-icon"
+            width="36"
+            height="36"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <p class="mc-fav__empty-title">{{ t('favorites.emptyTitle') }}</p>
+          <p class="mc-fav__empty-hint text-placeholder">{{ t('favorites.empty') }}</p>
         </div>
       </template>
     </div>
@@ -205,8 +221,31 @@ async function unfavorite(item: FavoriteItem) {
 }
 
 .mc-fav__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   text-align: center;
-  padding: 48px 0;
-  font-size: 13px;
+  padding: 72px 24px;
+}
+
+.mc-fav__empty-icon {
+  color: var(--td-text-color-placeholder);
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.mc-fav__empty-title {
+  margin: 0;
+  font-size: var(--mc-fs-emphasis);
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.mc-fav__empty-hint {
+  margin: 0;
+  font-size: var(--mc-fs-sm);
+  line-height: 1.5;
+  max-width: 240px;
 }
 </style>

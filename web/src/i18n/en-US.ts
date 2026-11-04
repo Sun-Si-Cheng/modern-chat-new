@@ -206,7 +206,8 @@ export default {
   },
   favorites: {
     title: 'Favorites',
-    empty: 'No favorites yet. Right-click a message to add it.',
+    emptyTitle: 'No favorites yet',
+    empty: 'Right-click a message to save it here',
     open: 'Open chat',
     remove: 'Remove',
     removed: 'Removed from favorites',

@@ -211,7 +211,9 @@ func (s *MessageStore) Unfavorite(userID uint, messageID uint) error {
 
 // Favorites 收藏列表（按收藏时间倒序）。单聊没有群名，用对方昵称作为会话名。
 func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, error) {
-	var rows []model.FavoriteView
+	// 必须初始化成空切片而不是 nil：Go 的 nil slice 序列化成 JSON 是 null，
+	// 前端拿到 null 后 `items.map(...)` 直接抛错（收藏夹打不开）。
+	rows := make([]model.FavoriteView, 0, limit)
 	if err := s.db.Table("message_favorites f").
 		Select(`f.message_id, m.conversation_id, c.type AS conv_type,
 			COALESCE(c.name, '') AS conv_name, m.sender_id, u.nickname AS sender_nickname,

@@ -41,12 +41,12 @@ export const useFriendsStore = defineStore('friends', () => {
 
   async function loadAll() {
     const [f, r] = await Promise.all([friendApi.list(), friendApi.requests()])
-    friends.value = f
-    requests.value = r
+    friends.value = Array.isArray(f) ? f : []
+    requests.value = Array.isArray(r) ? r : []
   }
 
   async function loadRequests() {
-    requests.value = await friendApi.requests()
+    requests.value = (await friendApi.requests()) ?? []
   }
 
   async function apply(toUsername: string) {

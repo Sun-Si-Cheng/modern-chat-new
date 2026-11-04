@@ -18,9 +18,16 @@ export const useFavoritesStore = defineStore('favorites', () => {
     if (loaded.value && !force) return
     loading.value = true
     try {
-      items.value = await favoriteApi.list()
+      // 兼容服务端返回 null（Go nil slice）的情况：统一收敛成数组，
+      // 否则下面 .map 与模板里的 .length 都会抛错，整个抽屉白屏
+      const list = await favoriteApi.list()
+      items.value = Array.isArray(list) ? list : []
       ids.value = items.value.map((i) => i.messageId)
       loaded.value = true
+    } catch {
+      // 拉取失败时保持空列表，至少能显示「暂无收藏」而不是报错
+      items.value = []
+      ids.value = []
     } finally {
       loading.value = false
     }
