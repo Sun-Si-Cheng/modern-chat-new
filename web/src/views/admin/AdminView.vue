@@ -46,7 +46,14 @@ const settingsMeta = ref({ smtpEnabled: false, redisEnabled: false, storageAppli
 const settingsForm = ref<AdminSettingsPayload>({
   smtp: { host: '', port: '465', user: '', from: '', pass: '' },
   redis: { addr: '', db: '0', pass: '' },
-  storage: { endpoint: '', region: '', bucket: '', accessKey: '', secretKey: '' },
+  storage: {
+    endpoint: '',
+    region: '',
+    bucket: '',
+    accessKey: '',
+    secretKey: '',
+    publicBase: '',
+  },
 })
 
 async function fetchSettings() {
@@ -68,6 +75,7 @@ async function fetchSettings() {
         bucket: s.storage.bucket,
         accessKey: s.storage.accessKey,
         secretKey: '',
+        publicBase: s.storage.publicBase,
       },
     }
     settingsMeta.value = {
@@ -841,7 +849,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           <section class="mc-settings">
             <div class="mc-settings__head">
               <h3 class="mc-settings__title">{{ t('admin.storageTitle') }}</h3>
-              <UiTag theme="warning" variant="light">{{ t('admin.cfgNotWired') }}</UiTag>
+              <UiTag :theme="settingsMeta.storageApplied ? 'success' : 'default'" variant="light">
+                {{ settingsMeta.storageApplied ? t('admin.cfgActive') : t('admin.cfgInactive') }}
+              </UiTag>
             </div>
             <p class="mc-settings__desc text-placeholder">{{ t('admin.storageDesc') }}</p>
             <div class="mc-settings__grid">
@@ -872,8 +882,15 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                   :placeholder="t('admin.secretPlaceholder')"
                 />
               </label>
+              <label class="mc-settings__field mc-settings__field--wide">
+                <span>{{ t('admin.storagePublicBase') }}</span>
+                <UiInput
+                  v-model="settingsForm.storage.publicBase"
+                  :placeholder="t('admin.storagePublicBaseHint')"
+                />
+              </label>
             </div>
-            <p class="mc-settings__warn">{{ t('admin.storageNotWiredHint') }}</p>
+            <p class="mc-settings__warn">{{ t('admin.storageRestartHint') }}</p>
           </section>
 
           <div class="mc-settings__save">

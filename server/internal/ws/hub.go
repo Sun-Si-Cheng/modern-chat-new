@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
@@ -31,6 +32,8 @@ type Deps struct {
 	Friends    *store.FriendStore
 	Users      *store.UserStore   // 连接级封禁 / token_version 复核（可为 nil）
 	MsgLimiter middleware.Limiter // 每用户 20 条/分（内存或 Redis）
+	// Storage 用于校验图片/语音消息的 URL 归属（可为 nil，测试环境走本地前缀兜底）
+	Storage service.Storage
 }
 
 // Hub 在线连接注册表（按用户分片锁）。

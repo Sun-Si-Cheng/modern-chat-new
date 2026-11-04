@@ -349,8 +349,10 @@ export default {
     storageBucket: 'Bucket',
     storageAK: 'AccessKey',
     storageSK: 'SecretKey',
-    storageNotWiredHint:
-      'ⓘ This version has no file upload yet (avatars accept a URL string, plugins are stored locally), so these settings are saved but not used.',
+    storagePublicBase: 'Public base URL (optional)',
+    storagePublicBaseHint: 'e.g. https://cdn.example.com; leave blank to use Endpoint/Bucket',
+    storageRestartHint:
+      'ⓘ Fill in Endpoint and Bucket, save, then restart the service to switch to object storage. Existing files are not migrated.',
     auditHint: 'Records console write operations: ban, force offline, role changes, plugins and announcements.',
     auditTime: 'Time',
     auditAction: 'Action',

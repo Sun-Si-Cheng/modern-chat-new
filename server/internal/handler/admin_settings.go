@@ -46,6 +46,8 @@ type storageSetting struct {
 	AccessKey    string `json:"accessKey"`
 	SecretKey    string `json:"secretKey,omitempty"`
 	HasSecretKey bool   `json:"hasSecretKey"`
+	// PublicBase 对外访问前缀（CDN 域名），留空按 endpoint/bucket 拼
+	PublicBase string `json:"publicBase"`
 }
 
 type settingsPayload struct {
@@ -92,10 +94,11 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 			Bucket:       all[store.KeyStorageBucket],
 			AccessKey:    all[store.KeyStorageAccessKey],
 			HasSecretKey: all[store.KeyStorageSecretKey] != "",
+			PublicBase:   all[store.KeyStoragePublicBase],
 		},
 		SMTPEnabled:       h.mailer.Config().Enabled(),
 		RedisEnabled:      all[store.KeyRedisAddr] != "",
-		StorageApplied:    false,
+		StorageApplied:    all[store.KeyStorageEndpoint] != "" && all[store.KeyStorageBucket] != "",
 		RedisNeedsRestart: true,
 	}
 	c.JSON(http.StatusOK, view)
@@ -133,11 +136,12 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyRedisDB:   strings.TrimSpace(req.Redis.DB),
 		store.KeyRedisPass: req.Redis.Pass,
 
-		store.KeyStorageEndpoint:  strings.TrimSpace(req.Storage.Endpoint),
-		store.KeyStorageRegion:    strings.TrimSpace(req.Storage.Region),
-		store.KeyStorageBucket:    strings.TrimSpace(req.Storage.Bucket),
-		store.KeyStorageAccessKey: strings.TrimSpace(req.Storage.AccessKey),
-		store.KeyStorageSecretKey: req.Storage.SecretKey,
+		store.KeyStorageEndpoint:   strings.TrimSpace(req.Storage.Endpoint),
+		store.KeyStorageRegion:     strings.TrimSpace(req.Storage.Region),
+		store.KeyStorageBucket:     strings.TrimSpace(req.Storage.Bucket),
+		store.KeyStorageAccessKey:  strings.TrimSpace(req.Storage.AccessKey),
+		store.KeyStorageSecretKey:  req.Storage.SecretKey,
+		store.KeyStoragePublicBase: strings.TrimSpace(req.Storage.PublicBase),
 	}
 
 	if err := h.settings.Save(updates, middleware.UserFrom(c).ID); err != nil {

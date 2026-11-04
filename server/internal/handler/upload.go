@@ -14,10 +14,10 @@ import (
 
 // UploadHandler 文件上传（图片 / 语音）。
 type UploadHandler struct {
-	storage *service.Storage
+	storage service.Storage
 }
 
-func NewUploadHandler(storage *service.Storage) *UploadHandler {
+func NewUploadHandler(storage service.Storage) *UploadHandler {
 	return &UploadHandler{storage: storage}
 }
 

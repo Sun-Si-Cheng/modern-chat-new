@@ -188,6 +188,8 @@ export interface AdminSettings {
     bucket: string
     accessKey: string
     hasSecretKey: boolean
+    /** 对外访问前缀（CDN），留空按 endpoint/bucket 拼 */
+    publicBase: string
   }
   smtpEnabled: boolean
   redisEnabled: boolean
@@ -207,6 +209,7 @@ export interface AdminSettingsPayload {
     bucket: string
     accessKey: string
     secretKey?: string
+    publicBase?: string
   }
 }
 

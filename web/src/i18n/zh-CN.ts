@@ -346,8 +346,10 @@ export default {
     storageBucket: 'Bucket',
     storageAK: 'AccessKey',
     storageSK: 'SecretKey',
-    storageNotWiredHint:
-      'ⓘ 当前版本尚未接入文件上传（头像只接受图片 URL，插件存本地），这组配置会被保存但不会生效。',
+    storagePublicBase: '访问前缀（可选）',
+    storagePublicBaseHint: '如 https://cdn.example.com；留空则用 Endpoint/Bucket 拼接',
+    storageRestartHint:
+      'ⓘ 填好 Endpoint 与 Bucket 并保存后，重启服务即切换到对象存储；未填则继续使用本地磁盘。已上传的历史文件不会自动迁移。',
     auditHint: '记录后台写操作：封禁、踢下线、角色调整、插件处理与公告。',
     auditTime: '时间',
     auditAction: '操作',

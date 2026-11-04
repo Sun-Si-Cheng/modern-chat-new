@@ -27,6 +27,9 @@ type Deps struct {
 	WS            *ws.Hub
 	AuthLimiter   middleware.Limiter // 认证类接口按 IP 限流
 	PluginLimiter middleware.Limiter // 插件安装按用户限流
+	// Settings 与 Storage 由 main 装配（Hub 也要用同一个 Storage 做 URL 归属校验）
+	Settings *store.SettingStore
+	Storage  service.Storage
 }
 
 // New 装配引擎。
@@ -74,12 +77,8 @@ func New(d Deps) *gin.Engine {
 	resets := store.NewPasswordResetStore(d.DB)
 	audits := store.NewAuditStore(d.DB)
 
-	// 系统设置：密钥类字段用 JWT_SECRET 派生的 AES-256-GCM 加密落库
-	box, err := store.NewSecretBox(d.Cfg.JWTSecret)
-	if err != nil {
-		slog.Error("init secretbox failed", "err", err.Error())
-	}
-	settings := store.NewSettingStore(d.DB, box)
+	// 系统设置与上传存储由 main 装配（Hub 也要用同一个 Storage 做 URL 归属校验）
+	settings := d.Settings
 	// 启动时用库里的配置覆盖环境变量：后台改过的值重启后继续生效
 	if cfg, ok := settings.SMTPConfig(d.Cfg.SMTP.LogResetLink); ok {
 		d.Mailer.SetConfig(cfg)
@@ -93,22 +92,20 @@ func New(d Deps) *gin.Engine {
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 
-	// 上传文件存储（图片 / 语音）。初始化失败不阻断启动：聊天文本仍可用，
-	// 只是上传接口会返回 503——比整个服务起不来要好。
-	storage, stErr := service.NewStorage(d.Cfg.DataDir)
-	if stErr != nil {
-		slog.Error("init upload storage failed; upload API disabled", "err", stErr.Error())
-	}
+	// 上传文件存储由 main 依据配置构造（本地或 S3 兼容），这里只挂接口与静态服务
+	storage := d.Storage
 	var uploadH *handler.UploadHandler
 	if storage != nil {
 		uploadH = handler.NewUploadHandler(storage)
-		// 静态服务：文件名是 128 位随机 + 内容不可变，可以长缓存
-		r.Group("/uploads").
-			Use(func(c *gin.Context) {
-				c.Header("Cache-Control", "public, max-age=31536000, immutable")
-				c.Next()
-			}).
-			StaticFS("/", http.Dir(storage.Root()))
+		// 只有本地存储需要静态服务；S3 的 URL 由对象存储自己提供
+		if ls, ok := storage.(*service.LocalStorage); ok {
+			r.Group("/uploads").
+				Use(func(c *gin.Context) {
+					c.Header("Cache-Control", "public, max-age=31536000, immutable")
+					c.Next()
+				}).
+				StaticFS("/", http.Dir(ls.Root()))
+		}
 	}
 
 	api := r.Group("/api")

@@ -83,6 +83,38 @@ func main() {
 		pluginLimiter = middleware.NewLimiterStore(5, 5)
 	}
 
+	// 系统设置 + 上传存储：Hub 与 router 都要用，所以在装配处构造一次。
+	// 存储类型取决于后台是否配了对象存储（数据库优先于环境变量）。
+	box, boxErr := store.NewSecretBox(cfg.JWTSecret)
+	if boxErr != nil {
+		slog.Error("init secretbox failed", "err", boxErr.Error())
+	}
+	settings := store.NewSettingStore(db, box)
+
+	storageCfg := service.StorageConfig{Kind: "local", DataDir: cfg.DataDir}
+	if all, sErr := settings.All(); sErr == nil {
+		if all[store.KeyStorageEndpoint] != "" && all[store.KeyStorageBucket] != "" {
+			storageCfg = service.StorageConfig{
+				Kind:       "s3",
+				DataDir:    cfg.DataDir,
+				Endpoint:   all[store.KeyStorageEndpoint],
+				Region:     all[store.KeyStorageRegion],
+				Bucket:     all[store.KeyStorageBucket],
+				AccessKey:  all[store.KeyStorageAccessKey],
+				SecretKey:  all[store.KeyStorageSecretKey],
+				PublicBase: all[store.KeyStoragePublicBase],
+			}
+		}
+	}
+	uploadStorage, stErr := service.NewStorage(storageCfg)
+	if stErr != nil {
+		// 存储不可用不阻断启动：文本聊天仍可用，上传接口不注册
+		slog.Error("init upload storage failed; upload API disabled", "err", stErr.Error())
+		uploadStorage = nil
+	} else {
+		slog.Info("upload storage ready", "kind", uploadStorage.Kind())
+	}
+
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
 		Convs:      store.NewConversationStore(db),
@@ -90,6 +122,7 @@ func main() {
 		Friends:    store.NewFriendStore(db),
 		Users:      store.NewUserStore(db), // 连接级封禁 / tv 复核（task-4 修复点）
 		MsgLimiter: msgLimiter,
+		Storage:    uploadStorage,
 	})
 	go hub.Run()
 
@@ -99,6 +132,8 @@ func main() {
 		Mailer:        service.NewMailer(cfg.SMTP),
 		Notifier:      hub,
 		WS:            hub,
+		Settings:      settings,
+		Storage:       uploadStorage,
 		AuthLimiter:   authLimiter,
 		PluginLimiter: pluginLimiter,
 	})

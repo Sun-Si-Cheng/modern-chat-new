@@ -3,11 +3,11 @@ package ws
 import (
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 )
 
 // 上行帧（§7）：宽松解析，按 type 路由。
@@ -85,9 +85,19 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	// 图片/语音的 content 必须是本站上传目录下的相对地址。
 	// 不校验的话用户可以塞 https://evil.com/x.png，接收方客户端会去加载外部资源
 	// （泄露 IP、可被打点统计），而消息看起来完全正常。
-	if (msgType == "image" || msgType == "audio") && !service.IsUploadURL(string(content)) {
-		h.sendError(c, "图片/语音消息的内容必须是本站上传地址")
-		return
+	if msgType == "image" || msgType == "audio" {
+		// 由存储实现自己判断 URL 归属（本地是 /uploads/，S3 是配置的对外域名），
+		// 这样换存储不用改校验逻辑。测试里未注入 Storage 时退回本地前缀判断。
+		var ok bool
+		if h.deps.Storage != nil {
+			ok = h.deps.Storage.Owns(string(content))
+		} else {
+			ok = strings.HasPrefix(string(content), "/uploads/") && !strings.Contains(string(content), "..")
+		}
+		if !ok {
+			h.sendError(c, "图片/语音消息的内容必须是本站上传地址")
+			return
+		}
 	}
 
 	// 幂等：同 client_msg_id 直接回放原消息

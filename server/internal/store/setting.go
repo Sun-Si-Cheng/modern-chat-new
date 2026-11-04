@@ -29,13 +29,15 @@ const (
 	KeyStorageBucket    = "storage.bucket"
 	KeyStorageAccessKey = "storage.accessKey"
 	KeyStorageSecretKey = "storage.secretKey" // 加密
+	// PublicBase 对象存储的对外访问前缀（CDN 域名）。留空则按 endpoint/bucket 拼。
+	KeyStoragePublicBase = "storage.publicBase"
 )
 
 var knownKeys = map[string]bool{
 	KeySMTPHost: true, KeySMTPPort: true, KeySMTPUser: true, KeySMTPPass: true, KeySMTPFrom: true,
 	KeyRedisAddr: true, KeyRedisPass: true, KeyRedisDB: true,
 	KeyStorageEndpoint: true, KeyStorageRegion: true, KeyStorageBucket: true,
-	KeyStorageAccessKey: true, KeyStorageSecretKey: true,
+	KeyStorageAccessKey: true, KeyStorageSecretKey: true, KeyStoragePublicBase: true,
 }
 
 // secretKeys 落库前加密、返回前端时脱敏。
