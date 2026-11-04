@@ -631,8 +631,10 @@ const senderName = (m: Message) => {
 .mc-msg {
   display: flex;
   gap: 10px;
-  /* 气泡之间的呼吸感：上下各 11px，相邻两条合计 22px（原为 12px） */
-  margin: 11px 0;
+  /* 气泡之间的呼吸感：上下各 11px。
+     用 padding 而非 margin：DynamicScroller 按 wrapper 高度测量 item，
+     margin 不计入会导致相邻消息的 meta 行互相贴边、视觉上被裁。 */
+  padding: 11px 0;
 }
 
 .mc-msg.mine {
@@ -823,10 +825,11 @@ const senderName = (m: Message) => {
 
 .mc-msg__meta {
   font-size: var(--mc-fs-sm);
+  /* 明确行高：12px 字体在默认行高下中文字形下缘容易被裁 */
+  line-height: 18px;
   margin-top: 4px;
   user-select: none;
   letter-spacing: 0.01em;
-  opacity: 0.9;
 }
 
 /* 新会话空态：图标 + 一句话，不铺满整块背景 */
