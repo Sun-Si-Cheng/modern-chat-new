@@ -4,24 +4,27 @@ import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
+import { SearchIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import PluginPanel from '@/components/declarative/PluginPanel.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, mediaApi, userApi, type ConversationFile } from '@/api'
+import { convApi, mediaApi, searchApi, userApi, type ConversationFile } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { useLayoutStore } from '@/stores/layout'
 import { useSiteStore } from '@/stores/site'
 import { useWsStore } from '@/stores/ws'
-import type { ConversationMember } from '@/types/proto'
+import type { ConversationMember, SearchHit } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const layout = useLayoutStore()
 const siteStore = useSiteStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
@@ -33,6 +36,95 @@ const myMember = computed(() => members.value.find((m) => m.userId === auth.user
 const isAdmin = computed(() => myMember.value?.role === 'admin')
 /** 群主与管理员都能踢人 / 禁言；具体边界在操作处再判断 */
 const canManage = computed(() => isOwner.value || isAdmin.value)
+
+// ===== 会话内搜索 =====
+// 搜索入口从消息区标题栏迁入详情面板（L2：针对当前会话的动作）。
+// Ctrl/Cmd+F 由 MessagePane 转成 layout.requestDetailSearch()，这里聚焦输入框。
+
+const searchKw = ref('')
+const searching = ref(false)
+const searchResults = ref<SearchHit[]>([])
+const searchInputRef = ref<InstanceType<typeof UiInput> | null>(null)
+let searchTimer: number | undefined
+
+watch(
+  () => conv.value?.id,
+  () => {
+    // 切换会话：清空上一会话的搜索状态
+    window.clearTimeout(searchTimer)
+    searchKw.value = ''
+    searchResults.value = []
+    searching.value = false
+  },
+)
+
+watch(
+  () => layout.detailSearchTick.n,
+  () => void nextTick(() => searchInputRef.value?.focus()),
+)
+
+function onSearchInput() {
+  window.clearTimeout(searchTimer)
+  const kw = searchKw.value.trim()
+  const c = conv.value
+  if (!kw || !c) {
+    searchResults.value = []
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    searching.value = true
+    try {
+      const rows = await searchApi.messages(kw, c.id, 30)
+      // 输入可能已经变了：只接受与当前关键词/会话匹配的结果
+      if (conv.value?.id === c.id && searchKw.value.trim() === kw) {
+        searchResults.value = rows ?? []
+      }
+    } catch (e) {
+      void MessagePlugin.error(te(e))
+    } finally {
+      searching.value = false
+    }
+  }, 250)
+}
+
+async function openSearchHit(hit: SearchHit) {
+  const c = conv.value
+  if (!c) return
+  searchKw.value = ''
+  searchResults.value = []
+  const ok = await convStore.openConversationAtMessage(c.id, hit.messageId)
+  if (!ok) void MessagePlugin.warning(t('message.searchJumpOld'))
+}
+
+/** 搜索结果里的消息正文：媒体消息不能直接展示 URL */
+function searchPreview(hit: SearchHit): string {
+  if (hit.msgType === 'image') return t('message.quoteImage')
+  if (hit.msgType === 'audio') return t('message.quoteAudio')
+  if (hit.msgType === 'sticker') return t('message.quoteSticker')
+  if (hit.msgType !== 'text') return t('message.unknownType', { type: hit.msgType })
+  return hit.content
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 把内容按关键词切成普通段/命中段，渲染时用 <mark> 高亮 */
+function searchParts(content: string): { t: string; hit: boolean }[] {
+  const kw = searchKw.value.trim()
+  if (!kw) return [{ t: content, hit: false }]
+  const re = new RegExp(`(${escapeRe(kw)})`, 'gi')
+  return content
+    .split(re)
+    .filter((s) => s !== '')
+    .map((s) => ({ t: s, hit: s.toLowerCase() === kw.toLowerCase() }))
+}
+
+function fmtSearchTime(ts: string): string {
+  const d = new Date(ts)
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
 
 // ===== 拉黑（仅单聊）=====
 const peerBlocked = ref(false)
@@ -677,6 +769,53 @@ async function leave() {
         />
       </div>
 
+      <!-- 会话内搜索：针对当前会话（L2）；Ctrl/Cmd+F 聚焦 -->
+      <div class="mc-detail__section">
+        <div class="mc-detail__title">
+          <span class="mc-detail__heading">{{ t('message.search') }}</span>
+        </div>
+        <UiInput
+          ref="searchInputRef"
+          v-model="searchKw"
+          size="small"
+          clearable
+          :placeholder="t('message.searchPlaceholder')"
+          @update:model-value="onSearchInput"
+          @clear="onSearchInput"
+        >
+          <template #prefix-icon>
+            <SearchIcon size="13px" />
+          </template>
+        </UiInput>
+
+        <div v-if="searching" class="mc-detail__search-state text-placeholder">
+          {{ t('common.loading') }}
+        </div>
+        <div v-else-if="searchResults.length" class="mc-detail__search-list">
+          <button
+            v-for="hit in searchResults"
+            :key="hit.messageId"
+            type="button"
+            class="mc-detail__search-hit"
+            @click="openSearchHit(hit)"
+          >
+            <span class="mc-detail__search-meta text-placeholder">
+              <span class="mc-detail__search-sender">{{ hit.senderNickname }}</span>
+              <span class="num">{{ fmtSearchTime(hit.createdAt) }}</span>
+            </span>
+            <span class="mc-detail__search-text">
+              <template v-for="(p, i) in searchParts(searchPreview(hit))" :key="i">
+                <mark v-if="p.hit">{{ p.t }}</mark>
+                <template v-else>{{ p.t }}</template>
+              </template>
+            </span>
+          </button>
+        </div>
+        <p v-else-if="searchKw.trim()" class="mc-detail__search-state text-placeholder">
+          {{ t('message.searchEmpty') }}
+        </p>
+      </div>
+
       <!-- 群公告：所有成员可见，仅群主可编辑 -->
       <div v-if="isGroup" class="mc-detail__section">
         <div class="mc-detail__title">
@@ -949,6 +1088,68 @@ async function leave() {
   /* 面板是 flex column 且整体滚动：子项默认会被等比压缩，
      成员一多就把底部「退群」按钮挤成一条细线。固定住高度让它滚动而不是压缩。 */
   flex-shrink: 0;
+}
+
+/* 会话内搜索（从 MessagePane 迁入，样式口径保持一致） */
+.mc-detail__search-state {
+  padding: 10px 0 0;
+  text-align: center;
+  font-size: 12px;
+}
+
+.mc-detail__search-list {
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.mc-detail__search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-detail__search-hit:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-detail__search-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.mc-detail__search-sender {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-detail__search-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-detail__search-text mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.16));
+  color: var(--td-brand-color);
 }
 
 /* 群头像 */

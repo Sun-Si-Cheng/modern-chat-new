@@ -124,6 +124,17 @@ export const useLayoutStore = defineStore('layout', () => {
     return panes[key].drawer && !opened[key]
   }
 
+  /**
+   * 「聚焦详情面板搜索」信号（Ctrl/Cmd+F 用）。
+   * 详情面板在 ChatLayout 里与 MessagePane 是同级组件，跨组件传指令走 store：
+   * 自增一个 tick，DetailPanel watch 到后聚焦搜索框。
+   */
+  const detailSearchTick = reactive({ n: 0 })
+
+  function requestDetailSearch() {
+    detailSearchTick.n++
+  }
+
   function reset() {
     for (const k of Object.keys(panes) as PaneKey[]) {
       panes[k].width = PANE_DEFAULTS[k].width
@@ -144,6 +155,8 @@ export const useLayoutStore = defineStore('layout', () => {
     panes,
     opened,
     vars,
+    detailSearchTick,
+    requestDetailSearch,
     setWidth,
     setDrawer,
     toggleDrawer,

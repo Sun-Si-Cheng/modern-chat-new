@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
-import { ArrowLeftIcon, ChatIcon, SearchIcon } from 'tdesign-icons-vue-next'
+import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -13,17 +13,19 @@ import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMe
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, moderationApi, searchApi } from '@/api'
+import { convApi, moderationApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
+import { useLayoutStore } from '@/stores/layout'
 import { useWsStore } from '@/stores/ws'
-import type { Conversation, Message, ReplyBrief, SearchHit, UIDescNode } from '@/types/proto'
+import type { Conversation, Message, ReplyBrief, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const favorites = useFavoritesStore()
+const layout = useLayoutStore()
 const ws = useWsStore()
 const siteStore = useSiteStore()
 const host = usePluginHost()
@@ -153,14 +155,14 @@ watch(
   { immediate: true },
 )
 
-/** Ctrl/Cmd+F 打开会话内搜索；Esc 关闭 */
+/** Ctrl/Cmd+F：打开详情面板并聚焦「搜索聊天记录」（搜索入口在 DetailPanel） */
 function onPaneKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && conv.value) {
     e.preventDefault()
-    if (!searchOpen.value) searchOpen.value = true
-    void nextTick(() => searchInputRef.value?.focus())
+    // 抽屉形态且收起时先展开（不要用 toggle，避免已展开时被关掉）
+    if (layout.panes.detail.drawer && !layout.opened.detail) layout.open('detail')
+    layout.requestDetailSearch()
   }
-  if (e.key === 'Escape' && searchOpen.value) closeSearch()
 }
 
 onMounted(() => {
@@ -460,84 +462,6 @@ watch(
   },
 )
 
-// ===== 会话内搜索 =====
-
-const searchOpen = ref(false)
-const searchKw = ref('')
-const searching = ref(false)
-const searchResults = ref<SearchHit[]>([])
-const searchInputRef = ref<HTMLInputElement | null>(null)
-let searchTimer: number | undefined
-
-function closeSearch() {
-  searchOpen.value = false
-  searchKw.value = ''
-  searchResults.value = []
-}
-
-function toggleSearch() {
-  if (searchOpen.value) {
-    closeSearch()
-    return
-  }
-  searchOpen.value = true
-  void nextTick(() => searchInputRef.value?.focus())
-}
-
-function onSearchInput() {
-  window.clearTimeout(searchTimer)
-  const kw = searchKw.value.trim()
-  const c = conv.value
-  if (!kw || !c) {
-    searchResults.value = []
-    return
-  }
-  searchTimer = window.setTimeout(async () => {
-    searching.value = true
-    try {
-      const rows = await searchApi.messages(kw, c.id, 30)
-      // 输入可能已经变了：只接受与当前关键词/会话匹配的结果
-      if (conv.value?.id === c.id && searchKw.value.trim() === kw) {
-        searchResults.value = rows ?? []
-      }
-    } catch (e) {
-      void MessagePlugin.error(te(e))
-    } finally {
-      searching.value = false
-    }
-  }, 250)
-}
-
-async function openSearchHit(hit: SearchHit) {
-  closeSearch()
-  const ok = await convStore.openConversationAtMessage(hit.conversationId, hit.messageId)
-  if (!ok) void MessagePlugin.warning(t('message.searchJumpOld'))
-}
-
-function searchPreview(hit: SearchHit): string {
-  if (hit.msgType === 'image') return t('message.quoteImage')
-  if (hit.msgType === 'audio') return t('message.quoteAudio')
-  if (hit.msgType === 'sticker') return t('message.quoteSticker')
-  if (hit.msgType !== 'text') return t('message.unknownType', { type: hit.msgType })
-  return hit.content
-}
-
-/** 把内容按关键词切成普通段/命中段，渲染时用 <mark> 高亮 */
-function searchParts(content: string): { t: string; hit: boolean }[] {
-  const kw = searchKw.value.trim()
-  if (!kw) return [{ t: content, hit: false }]
-  const re = new RegExp(`(${escapeRe(kw)})`, 'gi')
-  return content
-    .split(re)
-    .filter((s) => s !== '')
-    .map((s) => ({ t: s, hit: s.toLowerCase() === kw.toLowerCase() }))
-}
-
-function fmtSearchTime(ts: string): string {
-  const d = new Date(ts)
-  return `${d.getMonth() + 1}/${d.getDate()} ${fmtTime(ts)}`
-}
-
 // ===== 图片预览（灯箱）=====
 
 const previewSrc = ref('')
@@ -554,7 +478,6 @@ watch(previewSrc, (v) => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onPreviewKey)
   window.removeEventListener('keydown', onPaneKeydown)
-  window.clearTimeout(searchTimer)
   clearTimeout(recallTimer)
 })
 
@@ -952,68 +875,7 @@ const senderName = (m: Message) => {
           </span>
         </div>
       </div>
-      <button
-        v-if="conv"
-        type="button"
-        class="mc-msgpane__search-btn"
-        :class="{ 'is-active': searchOpen }"
-        :aria-label="t('message.search')"
-        :title="t('message.search')"
-        @click="toggleSearch"
-      >
-        <SearchIcon size="18px" />
-      </button>
     </header>
-
-    <!-- 会话内搜索：Ctrl/Cmd+F 也可打开 -->
-    <div v-if="searchOpen && conv" class="mc-msgpane__search-panel">
-      <div class="mc-msgpane__search-row">
-        <SearchIcon class="mc-msgpane__search-icon" size="15px" />
-        <input
-          ref="searchInputRef"
-          v-model="searchKw"
-          class="mc-msgpane__search-input"
-          :placeholder="t('message.searchPlaceholder')"
-          @input="onSearchInput"
-          @keydown.esc.prevent="closeSearch"
-        />
-        <button
-          type="button"
-          class="mc-msgpane__search-close"
-          :aria-label="t('common.close')"
-          @click="closeSearch"
-        >
-          ×
-        </button>
-      </div>
-
-      <div v-if="searching" class="text-placeholder mc-msgpane__search-state">
-        {{ t('common.loading') }}
-      </div>
-      <div v-else-if="searchResults.length" class="mc-msgpane__search-list">
-        <button
-          v-for="hit in searchResults"
-          :key="hit.messageId"
-          type="button"
-          class="mc-msgpane__search-hit"
-          @click="openSearchHit(hit)"
-        >
-          <span class="mc-msgpane__search-meta text-placeholder">
-            <span class="mc-msgpane__search-sender">{{ hit.senderNickname }}</span>
-            <span class="num">{{ fmtSearchTime(hit.createdAt) }}</span>
-          </span>
-          <span class="mc-msgpane__search-text">
-            <template v-for="(p, i) in searchParts(searchPreview(hit))" :key="i">
-              <mark v-if="p.hit">{{ p.t }}</mark>
-              <template v-else>{{ p.t }}</template>
-            </template>
-          </span>
-        </button>
-      </div>
-      <p v-else-if="searchKw.trim()" class="text-placeholder mc-msgpane__search-state">
-        {{ t('message.searchEmpty') }}
-      </p>
-    </div>
 
     <!-- 群公告：折叠时一行摘要，展开看全文与发布者 -->
     <div
@@ -1398,156 +1260,6 @@ const senderName = (m: Message) => {
   padding: 0 20px;
   border-bottom: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
-}
-
-/* ===== 会话内搜索 ===== */
-.mc-msgpane__search-btn {
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--mc-radius-sm);
-  background: transparent;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-  transition:
-    background-color var(--mc-dur-fast) var(--mc-ease-out),
-    color var(--mc-dur-fast) var(--mc-ease-out);
-}
-
-.mc-msgpane__search-btn:hover,
-.mc-msgpane__search-btn.is-active {
-  background: var(--td-bg-color-container-hover);
-  color: var(--td-brand-color);
-}
-
-.mc-msgpane__search-panel {
-  position: absolute;
-  top: 56px;
-  right: 12px;
-  z-index: 24;
-  width: 380px;
-  max-width: calc(100% - 24px);
-  max-height: min(420px, 60vh);
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  border: 1px solid var(--mc-hairline);
-  border-radius: var(--mc-radius-md);
-  background: var(--mc-material);
-  backdrop-filter: var(--mc-blur);
-  box-shadow: var(--mc-elev-2);
-}
-
-.mc-msgpane__search-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--td-component-border);
-  border-radius: var(--mc-radius-sm);
-  background: var(--td-bg-color-container);
-}
-
-.mc-msgpane__search-icon {
-  flex-shrink: 0;
-  color: var(--td-text-color-placeholder);
-}
-
-.mc-msgpane__search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--td-text-color-primary);
-  font: inherit;
-  font-size: 13px;
-}
-
-.mc-msgpane__search-close {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--td-text-color-placeholder);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.mc-msgpane__search-close:hover {
-  background: var(--td-bg-color-container-hover);
-  color: var(--td-text-color-primary);
-}
-
-.mc-msgpane__search-state {
-  padding: 16px 0;
-  text-align: center;
-  font-size: 13px;
-}
-
-.mc-msgpane__search-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 6px;
-  max-height: 340px;
-}
-
-.mc-msgpane__search-hit {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: var(--mc-radius-sm);
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
-}
-
-.mc-msgpane__search-hit:hover {
-  background: var(--td-bg-color-container-hover);
-}
-
-.mc-msgpane__search-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-}
-
-.mc-msgpane__search-sender {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mc-msgpane__search-text {
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mc-msgpane__search-text mark {
-  padding: 0 1px;
-  border-radius: 2px;
-  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.16));
-  color: var(--td-brand-color);
 }
 
 .mc-msgpane__identity {
