@@ -283,11 +283,16 @@ onUnmounted(() => {
       @update:model-value="layout.setWidth('detail', $event)"
       @dblclick="togglePane('detail')"
     />
-    <DetailPanel
+    <!-- 布局类必须挂在 ChatLayout 自己的元素上：
+         DetailPanel 是多根模板，父级 class 会整个丢失（抽屉定位/层级失效，
+         遮罩盖住整个面板，表现为「能看到详情但点不了拉黑」） -->
+    <div
       v-if="showDetail && !layout.hidden('detail')"
       class="mc-pane mc-pane--right"
       :class="{ 'is-drawer': layout.panes.detail.drawer }"
-    />
+    >
+      <DetailPanel />
+    </div>
     <PluginDrawer v-model="pluginDrawerVisible" />
     <FavoriteDrawer v-model="favoriteDrawerVisible" />
     <NotificationDrawer v-model="notificationDrawerVisible" />
@@ -327,6 +332,13 @@ onUnmounted(() => {
 .mc-pane--right.is-drawer {
   right: 0;
   animation-name: mc-drawer-in-right;
+}
+
+/* 详情面板容器：常驻时是普通 flex 子项，宽度由内部 .mc-detail 的 width 决定 */
+.mc-pane--right {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
 }
 
 /* 抽屉遮罩：点击空白处收起 */
@@ -499,7 +511,7 @@ onUnmounted(() => {
 
 /* 平板：收起详情面板与分组栏（抽屉形态被用户展开时仍然显示） */
 @media (max-width: 1024px) {
-  .mc-layout :deep(.mc-detail:not(.is-drawer)) {
+  .mc-layout > .mc-pane--right:not(.is-drawer) {
     display: none;
   }
 
