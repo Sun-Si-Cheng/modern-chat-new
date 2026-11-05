@@ -111,6 +111,12 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		h.sendError(c, "服务器开小差了，请稍后再试")
 		return
 	} else if existing != nil {
+		// 回放也要带上引用摘要：断线重发时前端会用这一帧替换本地乐观消息，
+		// 缺了 replyTo 引用块就会凭空消失
+		one := []model.Message{*existing}
+		if aErr := h.deps.Messages.AttachReply(one); aErr == nil {
+			existing.ReplyTo = one[0].ReplyTo
+		}
 		c.trySend(mustJSON(messageFrame(existing, f.ClientMsgID)))
 		return
 	}

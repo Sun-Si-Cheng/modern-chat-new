@@ -77,6 +77,12 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   const membersByConv = reactive<Record<number, ConversationMember[]>>({})
   const membersLoading = reactive<Record<number, boolean>>({})
+  /**
+   * 会话元信息变更计数（成员/群名/公告）。
+   * 详情面板与输入区用它触发重拉——它们不是 WS 帧的直接接收方，
+   * 靠这个计数感知「当前会话变了」。
+   */
+  const convChangeTick = ref(0)
 
   async function loadMembers(convId: number, force = false): Promise<ConversationMember[]> {
     if (!force && membersByConv[convId]) return membersByConv[convId]
@@ -476,6 +482,13 @@ export const useConversationsStore = defineStore('conversations', () => {
         break
       }
       case 'conv_change': {
+        // meta 帧 = 成员/群名/公告变了，清成员缓存并通知详情面板重拉；
+        // 普通帧 = 只是来了新消息（后端用它刷新列表预览），不能清缓存——
+        // 否则每收一条消息都要多打两个接口。
+        if (frame.meta) {
+          if (frame.convId) delete membersByConv[frame.convId]
+          convChangeTick.value++
+        }
         void loadConversations()
         break
       }
@@ -572,6 +585,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     membersByConv,
     loadMembers,
     memberNickname,
+    convChangeTick,
     messagesByConv,
     currentMessages,
     loadingMessages,

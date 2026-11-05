@@ -109,7 +109,7 @@ async function onImageChange(e: Event) {
     const payload = await compressImage(file)
     const name = payload === file ? file.name : file.name.replace(/\.\w+$/, '') + '.webp'
     const r = await mediaApi.upload('image', payload, name)
-    convStore.sendMedia(convId, 'image', r.url)
+    sendMediaMsg(convId, 'image', r.url)
   } catch (err) {
     void MessagePlugin.error(String(err))
   } finally {
@@ -140,10 +140,26 @@ function toggleStickerPanel() {
   if (stickerOpen.value) void loadStickers()
 }
 
+/**
+ * 媒体发送统一入口：图片 / 语音 / 表情都要带上当前引用状态。
+ *
+ * 之前三处各自直接调 sendMedia，导致「先引用再发图」时引用被静默丢掉，
+ * 而且引用条还挂在输入框上，用户以为引用发出去了。
+ */
+function sendMediaMsg(convId: number, msgType: 'image' | 'audio' | 'sticker', url: string) {
+  convStore.sendMedia(convId, msgType, url, {
+    replyToId: convStore.replyTarget?.id || undefined,
+  })
+  convStore.setReplyTarget(null)
+  // 媒体消息没有 @ 语义，清掉避免残留到下一次文本发送
+  mentionIds.value = []
+  mentionQuery.value = null
+}
+
 function sendSticker(s: Sticker) {
   const convId = convStore.currentConvId
   if (!convId || !s.url) return
-  convStore.sendMedia(convId, 'sticker', s.url)
+  sendMediaMsg(convId, 'sticker', s.url)
   stickerOpen.value = false
 }
 
@@ -245,7 +261,7 @@ async function toggleRecord() {
     uploading.value = true
     try {
       const r = await mediaApi.upload('audio', blob, 'voice.webm')
-      convStore.sendMedia(convId, 'audio', r.url)
+      sendMediaMsg(convId, 'audio', r.url)
     } catch (err) {
       void MessagePlugin.error(String(err))
     } finally {
@@ -285,9 +301,14 @@ function send() {
   const content = text.value.trim()
   const convId = convStore.currentConvId
   if (!content || !convId) return
+  // 只保留文本里仍然存在的 @：选了人之后又把「@昵称」删掉的，不该还提醒对方
+  const activeMentions = mentionIds.value.filter((id) => {
+    const name = convStore.memberNickname(convId, id)
+    return name !== '' && content.includes(`@${name}`)
+  })
   convStore.sendText(convId, content, {
     replyToId: convStore.replyTarget?.id || undefined,
-    mentions: mentionIds.value.length ? [...mentionIds.value] : undefined,
+    mentions: activeMentions.length ? activeMentions : undefined,
   })
   text.value = ''
   mentionIds.value = []
@@ -311,6 +332,8 @@ const replyText = computed(() => {
   if (!r) return ''
   if (r.msgType === 'image') return t('message.quoteImage')
   if (r.msgType === 'audio') return t('message.quoteAudio')
+  // 与消息列表里的引用块保持一致，否则引用表情时这里会显示一串 /uploads/... 地址
+  if (r.msgType === 'sticker') return t('message.quoteSticker')
   return [...r.content].slice(0, 40).join('')
 })
 
@@ -343,6 +366,9 @@ function detectMention() {
   const before = text.value.slice(0, pos)
   const m = /@([^\s@]{0,12})$/.exec(before)
   mentionQuery.value = m ? (m[1] ?? '') : null
+  // 成员缓存可能已被 conv_change 清掉（群里刚加过人），这里按需补拉一次
+  const convId = convStore.currentConvId
+  if (m && convId && !convStore.membersByConv[convId]) void convStore.loadMembers(convId)
 }
 
 function pickMention(m: ConversationMember) {

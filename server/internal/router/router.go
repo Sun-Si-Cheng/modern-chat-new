@@ -101,15 +101,15 @@ func New(d Deps) *gin.Engine {
 	var uploadH *handler.UploadHandler
 	if storage != nil {
 		uploadH = handler.NewUploadHandler(storage)
-		// 只有本地存储需要静态服务；S3 的 URL 由对象存储自己提供
-		if ls, ok := storage.(*service.LocalStorage); ok {
-			r.Group("/uploads").
-				Use(func(c *gin.Context) {
-					c.Header("Cache-Control", "public, max-age=31536000, immutable")
-					c.Next()
-				}).
-				StaticFS("/", http.Dir(ls.Root()))
-		}
+		// 静态服务**始终**挂载：改用对象存储后，历史消息里的 /uploads/... 仍要能打开
+		// （否则老图片/语音全部 404，而数据库里还留着这些 URL）。
+		// 新文件走当前存储，本地目录只服务历史文件，留空也只是 404，无副作用。
+		r.Group("/uploads").
+			Use(func(c *gin.Context) {
+				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				c.Next()
+			}).
+			StaticFS("/", http.Dir(service.UploadsDir(d.Cfg.DataDir)))
 	}
 
 	api := r.Group("/api")

@@ -262,6 +262,7 @@ export default {
     fileUpload: '上传文件',
     fileEmpty: '还没有文件',
     fileDelete: '删除文件',
+    fileDeleteConfirm: '确定删除「{name}」？文件将从群文件列表中移除。',
     fileTooLarge: '文件不能超过 20 MB',
     transfer: '转让群主',
     kick: '移出',

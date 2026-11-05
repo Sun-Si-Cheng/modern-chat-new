@@ -63,6 +63,14 @@ func validatePassword(s string) string {
 }
 
 // validateNickname 1-20（trim 后）。
+// convMetaFrame 会话元信息变更（成员 / 群名 / 公告 / 退群踢人）。
+//
+// 必须与「仅有一条新消息」的 conv_change 区分开：客户端收到 meta 帧才重拉
+// 成员与群文件，否则每来一条消息都会触发两次接口请求。
+func convMetaFrame(convID uint) gin.H {
+	return gin.H{"type": "conv_change", "convId": convID, "meta": true}
+}
+
 func validateNickname(s string) string {
 	t := strings.TrimSpace(s)
 	if len([]rune(t)) < 1 || len([]rune(t)) > 20 {

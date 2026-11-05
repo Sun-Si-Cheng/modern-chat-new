@@ -122,9 +122,11 @@ type ConversationFile struct {
 // 只存 URL：文件已经在 Storage 里（本地或对象存储），这里只记归属关系。
 // 与消息解耦——删表情不影响已发出的消息（消息里存的是 URL 快照）。
 type Sticker struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index;not null" json:"-"`
-	URL       string    `gorm:"size:255;not null" json:"url"`
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"index;not null;uniqueIndex:uk_stickers_user_url,priority:1" json:"-"`
+	// 与版本化 SQL 保持一致：同一用户同一 URL 只能有一条（并发收藏也不会重复）。
+	// url 建前缀索引，255*4 字节会超出 InnoDB 单列索引上限。
+	URL       string    `gorm:"size:255;not null;uniqueIndex:uk_stickers_user_url,priority:2,length:191" json:"url"`
 	CreatedAt time.Time `gorm:"type:datetime(3)" json:"createdAt"`
 }
 

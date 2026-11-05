@@ -111,7 +111,7 @@ func (h *ConversationHandler) CreateSingle(c *gin.Context) {
 		return
 	}
 	// 通知对方刷新列表
-	notifyFor(c).ToUsers([]uint{target.ID}, gin.H{"type": "conv_change", "convId": conv.ID})
+	notifyFor(c).ToUsers([]uint{target.ID}, convMetaFrame(conv.ID))
 	slog.Info("conversation created", "type", "single", "conv", conv.ID, "a", me.ID, "b", target.ID)
 	c.JSON(http.StatusOK, h.buildSingleView(conv, target, me.ID))
 }
@@ -340,7 +340,7 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	slog.Info("conversation joined", "conv", convID, "uid", me.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -374,7 +374,7 @@ func (h *ConversationHandler) Leave(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	slog.Info("conversation left", "conv", convID, "uid", me.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -490,7 +490,7 @@ func (h *ConversationHandler) Rename(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -539,7 +539,7 @@ func (h *ConversationHandler) SetAnnouncement(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -585,7 +585,7 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 		return
 	}
 	slog.Info("member kicked", "conv", convID, "target", req.UserID, "by", me.ID)
-	notifyFor(c).ToUsers(append(ids, req.UserID), gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(append(ids, req.UserID), convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -626,7 +626,7 @@ func (h *ConversationHandler) Transfer(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

@@ -46,6 +46,8 @@ function previewText(item: FavoriteItem): string {
   if (item.isRecalled) return t('message.recalledPreview')
   if (item.msgType === 'image') return t('chat.previewImage')
   if (item.msgType === 'audio') return t('chat.previewVoice')
+  // 新增 sticker 类型后这里漏了一档，收藏的表情会显示成 /uploads/xxx.png
+  if (item.msgType === 'sticker') return t('chat.previewSticker')
   return item.content
 }
 
@@ -93,8 +95,17 @@ async function unfavorite(item: FavoriteItem) {
           </div>
 
           <div class="mc-fav__content">
-            <template v-if="!item.isRecalled && item.msgType === 'image'">
-              <img class="mc-fav__image" :src="item.content" alt="" decoding="async" />
+            <!-- 表情也按图显示（比一行 [表情] 更直观），只是尺寸更小 -->
+            <template
+              v-if="!item.isRecalled && (item.msgType === 'image' || item.msgType === 'sticker')"
+            >
+              <img
+                class="mc-fav__image"
+                :class="{ 'is-sticker': item.msgType === 'sticker' }"
+                :src="item.content"
+                alt=""
+                decoding="async"
+              />
             </template>
             <p v-else class="mc-fav__text" :class="{ 'text-placeholder': item.isRecalled }">
               {{ previewText(item) }}
@@ -204,6 +215,12 @@ async function unfavorite(item: FavoriteItem) {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.mc-fav__image.is-sticker {
+  max-width: 96px;
+  max-height: 96px;
+  object-fit: contain;
 }
 
 .mc-fav__image {

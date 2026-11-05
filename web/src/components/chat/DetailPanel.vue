@@ -71,6 +71,22 @@ watch(
   { immediate: true },
 )
 
+// 群成员/群名/公告变更（含别人加人、改公告）：详情面板是常驻组件，
+// 不主动重拉就会一直显示旧数据
+watch(
+  () => convStore.convChangeTick,
+  async () => {
+    const id = conv.value?.id
+    if (!id || !isGroup.value) return
+    try {
+      members.value = await convApi.members(id)
+      files.value = await convApi.files(id)
+    } catch {
+      /* 忽略：保留旧列表 */
+    }
+  },
+)
+
 function pickFile() {
   fileInput.value?.click()
 }
@@ -100,7 +116,9 @@ async function onFileChange(e: Event) {
   try {
     const up = await mediaApi.upload('file', file, file.name)
     await convApi.addFile(c.id, { name: file.name, url: up.url, size: file.size })
-    files.value = await convApi.files(c.id)
+    // 上传期间用户可能切走了会话：只有还停在这个会话时才覆盖列表，
+    // 否则会把新会话的文件列表刷成旧会话的
+    if (conv.value?.id === c.id) files.value = await convApi.files(c.id)
   } catch (err) {
     void MessagePlugin.error(String(err))
   } finally {
@@ -111,6 +129,23 @@ async function onFileChange(e: Event) {
 async function removeFile(f: ConversationFile) {
   const c = conv.value
   if (!c) return
+  // 删除不可撤销（记录的只是目录项，文件本体仍占存储），先确认一次
+  const confirmed = await new Promise<boolean>((resolve) => {
+    const dlg = DialogPlugin.confirm({
+      header: t('group.fileDelete'),
+      body: t('group.fileDeleteConfirm', { name: f.name }),
+      theme: 'warning',
+      onConfirm: () => {
+        dlg.destroy()
+        resolve(true)
+      },
+      onClose: () => {
+        dlg.destroy()
+        resolve(false)
+      },
+    })
+  })
+  if (!confirmed) return
   try {
     await convApi.removeFile(f.id)
     files.value = files.value.filter((x) => x.id !== f.id)

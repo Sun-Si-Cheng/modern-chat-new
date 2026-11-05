@@ -195,7 +195,8 @@ export type ServerFrame =
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }
-  | { type: 'conv_change'; convId: number }
+  /** meta=true 表示成员/群名/公告等元信息变更（需重拉成员与群文件）；纯新消息不带 */
+  | { type: 'conv_change'; convId: number; meta?: boolean }
   | { type: 'kicked'; reason: string }
   | { type: 'pong' }
   | { type: 'error'; reason: string }

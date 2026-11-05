@@ -257,6 +257,7 @@ export default {
     fileUpload: 'Upload',
     fileEmpty: 'No files yet',
     fileDelete: 'Delete file',
+    fileDeleteConfirm: 'Delete "{name}"? It will be removed from the file list.',
     fileTooLarge: 'File must be under 20 MB',
     transfer: 'Transfer ownership',
     kick: 'Remove',

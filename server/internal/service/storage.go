@@ -110,8 +110,14 @@ type LocalStorage struct {
 	baseURL string
 }
 
+// UploadsDir 本地上传目录。
+//
+// 不管当前用哪种存储，历史文件都在这个目录里：切换到对象存储后，
+// 老的 /uploads/... 消息仍要能打开，static 服务也仍然挂在这里。
+func UploadsDir(dataDir string) string { return filepath.Join(dataDir, "uploads") }
+
 func NewLocalStorage(dataDir string) (*LocalStorage, error) {
-	root := filepath.Join(dataDir, "uploads")
+	root := UploadsDir(dataDir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("创建上传目录失败: %w", err)
 	}
@@ -187,7 +193,12 @@ func newS3Storage(cfg StorageConfig) (*S3Storage, error) {
 func (s *S3Storage) Kind() string { return "s3" }
 
 func (s *S3Storage) Owns(url string) bool {
-	return strings.HasPrefix(url, s.publicBase+"/") && !strings.Contains(url, "..")
+	if strings.Contains(url, "..") {
+		return false
+	}
+	// 也接受历史本地地址：切到对象存储之前上传的图片/语音仍挂在本地，
+	// 不认它们会导致「历史图片无法转发/引用」这种莫名退化。
+	return strings.HasPrefix(url, s.publicBase+"/") || strings.HasPrefix(url, "/uploads/")
 }
 
 func (s *S3Storage) Save(kind string, data []byte) (string, error) {
