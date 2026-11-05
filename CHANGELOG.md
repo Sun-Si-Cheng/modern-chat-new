@@ -74,6 +74,8 @@
 
 ### 修复
 
+- **`text/plain` 等类型上传永远被拒**：`http.DetectContentType` 对文本返回 `text/plain; charset=utf-8`，带参数导致白名单永远匹配不上（图片/音频返回的 MIME 不带参数，所以之前一直没暴露）。改为先剥离 `;` 后的参数再查表。补回归测试 `TestDetectTypeStripsMimeParameters`
+- **迁移版本号重复**：`chat_prefs_reply_mention` 与 `system_settings` 都编到 `0005`，`golang-migrate` 按版本号索引会冲突/跳过。`chat_prefs_reply_mention` 重排为 `0007`
 - **同一好友重复出现两次**：`PendingToUser` 只查 `status=0 AND friend_id=我`，未排除"已经是好友"的对；互发申请的竞态或历史残留会让同一个人同时出现在「好友申请」与「我的好友」。改为 `NOT EXISTS` 排除 + 按申请人去重，同意好友时顺带清理这对的其它待处理记录，前端再兜一层去重
 - **收藏夹打开即白屏**：后端 `Favorites` 用 `var rows []`，无收藏时 nil slice 序列化成 `null`，前端 `items.map()` 抛 `Cannot read properties of null`。后端初始化空切片 + handler 兜底，前端 store 用 `Array.isArray()` 收敛；同类问题的消息列表（空会话）、好友列表也一并修
 - **消息时间戳行显示不全**：`.mc-msg` 用 `margin` 做间距，而 `DynamicScroller` 按 wrapper 高度测量 item，margin 不计入 → 相邻消息的 meta 行互相贴边；`opacity: 0.9` 还会创建合成层把 12px 小字渲染成模糊残影。改用 `padding`、明确行高、去掉 opacity
