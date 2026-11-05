@@ -121,18 +121,31 @@ export const usePrefsStore = defineStore('prefs', () => {
 
   /**
    * 把「纹理 + 颜色 + 图片」拼成一组 background-image 及其配套的
-   * size / repeat / position。层序从上到下：纹理 → 颜色 → 图片柔化层 → 图片。
+   * size / repeat / position / attachment。层序从上到下：纹理 → 颜色 → 图片柔化层 → 图片。
+   *
+   * 注意 body 盒高只有视口高（html/body/#app height:100%），设置页这类整页滚动的
+   * 页面里文档远高于 body 盒：
+   * - 纯色/柔化层必须 repeat（平铺纯色渐变无缝），no-repeat 只刷第一屏 →「上半段变色下半段不变」
+   * - 图片层用 fixed 视口锁定（cover 相对视口取尺寸，滚动时也不再露底）
    */
   function buildBgStack(patternVar: string, scrimVar: string) {
     const layers: string[] = []
     const sizes: string[] = []
     const repeats: string[] = []
     const positions: string[] = []
-    const push = (layer: string, size: string, repeat: string, position = 'center') => {
+    const attachments: string[] = []
+    const push = (
+      layer: string,
+      size: string,
+      repeat: string,
+      position = 'center',
+      attachment = 'scroll',
+    ) => {
       layers.push(layer)
       sizes.push(size)
       repeats.push(repeat)
       positions.push(position)
+      attachments.push(attachment)
     }
 
     if (appBgPattern.value === 'grid') {
@@ -150,22 +163,23 @@ export const usePrefsStore = defineStore('prefs', () => {
 
     if (appBgColor.value) {
       const tint = hexToRgba(appBgColor.value, APP_BG_ALPHA)
-      push(`linear-gradient(${tint}, ${tint})`, 'auto', 'no-repeat')
+      push(`linear-gradient(${tint}, ${tint})`, 'auto', 'repeat')
     }
 
     if (appBgImage.value) {
-      push(`linear-gradient(${scrimVar}, ${scrimVar})`, 'auto', 'no-repeat')
-      push(`url("${appBgImage.value}")`, 'cover', 'no-repeat')
+      push(`linear-gradient(${scrimVar}, ${scrimVar})`, 'auto', 'repeat', 'center', 'fixed')
+      push(`url("${appBgImage.value}")`, 'cover', 'no-repeat', 'center', 'fixed')
     }
 
     if (!layers.length) {
-      return { stack: 'none', size: 'auto', repeat: 'repeat', position: 'center' }
+      return { stack: 'none', size: 'auto', repeat: 'repeat', position: 'center', attachment: 'scroll' }
     }
     return {
       stack: layers.join(', '),
       size: sizes.join(', '),
       repeat: repeats.join(', '),
       position: positions.join(', '),
+      attachment: attachments.join(', '),
     }
   }
 
@@ -179,10 +193,12 @@ export const usePrefsStore = defineStore('prefs', () => {
     root.style.setProperty('--mc-app-bg-size', page.size)
     root.style.setProperty('--mc-app-bg-repeat', page.repeat)
     root.style.setProperty('--mc-app-bg-position', page.position)
+    root.style.setProperty('--mc-app-bg-attachment', page.attachment)
     root.style.setProperty('--mc-scene-bg-stack', scene.stack)
     root.style.setProperty('--mc-scene-bg-size', scene.size)
     root.style.setProperty('--mc-scene-bg-repeat', scene.repeat)
     root.style.setProperty('--mc-scene-bg-position', scene.position)
+    root.style.setProperty('--mc-scene-bg-attachment', scene.attachment)
   }
 
   function setLang(l: Lang) {
