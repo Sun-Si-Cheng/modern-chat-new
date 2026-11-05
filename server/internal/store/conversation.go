@@ -173,7 +173,7 @@ func (s *ConversationStore) RemoveMember(convID, userID uint) error {
 //
 // 存在 user_conversations 而不是 conversations：这是每人一份的偏好，
 // 我置顶不代表别人也置顶。nil 表示该项不修改。
-func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted *bool) error {
+func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted, archived *bool) error {
 	updates := map[string]any{}
 	if pinned != nil {
 		updates["pinned"] = *pinned
@@ -181,12 +181,50 @@ func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted *bool) e
 	if muted != nil {
 		updates["muted"] = *muted
 	}
+	if archived != nil {
+		updates["archived"] = *archived
+	}
 	if len(updates) == 0 {
 		return nil
 	}
 	return s.db.Model(&model.UserConversation{}).
 		Where("user_id = ? AND conversation_id = ?", userID, convID).
 		Updates(updates).Error
+}
+
+// DeleteInbox 从该用户的会话列表移除（不退出群、不删除消息）。
+// 之后该会话再来新消息时，UpsertInbox 会重新创建收件箱行。
+func (s *ConversationStore) DeleteInbox(userID, convID uint) error {
+	return s.db.Where("user_id = ? AND conversation_id = ?", userID, convID).
+		Delete(&model.UserConversation{}).Error
+}
+
+// ClearHistory 清空该用户在该会话的聊天记录：设置水位并重置预览/未读。
+func (s *ConversationStore) ClearHistory(userID, convID uint, upTo uint64) error {
+	return s.db.Model(&model.UserConversation{}).
+		Where("user_id = ? AND conversation_id = ?", userID, convID).
+		Updates(map[string]any{
+			"cleared_before_id":    upTo,
+			"unread_count":         0,
+			"mention_unread":       false,
+			"last_read_message_id": upTo,
+			"last_message_id":      nil,
+			"last_message_at":      nil,
+		}).Error
+}
+
+// LatestMessageID 会话当前最新消息 id（用于清空水位）。
+func (s *ConversationStore) LatestMessageID(convID uint) (uint64, error) {
+	var id uint64
+	err := s.db.Model(&model.Message{}).Where("conversation_id = ?", convID).
+		Select("COALESCE(MAX(id), 0)").Scan(&id).Error
+	return id, err
+}
+
+// SetMuteAll 群全员禁言开关。
+func (s *ConversationStore) SetMuteAll(convID uint, muted bool) error {
+	return s.db.Model(&model.Conversation{}).Where("id = ?", convID).
+		Update("mute_all", muted).Error
 }
 
 // SetAnnouncement 设置群公告。content 为空表示撤销公告。
@@ -212,16 +250,17 @@ func (s *ConversationStore) SetAnnouncement(convID, byUserID uint, content strin
 }
 
 // PrefsOf 读取会话的个人设置（置顶 / 免打扰）。
-func (s *ConversationStore) PrefsOf(userID, convID uint) (pinned, muted bool, err error) {
+func (s *ConversationStore) PrefsOf(userID, convID uint) (pinned, muted, archived bool, err error) {
 	var row struct {
-		Pinned bool
-		Muted  bool
+		Pinned   bool
+		Muted    bool
+		Archived bool
 	}
 	err = s.db.Model(&model.UserConversation{}).
-		Select("pinned, muted").
+		Select("pinned, muted, archived").
 		Where("user_id = ? AND conversation_id = ?", userID, convID).
 		Scan(&row).Error
-	return row.Pinned, row.Muted, err
+	return row.Pinned, row.Muted, row.Archived, err
 }
 
 func (s *ConversationStore) Rename(convID uint, name string) error {
@@ -311,6 +350,8 @@ type convRow struct {
 	UnreadCount       int
 	Pinned            bool
 	Muted             bool
+	Archived          bool
+	MuteAll           bool
 	MentionUnread     bool
 	Announcement      *string
 	AnnouncementAt    *time.Time
@@ -324,7 +365,8 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	err := s.db.Raw(`
 		SELECT c.id, c.type, c.name, COALESCE(c.avatar, '') AS avatar, c.owner_id,
 		       uc.last_message_id, uc.last_message_at, uc.last_read_message_id, uc.unread_count,
-		       uc.pinned, uc.muted, uc.mention_unread,
+		       uc.pinned, uc.muted, uc.archived, uc.mention_unread,
+		       c.mute_all,
 		       c.announcement, c.announcement_at, c.announcement_by,
 		       COALESCE(au.nickname, '') AS announcement_who
 		FROM user_conversations uc
@@ -398,6 +440,8 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 			UnreadCount:       r.UnreadCount,
 			Pinned:            r.Pinned,
 			Muted:             r.Muted,
+			Archived:          r.Archived,
+			MuteAll:           r.MuteAll,
 			MentionUnread:     r.MentionUnread,
 		}
 		if r.Announcement != nil {

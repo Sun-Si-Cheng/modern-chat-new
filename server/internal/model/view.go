@@ -43,6 +43,10 @@ type ConversationView struct {
 	// 会话级个人设置（存在 user_conversations，不影响其他成员）
 	Pinned bool `json:"pinned"`
 	Muted  bool `json:"muted"`
+	// Archived 归档会话（从默认列表收起）
+	Archived bool `json:"archived"`
+	// MuteAll 群全员禁言（仅群聊有意义）
+	MuteAll bool `json:"muteAll"`
 	// MentionUnread 有未读的 @我 消息：即使免打扰也要显示「有人@我」
 	MentionUnread bool `json:"mentionUnread"`
 	// 群公告（仅群聊）；没有公告时为空串

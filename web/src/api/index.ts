@@ -124,11 +124,19 @@ export const convApi = {
     http.put<{ ok: true }>(`/conversations/${convId}/announcement`, { content }),
 
   /** 会话个人设置（置顶 / 免打扰）：不传的字段表示不修改 */
-  setPrefs: (convId: number, prefs: { pinned?: boolean; muted?: boolean }) =>
-    http.patch<{ ok: true; pinned: boolean; muted: boolean }>(
+  setPrefs: (convId: number, prefs: { pinned?: boolean; muted?: boolean; archived?: boolean }) =>
+    http.patch<{ ok: true; pinned: boolean; muted: boolean; archived: boolean }>(
       `/conversations/${convId}/prefs`,
       prefs,
     ),
+  /** 从自己的会话列表移除（不退出群、不删除消息） */
+  remove: (convId: number) => http.delete<{ ok: true }>(`/conversations/${convId}`),
+  /** 清空我在该会话的聊天记录 */
+  clear: (convId: number, upToId?: number) =>
+    http.post<{ ok: true; clearedBeforeId: number }>(`/conversations/${convId}/clear`, { upToId }),
+  /** 群全员禁言开关 */
+  setMuteAll: (convId: number, muted: boolean) =>
+    http.post<{ ok: true }>(`/conversations/${convId}/mute-all`, { muted }),
   kick: (convId: number, userId: number) => http.post<{ ok: true }>(`/conversations/${convId}/kick`, { userId }),
   /** 群主设置 / 取消管理员 */
   setAdmin: (convId: number, userId: number, admin: boolean) =>

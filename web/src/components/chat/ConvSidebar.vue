@@ -261,9 +261,12 @@ const convMenuItems = computed<ContextMenuItem[]>(() => {
   const items: ContextMenuItem[] = [
     { key: 'pin', label: convStore.isPinned(c.id) ? t('chat.unpin') : t('chat.pin') },
     { key: 'mute', label: convStore.isMuted(c.id) ? t('chat.unmute') : t('chat.mute') },
-    ]
+    { key: 'archive', label: convStore.isArchived(c.id) ? t('chat.unarchive') : t('chat.archive') },
+  ]
   if (c.unreadCount > 0) items.push({ key: 'read', label: t('chat.markRead') })
   items.push({ key: 'copyName', label: t('chat.copyName'), dividerBefore: true })
+  items.push({ key: 'clear', label: t('chat.clearHistory'), danger: true })
+  items.push({ key: 'delete', label: t('chat.deleteConversation'), danger: true })
   return items
 })
 
@@ -294,8 +297,50 @@ function onConvMenuSelect(key: string) {
   if (!c) return
   if (key === 'pin') void convStore.togglePin(c.id).catch((e) => MessagePlugin.error(te(e)))
   if (key === 'mute') void convStore.toggleMute(c.id).catch((e) => MessagePlugin.error(te(e)))
+  if (key === 'archive') {
+    void convStore
+      .toggleArchive(c.id)
+      .then(() => MessagePlugin.success(convStore.isArchived(c.id) ? t('chat.archived') : t('chat.unarchived')))
+      .catch((e) => MessagePlugin.error(te(e)))
+  }
   if (key === 'read') void markConvRead(c)
   if (key === 'copyName') void copyName(convName(c))
+  if (key === 'clear') confirmClear(c)
+  if (key === 'delete') confirmDelete(c)
+}
+
+function confirmClear(c: Conversation) {
+  const dialog = DialogPlugin.confirm({
+    header: t('chat.clearHistoryTitle'),
+    body: t('chat.clearHistoryBody'),
+    theme: 'danger',
+    onConfirm: async () => {
+      try {
+        await convStore.clearConversation(c.id)
+        void MessagePlugin.success(t('chat.clearHistoryOk'))
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
+}
+
+function confirmDelete(c: Conversation) {
+  const dialog = DialogPlugin.confirm({
+    header: t('chat.deleteTitle'),
+    body: t('chat.deleteBody'),
+    theme: 'danger',
+    onConfirm: async () => {
+      try {
+        await convStore.removeConversation(c.id)
+        void MessagePlugin.success(t('chat.deleted'))
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
 }
 
 const sortedConvs = computed(() => {
@@ -309,9 +354,15 @@ const sortedConvs = computed(() => {
     return (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '')
   })
   const f = convStore.filter
-  if (f === 'unread') list = list.filter((c) => c.unreadCount > 0)
-  else if (f === 'single') list = list.filter((c) => c.type === 1)
-  else if (f === 'group') list = list.filter((c) => c.type === 2)
+  if (f === 'archived') {
+    list = list.filter((c) => c.archived)
+  } else {
+    // 归档会话只出现在「归档」筛选里
+    list = list.filter((c) => !c.archived)
+    if (f === 'unread') list = list.filter((c) => c.unreadCount > 0)
+    else if (f === 'single') list = list.filter((c) => c.type === 1)
+    else if (f === 'group') list = list.filter((c) => c.type === 2)
+  }
   return list
 })
 

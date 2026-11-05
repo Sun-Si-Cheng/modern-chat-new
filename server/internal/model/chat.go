@@ -8,7 +8,9 @@ type Conversation struct {
 	Type int8    `gorm:"not null" json:"type"`
 	Name *string `gorm:"size:30" json:"name,omitempty"`
 	// Avatar 群头像地址（图片上传接口返回的 URL）；空表示使用默认头像
-	Avatar    string    `gorm:"size:255" json:"avatar,omitempty"`
+	Avatar string `gorm:"size:255" json:"avatar,omitempty"`
+	// MuteAll 全员禁言：群主/管理员不受影响
+	MuteAll   bool      `gorm:"default:false" json:"muteAll"`
 	OwnerID   *uint     `json:"ownerId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	// 群公告：仅群主可改，空串表示没有公告
@@ -96,6 +98,10 @@ type UserConversation struct {
 	Pinned bool `gorm:"default:false" json:"-"`
 	// Muted 免打扰：只压红点数字（显示为小圆点），未读数照常累加。
 	Muted bool `gorm:"default:false" json:"-"`
+	// Archived 归档：从默认会话列表收起，可在「归档」筛选里查看。
+	Archived bool `gorm:"default:false" json:"-"`
+	// ClearedBeforeID 清空记录水位：早于该 id 的消息不再下发给该用户。
+	ClearedBeforeID uint64 `gorm:"default:0" json:"-"`
 	// MentionUnread 有未读的 @我消息：即使免打扰也要提示「有人@我」。
 	MentionUnread bool `gorm:"default:false" json:"-"`
 }

@@ -89,6 +89,14 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		h.sendError(c, "你已被禁言，暂时不能发送消息")
 		return
 	}
+	// 全员禁言：群主与管理员不受影响
+	if conv, err := h.deps.Convs.ByID(f.ConvID); err == nil && conv != nil && conv.MuteAll {
+		m, _ := h.deps.Convs.MemberOf(f.ConvID, c.UserID)
+		if m == nil || (m.Role != "owner" && m.Role != "admin") {
+			h.sendError(c, "群已开启全员禁言，只有群主和管理员可以发言")
+			return
+		}
+	}
 	// 消息长度上限可在后台调整，默认 1000
 	maxLen := store.DefaultOps().MaxMessageLength
 	if h.deps.Settings != nil {

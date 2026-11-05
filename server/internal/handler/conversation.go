@@ -554,13 +554,14 @@ func (h *ConversationHandler) SetPrefs(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Pinned *bool `json:"pinned"`
-		Muted  *bool `json:"muted"`
+		Pinned   *bool `json:"pinned"`
+		Muted    *bool `json:"muted"`
+		Archived *bool `json:"archived"`
 	}
 	if !bind(c, &req) {
 		return
 	}
-	if req.Pinned == nil && req.Muted == nil {
+	if req.Pinned == nil && req.Muted == nil && req.Archived == nil {
 		fail(c, http.StatusBadRequest, "没有要修改的设置")
 		return
 	}
@@ -568,16 +569,108 @@ func (h *ConversationHandler) SetPrefs(c *gin.Context) {
 	if !h.requireMember(c, convID) {
 		return
 	}
-	if err := h.convs.SetPrefs(me.ID, convID, req.Pinned, req.Muted); err != nil {
+	if err := h.convs.SetPrefs(me.ID, convID, req.Pinned, req.Muted, req.Archived); err != nil {
 		internal(c, err)
 		return
 	}
-	pinned, muted, err := h.convs.PrefsOf(me.ID, convID)
+	pinned, muted, archived, err := h.convs.PrefsOf(me.ID, convID)
 	if err != nil {
 		internal(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "pinned": pinned, "muted": muted})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "pinned": pinned, "muted": muted, "archived": archived})
+}
+
+// Delete 从自己的会话列表移除（不退出群、不删除消息）；之后新消息会重新出现。
+func (h *ConversationHandler) Delete(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireMember(c, convID) {
+		return
+	}
+	if err := h.convs.DeleteInbox(me.ID, convID); err != nil {
+		internal(c, err)
+		return
+	}
+	notifyFor(c).ToUsers([]uint{me.ID}, gin.H{"type": "conv_change", "meta": true, "convId": convID})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Clear 清空我在该会话的聊天记录：消息本体保留，仅设置个人水位。
+func (h *ConversationHandler) Clear(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		UpToID uint64 `json:"upToId"`
+	}
+	// 清空允许空 body（默认清到最新）；只有确实带了 body 才解析
+	if c.Request.ContentLength > 0 && !bind(c, &req) {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireMember(c, convID) {
+		return
+	}
+	upTo := req.UpToID
+	if upTo == 0 {
+		latest, err := h.convs.LatestMessageID(convID)
+		if err != nil {
+			internal(c, err)
+			return
+		}
+		upTo = latest
+	} else {
+		msg, err := h.msgs.ByID(uint(upTo))
+		if err != nil {
+			internal(c, err)
+			return
+		}
+		if msg == nil || msg.ConversationID != convID {
+			fail(c, http.StatusBadRequest, "upToId 不合法")
+			return
+		}
+	}
+	if err := h.convs.ClearHistory(me.ID, convID, upTo); err != nil {
+		internal(c, err)
+		return
+	}
+	notifyFor(c).ToUsers([]uint{me.ID}, gin.H{"type": "conv_change", "meta": true, "convId": convID})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "clearedBeforeId": upTo})
+}
+
+// SetMuteAll 群全员禁言（群主 / 管理员）。
+func (h *ConversationHandler) SetMuteAll(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Muted bool `json:"muted"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if _, ok := h.requireManager(c, convID, me.ID); !ok {
+		return
+	}
+	if err := h.convs.SetMuteAll(convID, req.Muted); err != nil {
+		internal(c, err)
+		return
+	}
+	ids, err := h.convs.MemberUserIDs(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("group mute all changed", "conv", convID, "muted", req.Muted, "by", me.ID)
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *ConversationHandler) Read(c *gin.Context) {

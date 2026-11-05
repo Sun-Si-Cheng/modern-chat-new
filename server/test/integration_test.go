@@ -1346,6 +1346,153 @@ func TestMessageReliability(t *testing.T) {
 	}
 }
 
+// TestConversationManagement 归档 / 清空记录 / 删除会话 / 全员禁言。
+func TestConversationManagement(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "cm-admin")
+	tokenA, _ := register(t, e, "cm-alice")
+	tokenB, userB := register(t, e, "cm-bob")
+
+	makeFriends := func(fromToken, toUsername, toToken string) {
+		t.Helper()
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", fromToken,
+			fmt.Sprintf(`{"toUsername":%q}`, toUsername)); code != http.StatusOK {
+			t.Fatalf("apply status = %d", code)
+		}
+		_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", toToken, "")
+		reqs, _ := reqsAny.([]any)
+		reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", toToken,
+			fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+			t.Fatalf("handle status = %d", code)
+		}
+	}
+	makeFriends(tokenA, userB.Username, tokenB)
+
+	code, single := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("single status = %d", code)
+	}
+	singleID := uint64(single["id"].(float64))
+
+	connA := wsDial(t, e, tokenA)
+	connB := wsDial(t, e, tokenB)
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"cm-1","content":"hello"}`, singleID))); err != nil {
+		t.Fatalf("ws send: %v", err)
+	}
+	readFrame(t, connA, "message")
+	readFrame(t, connB, "message")
+
+	convOf := func(token string, id uint64) map[string]any {
+		t.Helper()
+		_, listAny := apiAny(t, e, "GET", "/api/conversations", token, "")
+		for _, it := range listAny.([]any) {
+			m := it.(map[string]any)
+			if uint64(m["id"].(float64)) == id {
+				return m
+			}
+		}
+		return nil
+	}
+
+	// 归档 / 取消归档
+	if code, out := apiJSON(t, e, "PATCH", fmt.Sprintf("/api/conversations/%d/prefs", singleID), tokenA,
+		`{"archived":true}`); code != http.StatusOK || out["archived"] != true {
+		t.Fatalf("archive status=%d out=%v", code, out)
+	}
+	if row := convOf(tokenA, singleID); row == nil || row["archived"] != true {
+		t.Fatalf("归档状态未生效: %v", row)
+	}
+	if code, _ := apiJSON(t, e, "PATCH", fmt.Sprintf("/api/conversations/%d/prefs", singleID), tokenA,
+		`{"archived":false}`); code != http.StatusOK {
+		t.Fatalf("unarchive status = %d", code)
+	}
+
+	// 清空记录：A 看不到，B 仍可见
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/clear", singleID), tokenA, `{}`); code != http.StatusOK {
+		t.Fatalf("clear status = %d", code)
+	}
+	_, pageA := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=10", singleID), tokenA, "")
+	if list, _ := pageA["messages"].([]any); len(list) != 0 {
+		t.Fatalf("清空后 A 不应看到历史，got %d", len(list))
+	}
+	_, pageB := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=10", singleID), tokenB, "")
+	if list, _ := pageB["messages"].([]any); len(list) != 1 {
+		t.Fatalf("B 仍应看到历史，got %d", len(list))
+	}
+
+	// 删除会话：从 A 列表移除；B 再发新消息后重新出现
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/conversations/%d", singleID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("delete status = %d", code)
+	}
+	if convOf(tokenA, singleID) != nil {
+		t.Fatalf("删除后 A 列表不应包含该会话")
+	}
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"cm-2","content":"again"}`, singleID))); err != nil {
+		t.Fatalf("ws send after delete: %v", err)
+	}
+	readFrame(t, connB, "message")
+	readFrame(t, connA, "message")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && convOf(tokenA, singleID) == nil {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if convOf(tokenA, singleID) == nil {
+		t.Fatalf("新消息后会话应重新出现")
+	}
+
+	// 群全员禁言
+	code, group := apiJSON(t, e, "POST", "/api/conversations/group", tokenA, `{"name":"全员禁言群"}`)
+	if code != http.StatusOK {
+		t.Fatalf("group status = %d", code)
+	}
+	groupID := uint64(group["id"].(float64))
+	if code, out := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d]}`, userB.ID)); code != http.StatusOK || out["added"].(float64) != 1 {
+		t.Fatalf("invite status=%d out=%v", code, out)
+	}
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute-all", groupID), tokenA,
+		`{"muted":true}`); code != http.StatusOK {
+		t.Fatalf("mute all status = %d", code)
+	}
+	// 普通成员不能设置全员禁言
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute-all", groupID), tokenB,
+		`{"muted":true}`); code != http.StatusForbidden {
+		t.Fatalf("普通成员设置全员禁言应 403，got %d", code)
+	}
+	// B 被全员禁言拦截，A（群主）仍可发言
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"cm-muted","content":"blocked"}`, groupID))); err != nil {
+		t.Fatalf("ws send muted: %v", err)
+	}
+	if f := readFrame(t, connB, "error"); f["reason"] == nil {
+		t.Fatalf("全员禁言应返回 error 帧")
+	}
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"cm-owner","content":"owner"}`, groupID))); err != nil {
+		t.Fatalf("ws send owner: %v", err)
+	}
+	if f := readFrame(t, connA, "message"); f["content"] != "owner" {
+		t.Fatalf("群主发言应成功: %v", f)
+	}
+	readFrame(t, connB, "message") // 消费群主那条广播，避免后续断言读到旧帧
+	// 解除后 B 可发言
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute-all", groupID), tokenA,
+		`{"muted":false}`); code != http.StatusOK {
+		t.Fatalf("unmute all status = %d", code)
+	}
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"cm-free","content":"free"}`, groupID))); err != nil {
+		t.Fatalf("ws send after unmute: %v", err)
+	}
+	if f := readFrame(t, connB, "message"); f["content"] != "free" {
+		t.Fatalf("解除全员禁言后发言应成功: %v", f)
+	}
+}
+
 func TestPluginInstallAndFetch(t *testing.T) {
 	e := setup(t)
 	// 首个注册者才是站长：必须先注册后台账号，再用它跑 /api/admin/* 断言。

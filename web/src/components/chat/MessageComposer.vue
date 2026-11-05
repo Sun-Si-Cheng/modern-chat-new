@@ -34,6 +34,17 @@ const mutedUntil = computed(() => {
   return new Date(v).getTime() > Date.now() ? v : null
 })
 
+/** 群全员禁言：普通成员不能发言，群主/管理员不受影响 */
+const muteAllBlocked = computed(() => {
+  const id = convStore.currentConvId
+  const c = id ? convStore.conversations.find((x) => x.id === id) : null
+  if (!c || c.type !== 2 || !c.muteAll) return false
+  const role = myMember.value?.role
+  return !role || role === 'member'
+})
+
+const canSpeak = computed(() => !mutedUntil.value && !muteAllBlocked.value)
+
 function fmtMuted(ts: string): string {
   const d = new Date(ts)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -353,7 +364,7 @@ function onInput() {
 function send() {
   const content = text.value.trim()
   const convId = convStore.currentConvId
-  if (!content || !convId || mutedUntil.value) return
+  if (!content || !convId || !canSpeak.value) return
   // 编辑模式：只提交正文，引用 / @ / 转发语义保持不变
   if (editing.value) {
     const ok = convStore.editMessage(editing.value.id, content)
@@ -468,6 +479,9 @@ function onKeydown(e: KeyboardEvent) {
       <div v-if="mutedUntil" class="mc-composer__mute">
         {{ t('group.mutedHint', { time: fmtMuted(mutedUntil) }) }}
       </div>
+      <div v-else-if="muteAllBlocked" class="mc-composer__mute">
+        {{ t('group.muteAllHint') }}
+      </div>
 
       <!-- 编辑态：提示当前正在改哪条消息，取消后清空输入 -->
       <div v-if="editing" class="mc-composer__edit">
@@ -559,7 +573,7 @@ function onKeydown(e: KeyboardEvent) {
         class="mc-composer__input"
         :placeholder="editing ? t('message.editPlaceholder') : t('message.composerPlaceholder')"
         :maxlength="maxMessageLength"
-        :disabled="!!mutedUntil"
+        :disabled="!canSpeak"
         rows="1"
         @keydown="onKeydown"
         @input="onInput"
@@ -572,7 +586,7 @@ function onKeydown(e: KeyboardEvent) {
           <button
             type="button"
             class="mc-tool"
-            :disabled="uploading || recording || !!editing || !!mutedUntil"
+            :disabled="uploading || recording || !!editing || !canSpeak"
             :title="t('message.sendImage')"
             :aria-label="t('message.sendImage')"
             @click="pickImage"
@@ -601,7 +615,7 @@ function onKeydown(e: KeyboardEvent) {
             type="button"
             class="mc-tool"
             :class="{ 'is-active': stickerOpen }"
-            :disabled="uploading || recording || !!editing || !!mutedUntil"
+            :disabled="uploading || recording || !!editing || !canSpeak"
             :title="t('message.stickers')"
             :aria-label="t('message.stickers')"
             :aria-expanded="stickerOpen"
@@ -624,7 +638,7 @@ function onKeydown(e: KeyboardEvent) {
             type="button"
             class="mc-tool"
             :class="{ 'is-recording': recording }"
-            :disabled="uploading || !!editing || !!mutedUntil"
+            :disabled="uploading || !!editing || !canSpeak"
             :title="recording ? t('message.stopRecord') : t('message.sendVoice')"
             :aria-label="recording ? t('message.stopRecord') : t('message.sendVoice')"
             @click="toggleRecord"
@@ -683,7 +697,7 @@ function onKeydown(e: KeyboardEvent) {
           >
             {{ text.length }}/{{ maxMessageLength }}
           </span>
-          <UiButton theme="primary" size="small" :disabled="!text.trim() || !!mutedUntil" @click="send">
+          <UiButton theme="primary" size="small" :disabled="!text.trim() || !canSpeak" @click="send">
             {{ editing ? t('common.save') : t('message.send') }}
           </UiButton>
         </div>

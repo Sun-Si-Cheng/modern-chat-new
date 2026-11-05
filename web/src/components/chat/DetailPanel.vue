@@ -34,6 +34,24 @@ const isAdmin = computed(() => myMember.value?.role === 'admin')
 /** 群主与管理员都能踢人 / 禁言；具体边界在操作处再判断 */
 const canManage = computed(() => isOwner.value || isAdmin.value)
 
+// ===== 全员禁言 =====
+const mutingAll = ref(false)
+
+async function toggleMuteAll() {
+  const c = conv.value
+  if (!c || mutingAll.value) return
+  mutingAll.value = true
+  try {
+    await convApi.setMuteAll(c.id, !c.muteAll)
+    await convStore.loadConversations()
+    void MessagePlugin.success(c.muteAll ? t('group.muteAllOff') : t('group.muteAllOn'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    mutingAll.value = false
+  }
+}
+
 const members = ref<ConversationMember[]>([])
 
 watch(
@@ -691,6 +709,9 @@ async function leave() {
               <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
               <a @click="transferVisible = true">{{ t('group.transfer') }}</a>
             </template>
+            <a v-if="canManage" @click="toggleMuteAll">
+              {{ conv.muteAll ? t('group.unmuteAll') : t('group.muteAll') }}
+            </a>
           </span>
         </div>
 

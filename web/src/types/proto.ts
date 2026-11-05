@@ -51,6 +51,10 @@ export interface Conversation {
   pinned: boolean
   /** 免打扰：红点显示为小圆点，不显示数字 */
   muted: boolean
+  /** 归档：从默认会话列表收起，可在「归档」筛选里查看 */
+  archived?: boolean
+  /** 群全员禁言（群主/管理员不受影响） */
+  muteAll?: boolean
   /** 有未读的 @我 消息：免打扰时也要提示「有人@我」 */
   mentionUnread: boolean
   /** 群公告（仅群聊），空串表示没有 */

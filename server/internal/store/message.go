@@ -46,8 +46,8 @@ func (s *MessageStore) ByClientMsg(convID uint, clientMsgID string) (*model.Mess
 func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int) ([]model.Message, bool, error) {
 	var rows []model.Message
 	if err := s.db.Where(
-		"conversation_id = ? AND id > ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id)",
-		convID, afterID, viewerID,
+		"conversation_id = ? AND id > ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
+		convID, afterID, viewerID, viewerID, convID,
 	).Order("id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return nil, false, err
 	}
@@ -63,8 +63,8 @@ func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int)
 // viewerID 的「仅自己删除」记录会被排除，避免分页里再次出现被删消息。
 func (s *MessageStore) PageBefore(convID, viewerID uint, beforeID uint64, limit int) ([]model.Message, bool, error) {
 	q := s.db.Where(
-		"conversation_id = ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id)",
-		convID, viewerID,
+		"conversation_id = ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
+		convID, viewerID, viewerID, convID,
 	)
 	if beforeID > 0 {
 		q = q.Where("id < ?", beforeID)

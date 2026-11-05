@@ -65,13 +65,18 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   /** 更新个人设置：只改传了的字段，返回服务端确认后的值 */
-  async function setPrefs(convId: number, prefs: { pinned?: boolean; muted?: boolean }) {
+  async function setPrefs(convId: number, prefs: { pinned?: boolean; muted?: boolean; archived?: boolean }) {
     const r = await convApi.setPrefs(convId, prefs)
     const c = conversations.value.find((x) => x.id === convId)
     if (c) {
       c.pinned = r.pinned
       c.muted = r.muted
+      c.archived = r.archived
     }
+  }
+
+  function isArchived(convId: number): boolean {
+    return conversations.value.find((c) => c.id === convId)?.archived === true
   }
 
   async function togglePin(convId: number) {
@@ -80,6 +85,39 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   async function toggleMute(convId: number) {
     await setPrefs(convId, { muted: !isMuted(convId) })
+  }
+
+  async function toggleArchive(convId: number) {
+    await setPrefs(convId, { archived: !isArchived(convId) })
+  }
+
+  /** 删除会话：只从自己的列表移除，不退出群、不删除消息 */
+  async function removeConversation(convId: number) {
+    await convApi.remove(convId)
+    conversations.value = conversations.value.filter((c) => c.id !== convId)
+    if (currentConvId.value === convId) currentConvId.value = null
+    delete messagesByConv[convId]
+    delete hasMoreByConv[convId]
+    lastReportedReadByConv.delete(convId)
+  }
+
+  /** 清空聊天记录：消息本体保留，仅清除自己的本地与服务端可见历史 */
+  async function clearConversation(convId: number) {
+    const r = await convApi.clear(convId)
+    messagesByConv[convId] = []
+    hasMoreByConv[convId] = false
+    lastReportedReadByConv.delete(convId)
+    const c = conversations.value.find((x) => x.id === convId)
+    if (c) {
+      c.unreadCount = 0
+      c.mentionUnread = false
+      c.lastMessageId = null
+      c.lastMessageAt = null
+      c.lastMessagePreview = null
+      c.lastMessageType = null
+      c.lastReadMessageId = r.clearedBeforeId
+    }
+    await loadConversations()
   }
 
   // ===== 会话成员缓存（@ 选人 / 引用摘要里的昵称）=====
@@ -462,9 +500,9 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   // ===== 会话筛选（分组栏） =====
 
-  const filter = ref<'all' | 'unread' | 'single' | 'group'>('all')
+  const filter = ref<'all' | 'unread' | 'single' | 'group' | 'archived'>('all')
 
-  function setFilter(f: 'all' | 'unread' | 'single' | 'group') {
+  function setFilter(f: 'all' | 'unread' | 'single' | 'group' | 'archived') {
     filter.value = f
   }
 
@@ -753,8 +791,12 @@ export const useConversationsStore = defineStore('conversations', () => {
     isPinned,
     isMuted,
     setPrefs,
+    isArchived,
     togglePin,
     toggleMute,
+    toggleArchive,
+    removeConversation,
+    clearConversation,
     membersByConv,
     loadMembers,
     memberNickname,

@@ -11,20 +11,27 @@ const { t } = useAppI18n()
 const items = computed(() => {
   // type=3 系统公告会话不展示在列表里，计数也一并排除
   const convs = convStore.conversations.filter((c) => c.type !== 3)
+  const active = convs.filter((c) => !c.archived)
+  const archived = convs.filter((c) => c.archived)
   // 计数口径统一为「会话数」，避免未读显示成消息条数而其他项是会话数
-  const unread = convs.filter((c) => c.unreadCount > 0).length
+  const unread = active.filter((c) => c.unreadCount > 0).length
   return [
-    { value: 'all' as const, label: t('chat.filterAll'), count: convs.length },
+    { value: 'all' as const, label: t('chat.filterAll'), count: active.length },
     { value: 'unread' as const, label: t('chat.filterUnread'), count: unread },
     {
       value: 'single' as const,
       label: t('chat.filterSingle'),
-      count: convs.filter((c) => c.type === 1).length,
+      count: active.filter((c) => c.type === 1).length,
     },
     {
       value: 'group' as const,
       label: t('chat.filterGroup'),
-      count: convs.filter((c) => c.type === 2).length,
+      count: active.filter((c) => c.type === 2).length,
+    },
+    {
+      value: 'archived' as const,
+      label: t('chat.filterArchived'),
+      count: archived.length,
     },
   ]
 })
