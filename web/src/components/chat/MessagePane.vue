@@ -20,6 +20,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useLayoutStore } from '@/stores/layout'
 import { useWsStore } from '@/stores/ws'
+import { FEATURES } from '@/config/features'
 import type { Conversation, Message, ReplyBrief, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
@@ -1079,9 +1080,10 @@ const senderName = (m: Message) => {
                   </span>
                 </div>
 
-                <!-- 表情回应：已有点击切换，+ 展开预设表情 -->
+                <!-- 表情回应：已有点击切换，+ 展开预设表情。
+                     暂未开放（FEATURES.reactions=false 隐藏，逻辑保留），开关在 src/config/features.ts -->
                 <div
-                  v-if="!item.msg.isRecalled && item.msg.id > 0"
+                  v-if="FEATURES.reactions && !item.msg.isRecalled && item.msg.id > 0"
                   class="mc-msg__reactions"
                 >
                   <button
