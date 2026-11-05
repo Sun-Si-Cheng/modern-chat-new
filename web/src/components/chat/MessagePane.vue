@@ -198,8 +198,12 @@ onMounted(() => {
 })
 
 // ===== 群成员昵称缓存 =====
+//
+// 组件按会话重建（ChatLayout 上带 :key），所以缓存天然按会话隔离；
+// 额外加一个失败标记：接口 5xx 时不要在每次渲染里反复重打 members 接口。
 
 const memberNameCache = reactive<Record<number, string>>({})
+let memberNamesFailed = false
 /** 我在当前群的角色（判断是否显示「删除违规消息」）；单聊为空 */
 const myGroupRole = ref('')
 
@@ -223,12 +227,13 @@ watch(
 
 function memberName(userId: number): string {
   if (memberNameCache[userId]) return memberNameCache[userId]
-  void loadMemberNames()
+  // 失败过就不再随渲染重试，避免接口挂掉时每帧打一次请求
+  if (!memberNamesFailed) void loadMemberNames()
   return t('message.userFallback', { n: userId })
 }
 
 async function loadMemberNames() {
-  if (memberNamesLoading || !conv.value) return
+  if (memberNamesLoading || !conv.value || memberNamesFailed) return
   memberNamesLoading = true
   try {
     const members = await convApi.members(conv.value.id)
@@ -237,7 +242,7 @@ async function loadMemberNames() {
       if (m.userId === auth.user?.id) myGroupRole.value = m.role
     }
   } catch {
-    /* 忽略：下次渲染重试 */
+    memberNamesFailed = true
   } finally {
     memberNamesLoading = false
   }
@@ -1185,14 +1190,6 @@ const senderName = (m: Message) => {
           </template>
         </DynamicScrollerItem>
 
-        <!-- 图片放大：点任意处或 Esc 关闭 -->
-        <Teleport to="body">
-          <Transition name="mc-lb">
-            <div v-if="previewSrc" class="mc-lightbox" @click="previewSrc = ''">
-              <img :src="previewSrc" alt="" />
-            </div>
-          </Transition>
-        </Teleport>
         </template>
     </DynamicScroller>
 
@@ -1207,6 +1204,15 @@ const senderName = (m: Message) => {
     </div>
 
     <MessageComposer v-if="conv" />
+
+    <!-- 图片放大：挂在虚拟列表之外（放在列表插槽里会按可见项渲染多份） -->
+    <Teleport to="body">
+      <Transition name="mc-lb">
+        <div v-if="previewSrc" class="mc-lightbox" @click="previewSrc = ''">
+          <img :src="previewSrc" alt="" />
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 消息右键菜单 -->
     <ContextMenu

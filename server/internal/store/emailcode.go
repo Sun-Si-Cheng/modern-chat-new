@@ -22,8 +22,12 @@ const (
 	emailCodeMaxAttempts = 5
 )
 
-// EmailVerifyPurposeRegister 注册验证。留成常量是为了以后扩「换绑邮箱」时复用同一张表。
-const EmailVerifyPurposeRegister = "register"
+const (
+	// EmailVerifyPurposeRegister 注册验证
+	EmailVerifyPurposeRegister = "register"
+	// EmailVerifyPurposeChange 换绑邮箱：验证的是**新邮箱**的归属
+	EmailVerifyPurposeChange = "change_email"
+)
 
 // EmailCodeStore 注册邮箱验证码的存取。
 //

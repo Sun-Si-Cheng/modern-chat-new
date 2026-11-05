@@ -3,7 +3,7 @@ import UiSlider from '@/components/ui/UiSlider.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
@@ -124,7 +124,7 @@ const themeOptions: Array<{ value: Theme; label: string }> = [
 
 // ===== 账号 =====
 
-const profile = reactive({ nickname: '', email: '' })
+const profile = reactive({ nickname: '', email: '', emailCode: '' })
 const saving = ref(false)
 
 watch(
@@ -132,9 +132,58 @@ watch(
   (u) => {
     profile.nickname = u?.nickname ?? ''
     profile.email = u?.email ?? ''
+    profile.emailCode = ''
   },
   { immediate: true },
 )
+
+/** 邮箱被改动 = 换绑：需要先给新邮箱发验证码 */
+const emailChanged = computed(() => {
+  const current = auth.user?.email ?? ''
+  const next = profile.email.trim()
+  return next !== '' && next !== current
+})
+
+// ===== 换绑邮箱验证码 =====
+const codeSending = ref(false)
+const codeCooldown = ref(0)
+let codeTimer: number | undefined
+
+function stopCodeTimer() {
+  if (codeTimer !== undefined) {
+    window.clearInterval(codeTimer)
+    codeTimer = undefined
+  }
+}
+
+function startCooldown(sec: number) {
+  codeCooldown.value = Math.min(600, Math.max(1, Math.floor(sec) || 60))
+  stopCodeTimer()
+  codeTimer = window.setInterval(() => {
+    codeCooldown.value -= 1
+    if (codeCooldown.value <= 0) stopCodeTimer()
+  }, 1000)
+}
+
+onBeforeUnmount(stopCodeTimer)
+
+async function sendChangeCode() {
+  if (codeSending.value || codeCooldown.value > 0) return
+  const email = profile.email.trim()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    void MessagePlugin.warning(t('auth.validation.emailRequired'))
+    return
+  }
+  codeSending.value = true
+  try {
+    startCooldown(await auth.sendEmailChangeCode(email))
+    void MessagePlugin.success(t('auth.codeSent'))
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.codeSendFailed'))
+  } finally {
+    codeSending.value = false
+  }
+}
 
 /** 资料是否有未保存的修改（用于禁用保存按钮，避免无意义的提交） */
 const profileDirty = computed(() => {
@@ -151,11 +200,18 @@ async function saveProfile() {
   }
   const u = auth.user
   const email = profile.email.trim()
-  // 只提交真正变化的字段：服务端只要收到 email 就会把 emailVerified 重置为 false，
-  // 「只改昵称」不该顺手清掉邮箱验证状态
-  const patch: { nickname?: string; email?: string } = {}
+  // 换绑邮箱必须带验证码：服务端会核销通过才落库（防止占用别人的邮箱）
+  if (emailChanged.value && !profile.emailCode.trim()) {
+    void MessagePlugin.warning(t('settings.emailCodeRequired'))
+    return
+  }
+  // 只提交真正变化的字段：「只改昵称」不该顺手动邮箱与验证状态
+  const patch: { nickname?: string; email?: string; emailCode?: string } = {}
   if (!u || nickname !== u.nickname) patch.nickname = nickname
-  if (email !== (u?.email ?? '')) patch.email = email
+  if (email !== (u?.email ?? '')) {
+    patch.email = email
+    if (email) patch.emailCode = profile.emailCode.trim()
+  }
   if (!u || (!patch.nickname && patch.email === undefined)) {
     void MessagePlugin.info(t('settings.nothingChanged'))
     return
@@ -163,6 +219,7 @@ async function saveProfile() {
   saving.value = true
   try {
     await auth.updateMe(patch)
+    profile.emailCode = ''
     void MessagePlugin.success(t('settings.savedOk'))
   } catch (e) {
     void MessagePlugin.error(te(e) || t('common.saveFailed'))
@@ -332,6 +389,28 @@ function goBack() {
               clearable
             />
             <p class="settings-field__hint text-placeholder">{{ t('settings.emailHint') }}</p>
+
+            <!-- 换绑邮箱：必须验证新邮箱归属 -->
+            <template v-if="emailChanged">
+              <div class="settings-code-row">
+                <UiInput
+                  v-model="profile.emailCode"
+                  :maxlength="6"
+                  :placeholder="t('auth.emailCode')"
+                />
+                <UiButton
+                  variant="outline"
+                  :loading="codeSending"
+                  :disabled="codeCooldown > 0"
+                  @click="sendChangeCode"
+                >
+                  {{ codeCooldown > 0 ? t('auth.resendIn', { n: codeCooldown }) : t('auth.sendCode') }}
+                </UiButton>
+              </div>
+              <p class="settings-field__hint text-placeholder">
+                {{ t('settings.emailChangeHint') }}
+              </p>
+            </template>
           </div>
 
           <div class="settings-actions">
@@ -607,6 +686,24 @@ function goBack() {
 .settings-seg button:focus-visible {
   outline: 2px solid var(--td-brand-color);
   outline-offset: 1px;
+}
+
+/* 换绑邮箱的验证码行 */
+.settings-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-code-row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-code-row > :last-child {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* 表单字段 */

@@ -36,7 +36,16 @@ export const authApi = {
   me: () => http.get<User>('/me'),
   /** 退出所有设备：后端 token_version+1，所有旧 JWT 失效 */
   logoutOthers: () => http.post<{ ok: true }>('/me/logout-others'),
-  updateMe: (body: { nickname?: string; email?: string; avatar?: string }) => http.patch<User>('/me', body),
+  updateMe: (body: {
+    nickname?: string
+    email?: string
+    avatar?: string
+    /** 换绑邮箱时必填：发到新邮箱的验证码 */
+    emailCode?: string
+  }) => http.patch<User>('/me', body),
+  /** 换绑邮箱：向新邮箱发验证码 */
+  emailChangeCode: (email: string) =>
+    http.post<{ ok: true; cooldownSeconds: number }>('/me/email-code', { email }),
 }
 
 // ===== 用户搜索 =====

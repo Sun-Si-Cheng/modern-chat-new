@@ -168,6 +168,9 @@ func New(d Deps) *gin.Engine {
 	{
 		authed.GET("/me", authH.Me)
 		authed.PATCH("/me", authH.UpdateMe)
+		// 换绑邮箱：给「新邮箱」发验证码（按用户限流，60 秒冷却由 store 保证）
+		emailCodeLimit := middleware.RateLimit(middleware.NewLimiterStore(5, 5), middleware.KeyByUID)
+		authed.POST("/me/email-code", emailCodeLimit, authH.EmailCodeChange)
 
 		authed.GET("/users/search", userH.Search)
 		// 退出所有设备：旧 JWT 全部失效（需重新登录）

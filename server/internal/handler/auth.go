@@ -502,12 +502,17 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, middleware.UserFrom(c))
 }
 
-// UpdateMe 改昵称 / 邮箱；改邮箱后 email_verified=false。
+// UpdateMe 改昵称 / 头像 / 邮箱。
+//
+// 换绑邮箱必须带新邮箱收到的验证码并核销通过：只校验唯一性就落库的话，
+// 任何人都能把资料邮箱改成别人的地址（抢占唯一索引 + 让重置链接寄给别人）。
 func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	var req struct {
 		Nickname *string `json:"nickname"`
 		Email    *string `json:"email"`
 		Avatar   *string `json:"avatar"`
+		// EmailCode 换绑邮箱时必填：发到新邮箱的 6 位验证码
+		EmailCode string `json:"emailCode"`
 	}
 	if !bind(c, &req) {
 		return
@@ -537,7 +542,16 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 			fail(c, http.StatusBadRequest, msg)
 			return
 		}
-		if e != "" {
+		if e == "" {
+			// 解绑：不需要验证（清掉验证状态）
+			u.Email = nil
+			u.EmailVerified = false
+		} else if u.Email == nil || *u.Email != e {
+			// 换绑：必须验证新邮箱归属
+			if !h.mailerReady() {
+				fail(c, http.StatusBadRequest, "站点未配置邮件服务，暂不支持修改邮箱")
+				return
+			}
 			existing, err := h.users.ByEmail(e)
 			if err != nil {
 				internal(c, err)
@@ -547,12 +561,28 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 				fail(c, http.StatusConflict, "邮箱已被绑定")
 				return
 			}
+			code := strings.TrimSpace(req.EmailCode)
+			if code == "" {
+				fail(c, http.StatusBadRequest, "请先获取新邮箱的验证码")
+				return
+			}
+			if h.emailCodes == nil {
+				internal(c, fmt.Errorf("email code store not initialized"))
+				return
+			}
+			ok, err := h.emailCodes.Verify(e, store.EmailVerifyPurposeChange, code)
+			if err != nil {
+				internal(c, err)
+				return
+			}
+			if !ok {
+				fail(c, http.StatusUnprocessableEntity, "验证码错误或已过期，请重新获取")
+				return
+			}
 			u.Email = &e
-			u.EmailVerified = false
-		} else {
-			u.Email = nil
-			u.EmailVerified = false
+			u.EmailVerified = true
 		}
+		// 邮箱没变化：什么都不做（不改验证状态，避免「只改昵称」把它清掉）
 	}
 	if err := h.users.Save(u); err != nil {
 		internal(c, err)
@@ -562,6 +592,64 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	// 否则对方会话列表里的昵称/头像要刷新页面才更新。
 	notifyFor(c).NotifyUserChange(u.ID, u.Nickname, u.Avatar, u.AvatarColor)
 	c.JSON(http.StatusOK, u)
+}
+
+// EmailCodeChange 发送换绑邮箱验证码（登录后；验证码发往**新邮箱**）。
+//
+// 与注册发码分开：注册要检查「站点是否开放注册」，换绑只需要登录态，
+// 且必须排除「新邮箱与当前邮箱相同」「新邮箱已被别人占用」。
+func (h *AuthHandler) EmailCodeChange(c *gin.Context) {
+	if !h.mailerReady() {
+		fail(c, http.StatusServiceUnavailable, "站点未配置邮件服务，暂不支持修改邮箱")
+		return
+	}
+	u := middleware.UserFrom(c)
+	var req struct {
+		Email string `json:"email"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	email := service.NormalizeEmail(req.Email)
+	if email == "" {
+		fail(c, http.StatusBadRequest, "请填写邮箱")
+		return
+	}
+	if msg := validateEmail(email); msg != "" {
+		fail(c, http.StatusBadRequest, msg)
+		return
+	}
+	if u.Email != nil && *u.Email == email {
+		fail(c, http.StatusBadRequest, "新邮箱与当前邮箱相同")
+		return
+	}
+	if existing, err := h.users.ByEmail(email); err != nil {
+		internal(c, err)
+		return
+	} else if existing != nil && existing.ID != u.ID {
+		fail(c, http.StatusConflict, "邮箱已被绑定")
+		return
+	}
+	if h.emailCodes == nil {
+		internal(c, fmt.Errorf("email code store not initialized"))
+		return
+	}
+
+	code, retryAfter, err := h.emailCodes.Issue(email, store.EmailVerifyPurposeChange)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if code == "" {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "cooldownSeconds": int(retryAfter.Seconds()) + 1})
+		return
+	}
+	if err := h.mailer.SendVerifyCode(email, code, store.EmailCodeTTL); err != nil {
+		fail(c, http.StatusServiceUnavailable, "验证邮件发送失败，请稍后重试")
+		return
+	}
+	slog.Info("email change code sent", "uid", u.ID, "email", email)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "cooldownSeconds": int(store.EmailCodeCooldown.Seconds())})
 }
 
 // mailerReady 邮件服务是否可用（未配置 SMTP 时注册不强制验证）。

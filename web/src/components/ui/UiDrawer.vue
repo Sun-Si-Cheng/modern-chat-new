@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useAppI18n } from '@/composables/useAppI18n'
+import { handleTabKey, lockBodyScroll, unlockBodyScroll } from '@/composables/useOverlay'
 
 /**
  * 右侧抽屉（UnoCSS 实现，替代 TDesign Drawer）。
@@ -26,19 +27,64 @@ function close() {
   emit('update:visible', false)
 }
 
+const panelEl = ref<HTMLElement | null>(null)
+let restoreFocus: HTMLElement | null = null
+let scrollLocked = false
+
+watch(
+  () => props.visible,
+  async (v) => {
+    if (v) {
+      restoreFocus = document.activeElement as HTMLElement | null
+      if (!scrollLocked) {
+        lockBodyScroll()
+        scrollLocked = true
+      }
+      await nextTick()
+      panelEl.value?.focus()
+    } else {
+      if (scrollLocked) {
+        unlockBodyScroll()
+        scrollLocked = false
+      }
+      restoreFocus?.focus?.()
+      restoreFocus = null
+    }
+  },
+)
+
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.visible) close()
+  if (!props.visible) return
+  if (e.key === 'Escape') {
+    close()
+    return
+  }
+  // Tab 环在抽屉内：否则焦点会走到背后页面的列表上，误触切换会话
+  handleTabKey(e, panelEl.value)
 }
 
 onMounted(() => document.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  if (scrollLocked) {
+    unlockBodyScroll()
+    scrollLocked = false
+  }
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="ui-dw">
       <div v-if="visible" class="ui-drawer__mask" @click.self="close">
-        <aside class="ui-drawer" role="dialog" aria-modal="true" :style="{ width: widthStyle }">
+        <aside
+          ref="panelEl"
+          class="ui-drawer"
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+          :style="{ width: widthStyle }"
+        >
           <header class="ui-drawer__head">
             <span class="ui-drawer__title">{{ header }}</span>
             <button

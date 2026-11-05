@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import UiButton from './UiButton.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
+import { handleTabKey, lockBodyScroll, unlockBodyScroll } from '@/composables/useOverlay'
 
 /**
  * 模态对话框（UnoCSS 实现，替代 TDesign Dialog）。
@@ -51,8 +52,16 @@ function onConfirm() {
   emit('confirm')
 }
 
+let scrollLocked = false
+
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.visible) close()
+  if (!props.visible) return
+  if (e.key === 'Escape') {
+    close()
+    return
+  }
+  // Tab 环在弹窗内：否则键盘用户会 Tab 到背景页的按钮上
+  handleTabKey(e, panelEl.value)
 }
 
 watch(
@@ -60,9 +69,17 @@ watch(
   async (v) => {
     if (v) {
       restoreFocus = document.activeElement as HTMLElement | null
+      if (!scrollLocked) {
+        lockBodyScroll()
+        scrollLocked = true
+      }
       await nextTick()
       panelEl.value?.focus()
     } else {
+      if (scrollLocked) {
+        unlockBodyScroll()
+        scrollLocked = false
+      }
       restoreFocus?.focus?.()
       restoreFocus = null
     }
@@ -70,7 +87,13 @@ watch(
 )
 
 onMounted(() => document.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  if (scrollLocked) {
+    unlockBodyScroll()
+    scrollLocked = false
+  }
+})
 </script>
 
 <template>

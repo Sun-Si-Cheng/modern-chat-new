@@ -41,6 +41,12 @@ export const useAuthStore = defineStore('auth', () => {
     return r.cooldownSeconds ?? 60
   }
 
+  /** 换绑邮箱：向新邮箱发验证码 */
+  async function sendEmailChangeCode(email: string): Promise<number> {
+    const r = await authApi.emailChangeCode(email)
+    return r.cooldownSeconds ?? 60
+  }
+
   async function fetchMe() {
     if (!token.value) return
     try {
@@ -71,6 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     register,
     sendRegisterCode,
+    sendEmailChangeCode,
     fetchMe,
     updateMe,
     logout,

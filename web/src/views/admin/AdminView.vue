@@ -146,6 +146,8 @@ const testingSMTP = ref(false)
 const testEmail = ref('')
 /** 服务器实际生效状态（与表单值不是一回事：Redis 改了要重启才生效） */
 const settingsMeta = ref({ smtpEnabled: false, redisEnabled: false, storageApplied: false })
+/** 密钥字段是否已设置：接口只回 hasXxx，密码框永远空白，不提示的话站长无从判断 */
+const secretMeta = ref({ smtpPass: false, redisPass: false, storageKey: false })
 
 const settingsForm = ref<AdminSettingsPayload>({
   smtp: { host: '', port: '465', user: '', from: '', pass: '' },
@@ -218,6 +220,11 @@ async function fetchSettings() {
       smtpEnabled: s.smtpEnabled,
       redisEnabled: s.redisEnabled,
       storageApplied: s.storageApplied,
+    }
+    secretMeta.value = {
+      smtpPass: s.smtp.hasPass,
+      redisPass: s.redis.hasPass,
+      storageKey: s.storage.hasSecretKey,
     }
     settingsLoaded.value = true
     settingsLoadFailed.value = false
@@ -1371,6 +1378,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 type="password"
                 :placeholder="t('admin.secretPlaceholder')"
               />
+              <span v-if="secretMeta.smtpPass" class="mc-settings__hint">
+                {{ t('admin.secretSaved') }}
+              </span>
             </label>
             <label class="mc-settings__field">
               <span>{{ t('admin.smtpFrom') }}</span>
@@ -1414,6 +1424,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 type="password"
                 :placeholder="t('admin.secretPlaceholder')"
               />
+              <span v-if="secretMeta.redisPass" class="mc-settings__hint">
+                {{ t('admin.secretSaved') }}
+              </span>
             </label>
           </div>
           <p class="mc-settings__warn">{{ t('admin.redisRestartHint') }}</p>
@@ -1455,6 +1468,9 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 type="password"
                 :placeholder="t('admin.secretPlaceholder')"
               />
+              <span v-if="secretMeta.storageKey" class="mc-settings__hint">
+                {{ t('admin.secretSaved') }}
+              </span>
             </label>
             <label class="mc-settings__field mc-settings__field--wide">
               <span>{{ t('admin.storagePublicBase') }}</span>
@@ -1927,6 +1943,13 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   margin: 10px 0 0;
   font-size: var(--mc-fs-sm);
   color: var(--td-warning-color);
+}
+
+/* 密钥已设置：浅色小字，避免与「必填」类提示混淆 */
+.mc-settings__hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--td-success-color);
 }
 
 /* 邀请码管理 */
