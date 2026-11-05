@@ -14,7 +14,9 @@ const props = withDefaults(
 const emit = defineEmits<{ change: [value: boolean] }>()
 
 const trackCls = computed(() => [
-  'relative inline-flex items-center flex-shrink-0 rounded-full border-none',
+  'relative inline-flex items-center flex-shrink-0 rounded-full border-none overflow-hidden',
+  // overflow-hidden：滑钮位移走 spring 曲线（有 ~10% 超调），
+  // 不裁剪的话圆圈在动画峰值会越过轨道圆头端盖，看起来「滑出滑道」
   props.size === 'small' ? 'w-8 h-[18px]' : 'w-10 h-[22px]',
   // 关闭态用 ink-4 而不是 bg-active：后者在暗色下与背景几乎同色，
   // 只看得到白色圆点、看不出这是一颗开关
