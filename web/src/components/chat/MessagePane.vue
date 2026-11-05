@@ -313,7 +313,9 @@ const imageTarget = ref<Message | null>(null)
 
 function openImageMenu(e: MouseEvent, m: Message) {
   imageTarget.value = m
-  menuTarget.value = null
+  // 图片菜单也复用消息的通用操作（引用 / 转发 / 收藏 / 撤回 / 删除），
+  // 所以 menuTarget 必须一起设置，否则这些项点了没有目标
+  menuTarget.value = m
   menuX.value = e.clientX
   menuY.value = e.clientY
   menuVisible.value = true
@@ -340,40 +342,65 @@ async function saveImage(m: Message) {
   }
 }
 
-const menuItems = computed<ContextMenuItem[]>(() => {
-  // 图片菜单：保存 / 查看大图 / 收藏
-  const img = imageTarget.value
-  if (img) {
-    return [
-      { key: 'imgOpen', label: t('message.openImage') },
-      { key: 'imgSave', label: t('message.saveImage') },
-      {
-        key: 'imgFavorite',
-        label: favorites.isFavorited(img.id) ? t('message.unfavorite') : t('message.favorite'),
-        dividerBefore: true,
-      },
-    ]
+/**
+ * 消息的通用操作项（文本 / 图片 / 表情共用）。
+ *
+ * 抽出来是因为图片菜单原来只有「查看大图 / 保存图片 / 收藏」，
+ * 而引用、转发、撤回、删除在图片上同样需要——两处各写一遍必然分叉。
+ * dividerFirst：图片菜单前面还有专属项，第一项要加分隔线。
+ */
+function commonActions(m: Message, dividerFirst: boolean): ContextMenuItem[] {
+  const items: ContextMenuItem[] = []
+  const markDivider = () => {
+    if (dividerFirst && items.length === 0) return true
+    return false
   }
 
-  const m = menuTarget.value
-  if (!m) return []
-  const items: ContextMenuItem[] = []
-  if (m.msgType === 'text' && m.content) {
-    items.push({ key: 'copy', label: t('message.copy') })
-  }
-  // 撤回提示、未落库的乐观消息不参与引用/转发
-  if (!m.isRecalled && m.id > 0) {
-    items.push({ key: 'quote', label: t('message.quote') })
+  // 撤回提示、未落库的乐观消息不参与引用 / 转发 / 删除
+  const actionable = !m.isRecalled && m.id > 0
+  if (actionable) {
+    items.push({ key: 'quote', label: t('message.quote'), dividerBefore: markDivider() })
     items.push({ key: 'forward', label: t('message.forward') })
   }
   items.push({
     key: 'favorite',
     label: favorites.isFavorited(m.id) ? t('message.unfavorite') : t('message.favorite'),
+    dividerBefore: markDivider(),
   })
   if (canRecall(m)) {
-    items.push({ key: 'recall', label: t('message.recall'), danger: true, dividerBefore: items.length > 0 })
+    items.push({
+      key: 'recall',
+      label: t('message.recall'),
+      danger: true,
+      dividerBefore: items.length > 0,
+    })
   }
-  items.push({ key: 'delete', label: t('message.delete'), danger: true, dividerBefore: true })
+  if (actionable) {
+    items.push({ key: 'delete', label: t('message.delete'), danger: true, dividerBefore: true })
+  }
+  return items
+}
+
+const menuItems = computed<ContextMenuItem[]>(() => {
+  const m = menuTarget.value
+  if (!m) return []
+
+  // 图片 / 表情：专属项（查看大图、保存）在前，通用操作在后
+  if (imageTarget.value) {
+    const imageOnly: ContextMenuItem[] = [
+      { key: 'imgOpen', label: t('message.openImage') },
+      { key: 'imgSave', label: t('message.saveImage') },
+    ]
+    // 还没落库的消息（上传中）没有可操作的通用项
+    if (m.id <= 0) return imageOnly
+    return [...imageOnly, ...commonActions(m, true)]
+  }
+
+  const items: ContextMenuItem[] = []
+  if (m.msgType === 'text' && m.content) {
+    items.push({ key: 'copy', label: t('message.copy') })
+  }
+  items.push(...commonActions(m, false))
   return items
 })
 
@@ -399,16 +426,21 @@ async function copyMessage(m: Message) {
 }
 
 function onMenuSelect(key: string) {
-  const img = imageTarget.value
-  if (img) {
-    if (key === 'imgOpen') previewSrc.value = img.content
-    if (key === 'imgSave') void saveImage(img)
-    if (key === 'imgFavorite') void toggleFavorite(img)
-    return
-  }
-
   const m = menuTarget.value
   if (!m) return
+
+  // 图片 / 表情专属项（其余键落到下面的通用处理）
+  if (imageTarget.value) {
+    if (key === 'imgOpen') {
+      previewSrc.value = m.content
+      return
+    }
+    if (key === 'imgSave') {
+      void saveImage(m)
+      return
+    }
+  }
+
   if (key === 'copy') void copyMessage(m)
   if (key === 'quote') convStore.setReplyTarget(m)
   if (key === 'forward') forwardSource.value = m
