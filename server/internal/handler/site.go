@@ -28,13 +28,16 @@ func (h *SiteHandler) Get(c *gin.Context) {
 		ops = h.settings.Ops()
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"name":             ops.SiteName,
-		"allowRegister":    ops.AllowRegister,
-		"maxMessageLength": ops.MaxMessageLength,
-		"recallMinutes":    ops.RecallMinutes,
-		"maxGroupMembers":  ops.MaxGroupMembers,
-		"maxImageMB":       ops.MaxImageMB,
-		"maxAudioMB":       ops.MaxAudioMB,
-		"maxFileMB":        ops.MaxFileMB,
+		"name":               ops.SiteName,
+		"allowRegister":      ops.AllowRegister,
+		"maintenanceMode":    ops.MaintenanceMode,
+		"maintenanceMessage": ops.MaintenanceMessage,
+		"requireInviteCode":  ops.RequireInviteCode,
+		"maxMessageLength":   ops.MaxMessageLength,
+		"recallMinutes":      ops.RecallMinutes,
+		"maxGroupMembers":    ops.MaxGroupMembers,
+		"maxImageMB":         ops.MaxImageMB,
+		"maxAudioMB":         ops.MaxAudioMB,
+		"maxFileMB":          ops.MaxFileMB,
 	})
 }

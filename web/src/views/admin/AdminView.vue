@@ -6,7 +6,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin, MessagePlugin, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
@@ -23,6 +23,7 @@ import {
   type AdminStats,
   type AdminUserDetail,
   type AdminUserRow,
+  type InviteCode,
   type VersionInfo,
 } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -31,7 +32,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-type AdminTab = 'users' | 'plugins' | 'audits' | 'settings'
+type AdminTab = 'users' | 'plugins' | 'audits' | 'invites' | 'settings'
 const tab = ref<AdminTab>('users')
 
 /**
@@ -54,6 +55,7 @@ function switchTab(next: AdminTab) {
   if (next === 'plugins') void fetchPlugins()
   // 审计记录会随操作持续增长，进入页签时重新拉取，避免显示旧数据
   if (next === 'audits') void fetchAudits()
+  if (next === 'invites') void fetchInvites()
   // 设置只加载一次：反复拉取会把用户尚未保存的修改覆盖掉
   if (next === 'settings' && !settingsLoaded) {
     settingsLoaded = true
@@ -65,8 +67,69 @@ const tabItems = computed<Array<{ value: AdminTab; label: string }>>(() => [
   { value: 'users', label: t('admin.tabUsers') },
   { value: 'plugins', label: t('admin.tabPlugins') },
   { value: 'audits', label: t('admin.tabAudits') },
+  { value: 'invites', label: t('admin.tabInvites') },
   { value: 'settings', label: t('admin.tabSettings') },
 ])
+
+// ---- 注册邀请码 ----
+const invites = ref<InviteCode[]>([])
+const invitesLoading = ref(false)
+const inviteForm = reactive({ maxUses: 1, expiresDays: 7, count: 1 })
+
+async function fetchInvites() {
+  invitesLoading.value = true
+  try {
+    const list = await adminApi.invites()
+    invites.value = Array.isArray(list) ? list : []
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    invitesLoading.value = false
+  }
+}
+
+async function createInvites() {
+  try {
+    const created = await adminApi.createInvites({
+      maxUses: inviteForm.maxUses,
+      expiresDays: inviteForm.expiresDays,
+      count: inviteForm.count,
+    })
+    invites.value = [...(Array.isArray(created) ? created : []), ...invites.value]
+    void MessagePlugin.success(t('admin.inviteCreated', { n: created?.length ?? 0 }))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+async function toggleInvite(row: InviteCode) {
+  try {
+    await adminApi.disableInvite(row.id, !row.disabled)
+    row.disabled = !row.disabled
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
+async function copyInvite(code: string) {
+  try {
+    await navigator.clipboard.writeText(code)
+    void MessagePlugin.success(t('admin.inviteCopied'))
+  } catch {
+    void MessagePlugin.error(t('admin.inviteCopyFailed'))
+  }
+}
+
+function inviteExpired(row: InviteCode): boolean {
+  if (!row.expiresAt) return false
+  return new Date(row.expiresAt).getTime() <= Date.now()
+}
+
+function fmtInviteDate(s: string | null): string {
+  if (!s) return t('admin.inviteNeverExpires')
+  const d = new Date(s)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 // ---- 全站公告 ----
 const announceText = ref('')
@@ -91,9 +154,16 @@ const settingsForm = ref<AdminSettingsPayload>({
     secretKey: '',
     publicBase: '',
   },
-  site: { name: 'ModernChat', allowRegister: true },
+  site: {
+    name: 'ModernChat',
+    allowRegister: true,
+    maintenanceMode: false,
+    maintenanceMessage: '',
+    requireInviteCode: false,
+  },
   chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200 },
   upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20 },
+  security: { loginMaxAttempts: 5, loginLockMinutes: 15 },
 })
 
 /**
@@ -131,9 +201,10 @@ async function fetchSettings() {
         secretKey: '',
         publicBase: s.storage.publicBase,
       },
-      site: { name: s.site.name, allowRegister: s.site.allowRegister },
+      site: { ...s.site },
       chat: { ...s.chat },
       upload: { ...s.upload },
+      security: { ...s.security },
     }
     settingsMeta.value = {
       smtpEnabled: s.smtpEnabled,
@@ -848,6 +919,62 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         </TTable>
       </div>
 
+      <div v-if="tab === 'invites'" class="mc-admin__panel" role="tabpanel">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.invitesHint') }}</p>
+
+        <div class="mc-invites__create">
+          <label class="mc-settings__field">
+            <span>{{ t('admin.inviteMaxUses') }}</span>
+            <UiInputNumber v-model="inviteForm.maxUses" :min="1" :max="1000" :step="1" />
+          </label>
+          <label class="mc-settings__field">
+            <span>{{ t('admin.inviteExpiresDays') }}</span>
+            <UiInputNumber v-model="inviteForm.expiresDays" :min="0" :max="365" :step="1" />
+          </label>
+          <label class="mc-settings__field">
+            <span>{{ t('admin.inviteCount') }}</span>
+            <UiInputNumber v-model="inviteForm.count" :min="1" :max="20" :step="1" />
+          </label>
+          <UiButton theme="primary" :loading="invitesLoading" @click="createInvites">
+            {{ t('admin.inviteGenerate') }}
+          </UiButton>
+        </div>
+        <p class="mc-settings__warn">{{ t('admin.inviteExpiresHint') }}</p>
+
+        <div v-if="invites.length" class="mc-invites__list">
+          <div v-for="row in invites" :key="row.id" class="mc-invites__row">
+            <button
+              type="button"
+              class="mc-invites__code num"
+              :title="t('admin.inviteCopy')"
+              @click="copyInvite(row.code)"
+            >
+              {{ row.code }}
+            </button>
+            <span class="mc-invites__uses text-placeholder num">{{ row.uses }}/{{ row.maxUses }}</span>
+            <span class="mc-invites__date text-placeholder">{{ fmtInviteDate(row.expiresAt) }}</span>
+            <span class="mc-invites__creator text-placeholder">{{ row.creator }}</span>
+            <UiTag
+              v-if="row.disabled"
+              theme="default"
+              variant="light"
+            >{{ t('admin.inviteDisabled') }}</UiTag>
+            <UiTag
+              v-else-if="inviteExpired(row) || row.uses >= row.maxUses"
+              theme="warning"
+              variant="light"
+            >{{ t('admin.inviteExhausted') }}</UiTag>
+            <UiTag v-else theme="success" variant="light">{{ t('admin.inviteActive') }}</UiTag>
+            <UiButton size="small" variant="text" @click="toggleInvite(row)">
+              {{ row.disabled ? t('admin.inviteEnable') : t('admin.inviteDisable') }}
+            </UiButton>
+          </div>
+        </div>
+        <p v-else-if="!invitesLoading" class="mc-invites__empty text-placeholder">
+          {{ t('admin.invitesEmpty') }}
+        </p>
+      </div>
+
       <div v-if="tab === 'settings'" class="mc-admin__panel" role="tabpanel">
         <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
 
@@ -883,9 +1010,48 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 </span>
               </div>
             </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maintenanceMode') }}</span>
+              <div class="mc-settings__switch-row">
+                <UiSwitch
+                  :value="settingsForm.site.maintenanceMode"
+                  @change="(v) => (settingsForm.site.maintenanceMode = v)"
+                />
+                <span class="text-placeholder">
+                  {{
+                    settingsForm.site.maintenanceMode
+                      ? t('admin.maintenanceOn')
+                      : t('admin.maintenanceOff')
+                  }}
+                </span>
+              </div>
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.requireInviteCode') }}</span>
+              <div class="mc-settings__switch-row">
+                <UiSwitch
+                  :value="settingsForm.site.requireInviteCode"
+                  @change="(v) => (settingsForm.site.requireInviteCode = v)"
+                />
+                <span class="text-placeholder">{{ t('admin.inviteHint') }}</span>
+              </div>
+            </label>
           </div>
+
+          <label class="mc-settings__field mc-settings__field--wide">
+            <span>{{ t('admin.maintenanceMessage') }}</span>
+            <UiInput
+              v-model="settingsForm.site.maintenanceMessage"
+              :maxlength="200"
+              :placeholder="t('admin.maintenanceMessageHint')"
+            />
+          </label>
+
           <p v-if="!settingsForm.site.allowRegister" class="mc-settings__warn">
             {{ t('admin.registerOffHint') }}
+          </p>
+          <p v-if="settingsForm.site.maintenanceMode" class="mc-settings__warn">
+            {{ t('admin.maintenanceOnHint') }}
           </p>
         </section>
 
@@ -950,6 +1116,36 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
             </label>
           </div>
           <p class="mc-settings__warn">{{ t('admin.uploadNginxHint', { mb: nginxBodyHint }) }}</p>
+        </section>
+
+        <!-- 登录安全 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.securityTitle') }}</h3>
+            <UiTag theme="success" variant="light">{{ t('admin.cfgLive') }}</UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.securityDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field">
+              <span>{{ t('admin.loginMaxAttempts') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.security.loginMaxAttempts"
+                :min="0"
+                :max="20"
+                :step="1"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.loginLockMinutes') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.security.loginLockMinutes"
+                :min="1"
+                :max="1440"
+                :step="5"
+              />
+            </label>
+          </div>
+          <p class="mc-settings__warn">{{ t('admin.loginLockHint') }}</p>
         </section>
 
         <!-- 邮件（SMTP）：找回密码依赖它 -->
@@ -1453,6 +1649,63 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   margin: 10px 0 0;
   font-size: var(--mc-fs-sm);
   color: var(--td-warning-color);
+}
+
+/* 邀请码管理 */
+.mc-invites__create {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mc-invites__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 16px;
+}
+
+.mc-invites__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mc-hairline);
+  font-size: var(--mc-fs-sm);
+}
+
+.mc-invites__code {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--td-brand-color);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-invites__code:hover {
+  text-decoration: underline;
+}
+
+.mc-invites__uses,
+.mc-invites__date,
+.mc-invites__creator {
+  flex-shrink: 0;
+  font-size: var(--mc-fs-caption);
+}
+
+.mc-invites__empty {
+  margin: 40px 0;
+  text-align: center;
 }
 
 /* 开关 + 说明文字同行 */

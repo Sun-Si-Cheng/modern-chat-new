@@ -49,7 +49,15 @@ func upgraderFor(allowed []string) websocket.Upgrader {
 }
 
 // Serve 握手 + 鉴权 + 启动读写 pump。
-func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *Hub, w http.ResponseWriter, r *http.Request) {
+func Serve(
+	secret string,
+	allowedOrigins []string,
+	users *store.UserStore,
+	hub *Hub,
+	settings *store.SettingStore,
+	w http.ResponseWriter,
+	r *http.Request,
+) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
 		http.Error(w, `{"error":"登录已失效，请重新登录"}`, http.StatusUnauthorized)
@@ -70,6 +78,12 @@ func Serve(secret string, allowedOrigins []string, users *store.UserStore, hub *
 	if u.IsBanned() {
 		slog.Warn("ws handshake rejected: banned", "uid", u.ID, "remote", r.RemoteAddr)
 		http.Error(w, `{"error":"账号已被封禁"}`, http.StatusForbidden)
+		return
+	}
+	// 维护模式下非管理员不许建连：REST 已经被中间件挡住，
+	// 这里不挡的话页面虽然显示维护页，已有连接仍能继续收发消息
+	if settings != nil && settings.Ops().MaintenanceMode && u.Role != "admin" {
+		http.Error(w, `{"error":"站点维护中","maintenance":true}`, http.StatusServiceUnavailable)
 		return
 	}
 

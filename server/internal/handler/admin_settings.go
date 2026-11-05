@@ -54,8 +54,17 @@ type storageSetting struct {
 
 // siteSetting 站点信息：改了即时生效（前端拉 /api/site 拿）。
 type siteSetting struct {
-	Name          string `json:"name"`
-	AllowRegister bool   `json:"allowRegister"`
+	Name               string `json:"name"`
+	AllowRegister      bool   `json:"allowRegister"`
+	MaintenanceMode    bool   `json:"maintenanceMode"`
+	MaintenanceMessage string `json:"maintenanceMessage"`
+	RequireInviteCode  bool   `json:"requireInviteCode"`
+}
+
+// securitySetting 登录安全策略。
+type securitySetting struct {
+	LoginMaxAttempts int `json:"loginMaxAttempts"`
+	LoginLockMinutes int `json:"loginLockMinutes"`
 }
 
 // chatSetting 聊天规则：服务端每次请求现读，无需重启。
@@ -73,21 +82,23 @@ type uploadSetting struct {
 }
 
 type settingsPayload struct {
-	SMTP    smtpSetting    `json:"smtp"`
-	Redis   redisSetting   `json:"redis"`
-	Storage storageSetting `json:"storage"`
-	Site    siteSetting    `json:"site"`
-	Chat    chatSetting    `json:"chat"`
-	Upload  uploadSetting  `json:"upload"`
+	SMTP     smtpSetting     `json:"smtp"`
+	Redis    redisSetting    `json:"redis"`
+	Storage  storageSetting  `json:"storage"`
+	Site     siteSetting     `json:"site"`
+	Chat     chatSetting     `json:"chat"`
+	Upload   uploadSetting   `json:"upload"`
+	Security securitySetting `json:"security"`
 }
 
 type settingsView struct {
-	SMTP    smtpSetting    `json:"smtp"`
-	Redis   redisSetting   `json:"redis"`
-	Storage storageSetting `json:"storage"`
-	Site    siteSetting    `json:"site"`
-	Chat    chatSetting    `json:"chat"`
-	Upload  uploadSetting  `json:"upload"`
+	SMTP     smtpSetting     `json:"smtp"`
+	Redis    redisSetting    `json:"redis"`
+	Storage  storageSetting  `json:"storage"`
+	Site     siteSetting     `json:"site"`
+	Chat     chatSetting     `json:"chat"`
+	Upload   uploadSetting   `json:"upload"`
+	Security securitySetting `json:"security"`
 	// 生效状态
 	SMTPEnabled    bool `json:"smtpEnabled"`
 	RedisEnabled   bool `json:"redisEnabled"`
@@ -133,7 +144,17 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 	// 站点 / 聊天 / 上传：走 Ops() 拿到的是「填过就是填的值，没填就是默认值」，
 	// 所以表单永远显示当前真实生效的数值，而不是空。
 	ops := h.settings.Ops()
-	view.Site = siteSetting{Name: ops.SiteName, AllowRegister: ops.AllowRegister}
+	view.Site = siteSetting{
+		Name:               ops.SiteName,
+		AllowRegister:      ops.AllowRegister,
+		MaintenanceMode:    ops.MaintenanceMode,
+		MaintenanceMessage: ops.MaintenanceMessage,
+		RequireInviteCode:  ops.RequireInviteCode,
+	}
+	view.Security = securitySetting{
+		LoginMaxAttempts: ops.LoginMaxAttempts,
+		LoginLockMinutes: ops.LoginLockMinutes,
+	}
 	view.Chat = chatSetting{
 		MaxMessageLength: ops.MaxMessageLength,
 		RecallMinutes:    ops.RecallMinutes,
@@ -175,6 +196,19 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "站点名称最多 40 个字符")
 		return
 	}
+	maintenanceMsg := strings.TrimSpace(req.Site.MaintenanceMessage)
+	if n := len([]rune(maintenanceMsg)); n > 200 {
+		fail(c, http.StatusBadRequest, "维护提示最多 200 个字符")
+		return
+	}
+	if v := req.Security.LoginMaxAttempts; v != 0 && (v < 2 || v > 20) {
+		fail(c, http.StatusBadRequest, "登录失败次数阈值需为 0（关闭）或 2-20")
+		return
+	}
+	if v := req.Security.LoginLockMinutes; v < 1 || v > 1440 {
+		fail(c, http.StatusBadRequest, "锁定时长需为 1-1440 分钟")
+		return
+	}
 	checks := []struct {
 		label string
 		v     int
@@ -214,8 +248,14 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyStorageSecretKey:  req.Storage.SecretKey,
 		store.KeyStoragePublicBase: strings.TrimSpace(req.Storage.PublicBase),
 
-		store.KeySiteName:          siteName,
-		store.KeySiteAllowRegister: strconv.FormatBool(req.Site.AllowRegister),
+		store.KeySiteName:              siteName,
+		store.KeySiteAllowRegister:     strconv.FormatBool(req.Site.AllowRegister),
+		store.KeySiteMaintenanceMode:   strconv.FormatBool(req.Site.MaintenanceMode),
+		store.KeySiteMaintenanceMsg:    maintenanceMsg,
+		store.KeySiteRequireInviteCode: strconv.FormatBool(req.Site.RequireInviteCode),
+
+		store.KeySecurityLoginMaxAttempts: strconv.Itoa(req.Security.LoginMaxAttempts),
+		store.KeySecurityLoginLockMinutes: strconv.Itoa(req.Security.LoginLockMinutes),
 
 		store.KeyChatMaxMessageLen:   strconv.Itoa(req.Chat.MaxMessageLength),
 		store.KeyChatRecallMinutes:   strconv.Itoa(req.Chat.RecallMinutes),

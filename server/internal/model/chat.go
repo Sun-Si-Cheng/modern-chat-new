@@ -117,6 +117,34 @@ type ConversationFile struct {
 	CreatedAt      time.Time `gorm:"type:datetime(3)" json:"createdAt"`
 }
 
+// LoginAttempt 按账号记录登录失败次数（防暴力破解）。
+//
+// 按 username 而不是 uid：用户不存在时也计数，避免攻击者靠「用户名不存在」
+// 这一分支绕过锁定（同时也不能因此暴露账号是否存在，错误文案始终一致）。
+type LoginAttempt struct {
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	Username    string     `gorm:"size:64;uniqueIndex;not null" json:"username"`
+	FailedCount int        `gorm:"not null;default:0" json:"failedCount"`
+	LockedUntil *time.Time `gorm:"type:datetime(3)" json:"lockedUntil"`
+	UpdatedAt   time.Time  `gorm:"type:datetime(3)" json:"updatedAt"`
+}
+
+// InviteCode 注册邀请码（站长在后台生成）。
+//
+// 核销用条件 UPDATE 原子完成（uses < max_uses），不用「先查再改」——
+// 否则并发注册会让最后一个名额被多人同时使用。
+type InviteCode struct {
+	ID        uint       `gorm:"primaryKey" json:"id"`
+	Code      string     `gorm:"size:32;uniqueIndex;not null" json:"code"`
+	CreatedBy uint       `gorm:"index;not null" json:"createdBy"`
+	Creator   string     `gorm:"-" json:"creator,omitempty"`
+	MaxUses   int        `gorm:"not null;default:1" json:"maxUses"`
+	Uses      int        `gorm:"not null;default:0" json:"uses"`
+	ExpiresAt *time.Time `gorm:"type:datetime(3)" json:"expiresAt"`
+	Disabled  bool       `gorm:"default:false" json:"disabled"`
+	CreatedAt time.Time  `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
 // Sticker 用户自定义表情（个人表情库）。
 //
 // 只存 URL：文件已经在 Storage 里（本地或对象存储），这里只记归属关系。

@@ -14,6 +14,9 @@ export const useSiteStore = defineStore('site', () => {
   const config = ref<SiteConfig>({
     name: 'ModernChat',
     allowRegister: true,
+    maintenanceMode: false,
+    maintenanceMessage: '站点正在维护，请稍后再试。',
+    requireInviteCode: false,
     maxMessageLength: 1000,
     recallMinutes: 2,
     maxGroupMembers: 200,
@@ -23,17 +26,21 @@ export const useSiteStore = defineStore('site', () => {
   })
   const loaded = ref(false)
 
-  /** 拉一次就够：站点配置在一次会话里基本不变 */
-  async function load() {
-    if (loaded.value) return
+  async function refresh() {
     try {
       config.value = await siteApi.get()
       loaded.value = true
       document.title = config.value.name
     } catch {
-      // 保持默认值
+      // 保持上一次的值：拉取失败不能误判成「维护结束」把用户放进去
     }
   }
 
-  return { config, loaded, load }
+  /** 首屏拉一次 */
+  async function load() {
+    if (loaded.value) return
+    await refresh()
+  }
+
+  return { config, loaded, load, refresh }
 })

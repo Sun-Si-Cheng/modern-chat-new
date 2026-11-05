@@ -77,6 +77,8 @@ func New(d Deps) *gin.Engine {
 	msgs := store.NewMessageStore(d.DB)
 	stickers := store.NewStickerStore(d.DB)
 	files := store.NewFileStore(d.DB)
+	invites := store.NewInviteStore(d.DB)
+	loginAttempts := store.NewLoginAttemptStore(d.DB)
 	plugins := store.NewPluginStore(d.DB)
 	resets := store.NewPasswordResetStore(d.DB)
 	audits := store.NewAuditStore(d.DB)
@@ -89,7 +91,8 @@ func New(d Deps) *gin.Engine {
 		slog.Info("smtp config loaded from database", "host", cfg.Host, "port", cfg.Port)
 	}
 
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts)
+	inviteH := handler.NewInviteHandler(invites)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs, settings)
@@ -123,13 +126,19 @@ func New(d Deps) *gin.Engine {
 
 	// 认证（免鉴权，按 IP 限流 10/min）
 	authLimit := middleware.RateLimit(d.AuthLimiter, middleware.KeyByIP)
-	api.POST("/auth/register", authLimit, authH.Register)
+	// login 不挂维护中间件：必须给管理员留一条登录进来关掉维护模式的路
 	api.POST("/auth/login", authLimit, authH.Login)
-	api.POST("/auth/forgot", authLimit, authH.Forgot)
-	api.POST("/auth/reset", authLimit, authH.Reset)
+	api.POST("/auth/register", authLimit, middleware.Maintenance(settings), authH.Register)
+	api.POST("/auth/forgot", authLimit, middleware.Maintenance(settings), authH.Forgot)
+	api.POST("/auth/reset", authLimit, middleware.Maintenance(settings), authH.Reset)
 
-	// 需登录
-	authed := api.Group("", middleware.Auth(users, d.Cfg.JWTSecret), middleware.Ban())
+	// 需登录（Auth → Ban → Maintenance：维护模式要能读到用户角色）
+	authed := api.Group(
+		"",
+		middleware.Auth(users, d.Cfg.JWTSecret),
+		middleware.Ban(),
+		middleware.Maintenance(settings),
+	)
 	{
 		authed.GET("/me", authH.Me)
 		authed.PATCH("/me", authH.UpdateMe)
@@ -205,6 +214,10 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/plugins/global-disable", adminH.SetPluginGlobalDisabled)
 		admin.POST("/plugins/purge", adminH.PurgePlugin)
 		admin.POST("/users/:id/role", adminH.SetRole)
+		// 注册邀请码
+		admin.GET("/invites", inviteH.List)
+		admin.POST("/invites", inviteH.Create)
+		admin.POST("/invites/:id/disable", inviteH.SetDisabled)
 		admin.POST("/announce", adminH.Announce)
 		admin.GET("/audits", adminH.Audits)
 		// 系统设置（SMTP / Redis / 对象存储）
@@ -216,7 +229,7 @@ func New(d Deps) *gin.Engine {
 	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）
 	if d.WS != nil {
 		r.GET("/ws", func(c *gin.Context) {
-			ws.Serve(d.Cfg.JWTSecret, d.Cfg.FrontendURLs, users, d.WS, c.Writer, c.Request)
+			ws.Serve(d.Cfg.JWTSecret, d.Cfg.FrontendURLs, users, d.WS, settings, c.Writer, c.Request)
 		})
 	}
 

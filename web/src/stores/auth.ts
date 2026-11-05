@@ -22,8 +22,8 @@ export const useAuthStore = defineStore('auth', () => {
     applyAuth(await authApi.login({ username, password }))
   }
 
-  async function register(username: string, password: string, nickname: string) {
-    applyAuth(await authApi.register({ username, password, nickname }))
+  async function register(username: string, password: string, nickname: string, inviteCode?: string) {
+    applyAuth(await authApi.register({ username, password, nickname, inviteCode }))
   }
 
   async function fetchMe() {

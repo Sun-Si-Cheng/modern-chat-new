@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -30,6 +31,10 @@ type AuthHandler struct {
 	msgs   *store.MessageStore
 	// settings 用于读取「是否开放注册」这类可运营开关（可为 nil）
 	settings *store.SettingStore
+	// invites 邀请码核销（注册需要邀请码时使用）
+	invites *store.InviteStore
+	// loginAttempts 账号级登录失败锁定
+	loginAttempts *store.LoginAttemptStore
 }
 
 func NewAuthHandler(
@@ -40,10 +45,13 @@ func NewAuthHandler(
 	convs *store.ConversationStore,
 	msgs *store.MessageStore,
 	settings *store.SettingStore,
+	invites *store.InviteStore,
+	loginAttempts *store.LoginAttemptStore,
 ) *AuthHandler {
 	return &AuthHandler{
 		cfg: cfg, users: users, resets: resets, mailer: mailer,
 		convs: convs, msgs: msgs, settings: settings,
+		invites: invites, loginAttempts: loginAttempts,
 	}
 }
 
@@ -61,9 +69,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Nickname string `json:"nickname"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`
+		Nickname   string `json:"nickname"`
+		InviteCode string `json:"inviteCode"`
 	}
 	if !bind(c, &req) {
 		return
@@ -89,6 +98,39 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	} else if existing != nil {
 		fail(c, http.StatusConflict, "用户名已被占用")
 		return
+	}
+
+	// 邀请码：先条件 UPDATE 原子核销，再创建用户；注册中途失败则退还名额。
+	// 不能「先查再用」——并发下最后一个名额会被多人同时用掉。
+	inviteUsed := ""
+	registrationDone := false
+	defer func() {
+		if inviteUsed != "" && !registrationDone && h.invites != nil {
+			if err := h.invites.Refund(inviteUsed); err != nil {
+				slog.Error("refund invite failed", "err", err.Error())
+			}
+		}
+	}()
+	if h.settings != nil && h.settings.Ops().RequireInviteCode {
+		code := strings.TrimSpace(req.InviteCode)
+		if code == "" {
+			fail(c, http.StatusBadRequest, "请填写邀请码")
+			return
+		}
+		if h.invites == nil {
+			internal(c, fmt.Errorf("invite store not initialized"))
+			return
+		}
+		ok, err := h.invites.Consume(code)
+		if err != nil {
+			internal(c, err)
+			return
+		}
+		if !ok {
+			fail(c, http.StatusBadRequest, "邀请码无效、已用完或已过期")
+			return
+		}
+		inviteUsed = code
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
@@ -128,6 +170,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 用户已落库：邀请码不再退还（后续发欢迎消息/签发 token 失败也不该重复占名额）
+	registrationDone = true
 
 	// 新用户自动加入初始公开群；失败只记日志，不阻断注册
 	h.joinDefaultGroup(u.ID)
@@ -165,16 +209,47 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	u, err := h.users.ByUsername(strings.TrimSpace(req.Username))
+	username := strings.TrimSpace(req.Username)
+
+	// 账号级锁定（阈值配 0 即关闭）；IP 限流在中间件层照常生效，两者互补
+	ops := store.DefaultOps()
+	if h.settings != nil {
+		ops = h.settings.Ops()
+	}
+	locking := ops.LoginMaxAttempts > 0 && h.loginAttempts != nil
+	if locking {
+		locked, remaining, lErr := h.loginAttempts.IsLocked(username)
+		if lErr != nil {
+			internal(c, lErr)
+			return
+		}
+		if locked {
+			fail(c, http.StatusTooManyRequests,
+				fmt.Sprintf("登录失败次数过多，账号已锁定，请 %d 分钟后重试", int(remaining.Minutes())+1))
+			return
+		}
+	}
+
+	u, err := h.users.ByUsername(username)
 	if err != nil {
 		internal(c, err)
 		return
 	}
 	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		if locking {
+			if fErr := h.loginAttempts.Fail(username, ops.LoginMaxAttempts, ops.LoginLockMinutes); fErr != nil {
+				// 计数失败不该让登录接口变成 500（否则等于给攻击者一个禁用手段）
+				slog.Error("record login failure failed", "err", fErr.Error())
+			}
+		}
 		// 登录失败是安全审计要点（撞库/暴力破解的早期信号），只记用户名与来源，不记密码
 		slog.Warn("login failed", "username", req.Username, "ip", c.ClientIP())
 		fail(c, http.StatusBadRequest, "用户名或密码错误")
 		return
+	}
+	// 凭据正确即清零：封禁与否不影响，避免被封用户解锁后还背着旧计数
+	if h.loginAttempts != nil {
+		_ = h.loginAttempts.Reset(username)
 	}
 	if u.IsBanned() {
 		slog.Warn("login rejected: banned", "uid", u.ID, "username", u.Username, "ip", c.ClientIP())

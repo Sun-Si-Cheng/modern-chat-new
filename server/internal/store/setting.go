@@ -35,8 +35,15 @@ const (
 	KeyStoragePublicBase = "storage.publicBase"
 
 	// 站点
-	KeySiteName          = "site.name"
-	KeySiteAllowRegister = "site.allowRegister"
+	KeySiteName              = "site.name"
+	KeySiteAllowRegister     = "site.allowRegister"
+	KeySiteMaintenanceMode   = "site.maintenanceMode"
+	KeySiteMaintenanceMsg    = "site.maintenanceMessage"
+	KeySiteRequireInviteCode = "site.requireInviteCode"
+
+	// 安全
+	KeySecurityLoginMaxAttempts = "security.loginMaxAttempts"
+	KeySecurityLoginLockMinutes = "security.loginLockMinutes"
 
 	// 聊天规则
 	KeyChatMaxMessageLen   = "chat.maxMessageLength"
@@ -56,8 +63,10 @@ var knownKeys = map[string]bool{
 	KeyStorageAccessKey: true, KeyStorageSecretKey: true, KeyStoragePublicBase: true,
 
 	KeySiteName: true, KeySiteAllowRegister: true,
+	KeySiteMaintenanceMode: true, KeySiteMaintenanceMsg: true, KeySiteRequireInviteCode: true,
 	KeyChatMaxMessageLen: true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
 	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
+	KeySecurityLoginMaxAttempts: true, KeySecurityLoginLockMinutes: true,
 }
 
 // secretKeys 落库前加密、返回前端时脱敏。
@@ -192,27 +201,37 @@ func (s *SettingStore) Invalidate() {
 // 与 SMTP/Redis/存储这类「改了要重启」的配置不同，这些是**即时生效**的：
 // 读的是 SettingStore 的缓存，Save 时缓存失效，下一次请求就是新值。
 type Ops struct {
-	SiteName         string
-	AllowRegister    bool
-	MaxMessageLength int
-	RecallMinutes    int
-	MaxGroupMembers  int
-	MaxImageMB       int
-	MaxAudioMB       int
-	MaxFileMB        int
+	SiteName           string
+	AllowRegister      bool
+	MaintenanceMode    bool
+	MaintenanceMessage string
+	RequireInviteCode  bool
+	MaxMessageLength   int
+	RecallMinutes      int
+	MaxGroupMembers    int
+	MaxImageMB         int
+	MaxAudioMB         int
+	MaxFileMB          int
+	LoginMaxAttempts   int
+	LoginLockMinutes   int
 }
 
 // DefaultOps 缺省值。后台没配过任何一项时的行为，与改造前完全一致。
 func DefaultOps() Ops {
 	return Ops{
-		SiteName:         "ModernChat",
-		AllowRegister:    true,
-		MaxMessageLength: 1000,
-		RecallMinutes:    2,
-		MaxGroupMembers:  200,
-		MaxImageMB:       8,
-		MaxAudioMB:       5,
-		MaxFileMB:        20,
+		SiteName:           "ModernChat",
+		AllowRegister:      true,
+		MaintenanceMode:    false,
+		MaintenanceMessage: "站点正在维护，请稍后再试。",
+		RequireInviteCode:  false,
+		MaxMessageLength:   1000,
+		RecallMinutes:      2,
+		MaxGroupMembers:    200,
+		MaxImageMB:         8,
+		MaxAudioMB:         5,
+		MaxFileMB:          20,
+		LoginMaxAttempts:   5,
+		LoginLockMinutes:   15,
 	}
 }
 
@@ -246,6 +265,18 @@ func OpsFrom(all map[string]string) Ops {
 	case "true":
 		out.AllowRegister = true
 	}
+	if strings.TrimSpace(all[KeySiteMaintenanceMode]) == "true" {
+		out.MaintenanceMode = true
+	}
+	if v := strings.TrimSpace(all[KeySiteMaintenanceMsg]); v != "" {
+		if r := []rune(v); len(r) > 200 {
+			v = string(r[:200])
+		}
+		out.MaintenanceMessage = v
+	}
+	if strings.TrimSpace(all[KeySiteRequireInviteCode]) == "true" {
+		out.RequireInviteCode = true
+	}
 
 	out.MaxMessageLength = clampInt(all[KeyChatMaxMessageLen], 100, 5000, def.MaxMessageLength)
 	out.RecallMinutes = clampInt(all[KeyChatRecallMinutes], 0, 60, def.RecallMinutes)
@@ -253,6 +284,13 @@ func OpsFrom(all map[string]string) Ops {
 	out.MaxImageMB = clampInt(all[KeyUploadMaxImageMB], 1, 32, def.MaxImageMB)
 	out.MaxAudioMB = clampInt(all[KeyUploadMaxAudioMB], 1, 32, def.MaxAudioMB)
 	out.MaxFileMB = clampInt(all[KeyUploadMaxFileMB], 1, 200, def.MaxFileMB)
+	// 0 = 关闭账号锁定；其它值收敛到 2-20 次
+	if raw := strings.TrimSpace(all[KeySecurityLoginMaxAttempts]); raw == "0" {
+		out.LoginMaxAttempts = 0
+	} else {
+		out.LoginMaxAttempts = clampInt(raw, 2, 20, def.LoginMaxAttempts)
+	}
+	out.LoginLockMinutes = clampInt(all[KeySecurityLoginLockMinutes], 1, 1440, def.LoginLockMinutes)
 	return out
 }
 

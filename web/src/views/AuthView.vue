@@ -28,7 +28,13 @@ const loading = ref(false)
 const form = ref<FormInstanceFunctions>()
 
 const loginForm = reactive({ username: '', password: '' })
-const registerForm = reactive({ username: '', nickname: '', password: '', confirm: '' })
+const registerForm = reactive({
+  username: '',
+  nickname: '',
+  password: '',
+  confirm: '',
+  inviteCode: '',
+})
 
 /**
  * 协议同意状态：
@@ -78,7 +84,12 @@ async function doSubmit() {
     if (mode.value === 'login') {
       await auth.login(loginForm.username, loginForm.password)
     } else {
-      await auth.register(registerForm.username, registerForm.password, registerForm.nickname)
+      await auth.register(
+  registerForm.username,
+  registerForm.password,
+  registerForm.nickname,
+  registerForm.inviteCode,
+)
       void MessagePlugin.success(t('auth.registerOk'))
     }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/chat'
@@ -137,6 +148,18 @@ function switchMode(m: 'login' | 'register') {
         <TFormItem v-if="mode === 'register'" name="nickname">
           <UiInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
             <template #prefix-icon><UserIcon /></template>
+          </UiInput>
+        </TFormItem>
+
+        <!-- 站点开启邀请码注册时才出现 -->
+        <TFormItem v-if="mode === 'register' && site.config.requireInviteCode" name="inviteCode">
+          <UiInput
+            v-model="registerForm.inviteCode"
+            size="large"
+            :placeholder="t('auth.inviteCode')"
+            clearable
+          >
+            <template #prefix-icon><LockOnIcon /></template>
           </UiInput>
         </TFormItem>
 

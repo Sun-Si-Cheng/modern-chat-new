@@ -14,8 +14,13 @@ import type {
 // ===== 认证（§6 auth） =====
 
 export const authApi = {
-  register: (body: { username: string; password: string; nickname: string }) =>
-    http.post<AuthPayload>('/auth/register', body),
+  register: (body: {
+    username: string
+    password: string
+    nickname: string
+    /** 站点开启「注册需邀请码」时必填 */
+    inviteCode?: string
+  }) => http.post<AuthPayload>('/auth/register', body),
   login: (body: { username: string; password: string }) => http.post<AuthPayload>('/auth/login', body),
   forgot: (body: { email: string }) => http.post<{ ok: true }>('/auth/forgot', body),
   reset: (body: { token: string; newPassword: string }) =>
@@ -229,6 +234,26 @@ export const adminApi = {
       payload,
     ),
   testSMTP: (to: string) => http.post<{ ok: true }>('/admin/settings/smtp/test', { to }),
+
+  /** 注册邀请码 */
+  invites: () => http.get<InviteCode[]>('/admin/invites'),
+  createInvites: (body: { maxUses: number; expiresDays: number; count: number }) =>
+    http.post<InviteCode[]>('/admin/invites', body),
+  disableInvite: (id: number, disabled: boolean) =>
+    http.post<{ ok: true }>(`/admin/invites/${id}/disable`, { disabled }),
+}
+
+/** 注册邀请码 */
+export interface InviteCode {
+  id: number
+  code: string
+  createdBy: number
+  creator: string
+  maxUses: number
+  uses: number
+  expiresAt: string | null
+  disabled: boolean
+  createdAt: string
 }
 
 /** 系统设置（读）：敏感字段只有 hasXxx，永不回显明文 */
@@ -250,6 +275,8 @@ export interface AdminSettings {
   chat: ChatRules
   /** 上传体积上限（MB，即时生效） */
   upload: UploadLimits
+  /** 登录安全策略 */
+  security: SecurityRules
   smtpEnabled: boolean
   redisEnabled: boolean
   /** 对象存储是否已配置（配了 Endpoint + Bucket 即为 true） */
@@ -262,6 +289,11 @@ export interface AdminSettings {
 export interface SiteConfig {
   name: string
   allowRegister: boolean
+  /** 维护模式：非管理员只见维护页 */
+  maintenanceMode: boolean
+  maintenanceMessage: string
+  /** 注册是否需要邀请码 */
+  requireInviteCode: boolean
   maxMessageLength: number
   recallMinutes: number
   maxGroupMembers: number
@@ -294,9 +326,21 @@ export interface AdminSettingsPayload {
     secretKey?: string
     publicBase?: string
   }
-  site: { name: string; allowRegister: boolean }
+  site: {
+    name: string
+    allowRegister: boolean
+    maintenanceMode: boolean
+    maintenanceMessage: string
+    requireInviteCode: boolean
+  }
   chat: ChatRules
   upload: UploadLimits
+  security: SecurityRules
+}
+
+export interface SecurityRules {
+  loginMaxAttempts: number
+  loginLockMinutes: number
 }
 
 /** 站点公开信息（登录页也用，不需要 token） */
