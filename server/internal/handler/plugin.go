@@ -79,7 +79,8 @@ func (h *PluginHandler) Code(c *gin.Context) {
 	c.Data(http.StatusOK, "text/javascript; charset=utf-8", []byte(p.CodeText))
 }
 
-// Upload 上传 JS 文件安装（application/octet-stream，≤PLUGIN_MAX_SIZE）。
+// Upload 上传插件文件安装（application/octet-stream，≤PLUGIN_MAX_SIZE）。
+// `?lang=ts`（或文件名 .ts）时先转译成 JS 再入库；缺省按源码特征自动判断。
 func (h *PluginHandler) Upload(c *gin.Context) {
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, h.cfg.PluginMaxSize+1))
 	if err != nil {
@@ -90,7 +91,7 @@ func (h *PluginHandler) Upload(c *gin.Context) {
 		fail(c, http.StatusRequestEntityTooLarge, "插件文件超过 1MB")
 		return
 	}
-	h.createFromCode(c, string(body), "upload")
+	h.createFromCode(c, string(body), "upload", c.Query("lang"))
 }
 
 // FromURL URL 安装（服务端拉取前执行 SSRF 防护）。
@@ -110,15 +111,22 @@ func (h *PluginHandler) FromURL(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "插件拉取失败")
 		return
 	}
-	h.createFromCode(c, code, "url")
+	// 按 URL 路径后缀判断语言：xxx.ts 直接当 TypeScript 转译
+	lang := plugin.LangFromFilename(req.URL)
+	h.createFromCode(c, code, "url", lang)
 }
 
-func (h *PluginHandler) createFromCode(c *gin.Context, code string, source string) {
-	m, err := plugin.Parse(code)
+func (h *PluginHandler) createFromCode(c *gin.Context, code string, source string, lang string) {
+	compiled, m, err := plugin.Compile(code, lang)
 	if err != nil {
-		fail(c, http.StatusBadRequest, err.Error())
+		if errors.Is(err, plugin.ErrInvalid) {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		internal(c, err)
 		return
 	}
+	code = compiled
 	perms, _ := json.Marshal(m.Permissions)
 	hosts, _ := json.Marshal(m.AllowedHosts)
 	me := middleware.UserFrom(c).ID

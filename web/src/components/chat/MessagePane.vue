@@ -581,6 +581,18 @@ function commonActions(m: Message, dividerFirst: boolean): ContextMenuItem[] {
   return items
 }
 
+/** 插件注册的右键菜单项：键前缀区分，回传给对应插件的运行时 */
+const PLUGIN_ACTION_PREFIX = 'plug:'
+
+function pluginActionItems(m: Message, dividerFirst: boolean): ContextMenuItem[] {
+  if (m.isRecalled || m.id <= 0) return []
+  return host.pluginActions().map((a, i) => ({
+    key: `${PLUGIN_ACTION_PREFIX}${a.pluginId}:${a.id}`,
+    label: a.label,
+    dividerBefore: i === 0 && dividerFirst,
+  }))
+}
+
 const menuItems = computed<ContextMenuItem[]>(() => {
   const m = menuTarget.value
   if (!m) return []
@@ -593,7 +605,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     ]
     // 还没落库的消息（上传中）没有可操作的通用项
     if (m.id <= 0) return imageOnly
-    return [...imageOnly, ...commonActions(m, true)]
+    return [...imageOnly, ...commonActions(m, true), ...pluginActionItems(m, true)]
   }
 
   const items: ContextMenuItem[] = []
@@ -601,6 +613,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     items.push({ key: 'copy', label: t('message.copy') })
   }
   items.push(...commonActions(m, false))
+  items.push(...pluginActionItems(m, true))
   return items
 })
 
@@ -639,6 +652,20 @@ function onMenuSelect(key: string) {
       void saveImage(m)
       return
     }
+  }
+
+  // 插件动作：plug:<pluginId>:<actionId>，只投递给该插件
+  if (key.startsWith(PLUGIN_ACTION_PREFIX)) {
+    const [, pluginId, ...rest] = key.slice(PLUGIN_ACTION_PREFIX.length).split(':')
+    host.runMessageAction(Number(pluginId), rest.join(':'), {
+      id: m.id,
+      conversationId: m.conversationId,
+      senderId: m.senderId,
+      msgType: m.msgType,
+      content: m.content,
+      createdAt: m.createdAt,
+    })
+    return
   }
 
   if (key === 'copy') void copyMessage(m)

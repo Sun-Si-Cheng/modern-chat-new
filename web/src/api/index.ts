@@ -229,7 +229,9 @@ export const pluginApi = {
   },
   upload: (file: File) => {
     const token = localStorage.getItem('mc_token') ?? ''
-    return fetch('/api/plugins/upload', {
+    // .ts / .mts 交给服务端用 esbuild 转译；其余按 JS 原样入库
+    const lang = /\.m?ts$/i.test(file.name) ? 'ts' : 'js'
+    return fetch(`/api/plugins/upload?lang=${lang}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
       body: file,

@@ -10,6 +10,13 @@
 
 ### 新增
 
+- **插件支持 TypeScript**：上传 `.ts`（或安装以 `.ts` 结尾的 URL）时，服务端用内嵌 esbuild 逐文件转译成 ES2020 后入库，**无需本地构建**；语法错误直接 400 并给出行号。插件仍是单文件模型，前端沙箱不承担编译、包体零增长。类型声明见 `plugins/modernchat-sdk.d.ts`，开发指引见 `docs/插件开发.md`
+- **插件扩展点增强（让插件真能做事）**：
+  - `registerMessageAction` —— 消息右键菜单可挂插件动作（配上 `message:action` 事件），可做翻译、总结、导出、记笔记
+  - `conv:read` 只读上下文 —— `api.me()` / `conv.current()` / `conv.members()` / `messages.recent(n)`
+  - `ui:host` 宿主动作 —— `nav.openConversation()` / `nav.jumpToMessage()` / `toast()`
+  - 描述式 UI 新增 `table` / `progress` / `badge` 三个数据展示组件（表格数据用字符串传，行列有上限）
+  - 示例插件 `plugins/examples/conv-stats.plugin.ts`（TypeScript，演示上述全部新能力）
 - **消息内容搜索**：`GET /api/search/messages`（LIKE 匹配正文，只搜本人已加入的会话，排除已撤回/已删除）。两个入口——列表栏搜索框可搜到**全部会话的消息内容**（点击结果跳转到对应会话并定位原消息）；详情面板新增**「搜索聊天记录」分区**（针对当前会话，支持 `Ctrl/Cmd+F` 聚焦），点击结果滚动定位并短暂高亮
 - **维护模式**：后台一键开启后，**非管理员只见维护页**（可自定义提示文案）；REST 业务接口返回 503、WebSocket 拒绝非管理员建连。管理员始终可登录与访问后台（不会把自己锁在门外），`/api/site`、`/api/health`、`/api/version`、`/auth/login` 保持可用。前端每 30 秒探测一次配置，站长在线开启维护时无需用户手动刷新
 - **注册邀请码**：站长在后台「邀请码」页签批量生成（12 字节 `crypto/rand`、可设可用次数 / 有效期 / 一次最多 20 个）、复制、停用；站点开启「注册需邀请码」后注册表单出现邀请码输入框。核销由数据库条件 `UPDATE ... WHERE uses < max_uses AND ...` 原子完成，并发不会超发；注册中途失败（如用户名重复）自动退还名额，停用不删除以保留审计线索

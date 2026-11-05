@@ -1,6 +1,7 @@
 /**
  * 描述式 UI 白名单渲染器（§8.2）。
- * 只渲染 8 个白名单组件：text/image/button/input/card/list/divider/link；
+ * 白名单组件：text / image / button / input / card / list / divider / link
+ * + 数据展示类 table / progress / badge；
  * props 仅接受原始值；链接/图片仅 http(s)（双保险，桥接层已校验过）。
  */
 import { defineComponent, h, type PropType, type VNode } from 'vue'
@@ -87,6 +88,59 @@ export const DeclarativeNodes = defineComponent({
             },
             str('text', str('href', '链接')),
           )
+        case 'badge': {
+          const tone = ['brand', 'success', 'warning', 'danger'].includes(str('tone')) ? str('tone') : 'brand'
+          return h('span', { class: `mc-dbadge mc-dbadge--${tone}` }, str('text'))
+        }
+        case 'progress': {
+          const raw = Number(p.value)
+          const value = Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0
+          return h('div', { class: 'mc-dprogress' }, [
+            h('div', { class: 'mc-dprogress__head' }, [
+              h('span', { class: 'mc-dprogress__label' }, str('label')),
+              h('span', { class: 'mc-dprogress__value num' }, `${value}%`),
+            ]),
+            h('div', { class: 'mc-dprogress__track' }, [
+              h('div', { class: 'mc-dprogress__bar', style: { width: `${value}%` } }),
+            ]),
+          ])
+        }
+        case 'table': {
+          // 表格数据用字符串传：headers="A,B"、rows='[["a","1"],["b","2"]]'
+          // 只接受原始值，行/列数量设上限，避免插件塞一张巨表把面板顶爆
+          const headers = str('headers')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+          let rows: string[][] = []
+          try {
+            const parsed: unknown = JSON.parse(str('rows', '[]'))
+            if (Array.isArray(parsed)) {
+              rows = parsed
+                .slice(0, 50)
+                .map((r) =>
+                  Array.isArray(r)
+                    ? r.slice(0, headers.length || 6).map((c) => String(c ?? ''))
+                    : [String(r ?? '')],
+                )
+            }
+          } catch {
+            rows = []
+          }
+          return h('table', { class: 'mc-dtable' }, [
+            headers.length
+              ? h('thead', {}, [
+                  h('tr', {}, headers.map((c, i) => h('th', { key: i }, c))),
+                ])
+              : null,
+            h(
+              'tbody',
+              {},
+              rows.map((r, ri) => h('tr', { key: ri }, r.map((c, ci) => h('td', { key: ci }, c)))),
+            ),
+          ])
+        }
         default:
           // 白名单外：拒绝渲染
           return h('span', { class: 'text-placeholder' }, i18n.global.t('message.rejectedComponent'))

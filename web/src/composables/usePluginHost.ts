@@ -12,8 +12,12 @@
  */
 import { reactive, readonly } from 'vue'
 
+import { MessagePlugin } from 'tdesign-vue-next'
+
 import type { Plugin, PanelDesc, ServerFrame, UIDescNode } from '@/types/proto'
-import { pluginApi } from '@/api'
+import { convApi, pluginApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
+import { useConversationsStore } from '@/stores/conversations'
 import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
 
@@ -28,6 +32,10 @@ const ALLOWED_COMPONENTS = new Set([
   'list',
   'divider',
   'link',
+  // 数据展示类：表格 / 进度条 / 徽标，让面板能承载统计与状态，而不只是一段文字
+  'table',
+  'progress',
+  'badge',
 ])
 
 /** 校验 UI 描述：白名单外组件、javascript: 链接、非 plain props 一律拒绝 */
@@ -105,6 +113,23 @@ const API_PERMISSION: Record<string, string> = {
   'storage.set': 'storage',
   request: 'net',
   'theme.apply': 'ui:theme',
+  // 扩展点（§8.3）
+  registerMessageAction: 'ui:actions',
+  me: 'conv:read',
+  'conv.current': 'conv:read',
+  'conv.members': 'conv:read',
+  'messages.recent': 'conv:read',
+  'nav.openConversation': 'ui:host',
+  'nav.jumpToMessage': 'ui:host',
+  toast: 'ui:host',
+}
+
+/** 插件注册的消息动作（右键菜单项） */
+export interface PluginMessageAction {
+  pluginId: number
+  pluginName: string
+  id: string
+  label: string
 }
 
 // ===== 沙箱引导 HTML =====
@@ -147,6 +172,24 @@ function bootHtml(pluginCode: string): string {
     send: function (convId, payload, msgType) { return call("send", [convId, payload, msgType]); },
     registerMessageRenderer: function (type, fn) { renderers.set(type, fn); return call("registerMessageRenderer", [type]); },
     addSidePanel: function (desc) { return call("addSidePanel", [desc]); },
+    // 右键菜单动作：desc = { id, label }，触发时收到 on('message:action', { actionId, message })
+    registerMessageAction: function (desc) { return call("registerMessageAction", [desc]); },
+    // 当前用户身份（需 conv:read）：只含 id / 昵称
+    me: function () { return call("me", []); },
+    // 当前会话只读数据（需 conv:read）
+    conv: {
+      current: function () { return call("conv.current", []); },
+      members: function () { return call("conv.members", []); }
+    },
+    messages: {
+      recent: function (n) { return call("messages.recent", [n]); }
+    },
+    // 宿主侧动作（需 ui:host）
+    nav: {
+      openConversation: function (id) { return call("nav.openConversation", [id]); },
+      jumpToMessage: function (id) { return call("nav.jumpToMessage", [id]); }
+    },
+    toast: function (text, kind) { return call("toast", [text, kind]); },
     storage: {
       get: function (k) { return call("storage.get", [k]); },
       set: function (k, v) { return call("storage.set", [k, v]); }
@@ -182,6 +225,8 @@ interface Runtime {
 interface PluginHostState {
   started: boolean
   panels: Record<number, PanelDesc> // pluginId -> panel desc
+  /** pluginId -> 该插件注册的右键菜单动作 */
+  actions: Record<number, Array<{ id: string; label: string }>>
 }
 
 function storageKey(pluginId: number, key: string) {
@@ -189,7 +234,7 @@ function storageKey(pluginId: number, key: string) {
 }
 
 function createHost() {
-  const state = reactive<PluginHostState>({ started: false, panels: {} })
+  const state = reactive<PluginHostState>({ started: false, panels: {}, actions: {} })
   const runtimes = new Map<number, Runtime>()
   let offFrame: (() => void) | null = null
 
@@ -320,6 +365,116 @@ function createHost() {
           reply(runtime, callId, true)
           break
         }
+        case 'registerMessageAction': {
+          const desc = (args[0] ?? {}) as { id?: unknown; label?: unknown }
+          const id = String(desc.id ?? '').trim()
+          const label = String(desc.label ?? '').trim()
+          if (!id || !label || label.length > 16) {
+            reply(runtime, callId, false, undefined, 'invalid action desc')
+            return
+          }
+          const list = state.actions[runtime.plugin.id] ?? (state.actions[runtime.plugin.id] = [])
+          if (!list.some((a) => a.id === id)) list.push({ id, label })
+          reply(runtime, callId, true)
+          break
+        }
+        case 'me': {
+          const u = useAuthStore().user
+          reply(runtime, callId, true, u ? { id: u.id, nickname: u.nickname } : null)
+          break
+        }
+        case 'conv.current': {
+          const c = useConversationsStore().currentConv
+          reply(
+            runtime,
+            callId,
+            true,
+            c
+              ? {
+                  id: c.id,
+                  type: c.type,
+                  name: c.name ?? '',
+                  peerNickname: c.peer?.nickname ?? '',
+                  memberCount: c.memberCount,
+                }
+              : null,
+          )
+          break
+        }
+        case 'conv.members': {
+          const convStore = useConversationsStore()
+          const convId = convStore.currentConvId
+          if (!convId) {
+            reply(runtime, callId, true, [])
+            return
+          }
+          const rows = await convApi.members(convId)
+          reply(
+            runtime,
+            callId,
+            true,
+            (rows ?? []).map((m) => ({
+              userId: m.userId,
+              nickname: m.user?.nickname ?? '',
+              role: m.role,
+            })),
+          )
+          break
+        }
+        case 'messages.recent': {
+          const want = Math.max(1, Math.min(50, Number(args[0] ?? 20) || 20))
+          const msgs = useConversationsStore().currentMessages.slice(-want)
+          reply(
+            runtime,
+            callId,
+            true,
+            msgs.map((m) => ({
+              id: m.id,
+              senderId: m.senderId,
+              msgType: m.msgType,
+              content: m.content,
+              createdAt: m.createdAt,
+              recalled: m.isRecalled,
+            })),
+          )
+          break
+        }
+        case 'nav.openConversation': {
+          const convId = Number(args[0])
+          if (!Number.isFinite(convId) || convId <= 0) {
+            reply(runtime, callId, false, undefined, 'invalid conversation id')
+            return
+          }
+          await useConversationsStore().openConversation(convId)
+          reply(runtime, callId, true)
+          break
+        }
+        case 'nav.jumpToMessage': {
+          const convStore = useConversationsStore()
+          const convId = convStore.currentConvId
+          const messageId = Number(args[0])
+          if (!convId || !Number.isFinite(messageId) || messageId <= 0) {
+            reply(runtime, callId, false, undefined, 'invalid message id')
+            return
+          }
+          const ok = await convStore.openConversationAtMessage(convId, messageId)
+          reply(runtime, callId, true, ok)
+          break
+        }
+        case 'toast': {
+          const text = String(args[0] ?? '').slice(0, 200)
+          if (!text) {
+            reply(runtime, callId, true)
+            return
+          }
+          const kind = String(args[1] ?? 'info')
+          if (kind === 'success') void MessagePlugin.success(text)
+          else if (kind === 'warning') void MessagePlugin.warning(text)
+          else if (kind === 'error') void MessagePlugin.error(text)
+          else void MessagePlugin.info(text)
+          reply(runtime, callId, true)
+          break
+        }
         default:
           reply(runtime, callId, false, undefined, `unknown api: ${apiName}`)
       }
@@ -416,6 +571,7 @@ function createHost() {
     rt.iframe.remove()
     runtimes.delete(pluginId)
     delete state.panels[pluginId]
+    delete state.actions[pluginId]
   }
 
   /** srcdoc 不便直接塞大代码，用 document.write 注入；代码在加载插件清单时缓存 */
@@ -466,6 +622,27 @@ function createHost() {
     rt?.iframe.contentWindow?.postMessage({ __mc: 'event', event: 'ui:action', payload: { action, value } }, '*')
   }
 
+  /** 所有插件注册的右键菜单动作（供消息菜单渲染） */
+  function pluginActions(): PluginMessageAction[] {
+    const out: PluginMessageAction[] = []
+    for (const [key, list] of Object.entries(state.actions)) {
+      const pluginId = Number(key)
+      const rt = runtimes.get(pluginId)
+      if (!rt) continue
+      for (const a of list) out.push({ pluginId, pluginName: rt.plugin.name, id: a.id, label: a.label })
+    }
+    return out
+  }
+
+  /** 触发某个插件的消息动作：只投递给该插件的运行时，不广播给其他插件 */
+  function runMessageAction(pluginId: number, actionId: string, message: unknown) {
+    const rt = runtimes.get(pluginId)
+    rt?.iframe.contentWindow?.postMessage(
+      { __mc: 'event', event: 'message:action', payload: { actionId, message } },
+      '*',
+    )
+  }
+
   return {
     state: readonly(state),
     start,
@@ -474,6 +651,8 @@ function createHost() {
     requestRender,
     hasRenderer,
     panelAction,
+    pluginActions,
+    runMessageAction,
     notifyConvOpen: (convId: number) => dispatchEvent('conv:open', { convId }),
   }
 }

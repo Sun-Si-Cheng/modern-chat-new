@@ -267,6 +267,10 @@ export type DeclarativeComponent =
   | 'list'
   | 'divider'
   | 'link'
+  // 数据展示类
+  | 'table'
+  | 'progress'
+  | 'badge'
 
 export interface UIDescNode {
   component: DeclarativeComponent

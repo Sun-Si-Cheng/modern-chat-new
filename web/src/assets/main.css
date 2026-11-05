@@ -205,6 +205,93 @@ a {
   text-decoration-thickness: 2px;
 }
 
+/* 徽标：状态/标签，颜色走语义档位（不用 /alpha，变量不支持） */
+.mc-dbadge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.mc-dbadge--brand {
+  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.1));
+  color: var(--td-brand-color);
+}
+
+.mc-dbadge--success {
+  background: var(--td-success-color-1, rgba(43, 164, 113, 0.12));
+  color: var(--td-success-color);
+}
+
+.mc-dbadge--warning {
+  background: var(--td-warning-color-1, rgba(237, 160, 32, 0.14));
+  color: var(--td-warning-color);
+}
+
+.mc-dbadge--danger {
+  background: var(--td-error-color-1, rgba(214, 73, 73, 0.12));
+  color: var(--td-error-color);
+}
+
+/* 进度条：数值变化只改 width（面板是低频渲染，不做合成层优化） */
+.mc-dprogress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-dprogress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mc-dprogress__value {
+  color: var(--td-text-color-secondary);
+}
+
+.mc-dprogress__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--td-bg-color-component, rgba(127, 127, 127, 0.2));
+  overflow: hidden;
+}
+
+.mc-dprogress__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--td-brand-color);
+  transition: width var(--mc-dur-base) var(--mc-ease-out);
+}
+
+/* 表格：插件只能传字符串数据，列宽自适应，超宽横向滚动 */
+.mc-dtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+
+.mc-dtable th,
+.mc-dtable td {
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.mc-dtable th {
+  font-weight: 600;
+  color: var(--td-text-color-secondary);
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

@@ -25,6 +25,12 @@ type Manifest struct {
 var ValidPermissions = map[string]bool{
 	"message:read": true, "message:send": true, "message:render": true,
 	"ui:panel": true, "storage": true, "net": true, "ui:theme": true,
+	// 会话只读数据：当前会话概览 / 成员 / 最近消息（做总结、导出、统计类插件）
+	"conv:read": true,
+	// 往宿主界面注入动作：消息右键菜单项、输入区斜杠命令
+	"ui:actions": true,
+	// 宿主侧动作：跳转会话 / 定位消息 / 轻提示
+	"ui:host": true,
 }
 
 var (

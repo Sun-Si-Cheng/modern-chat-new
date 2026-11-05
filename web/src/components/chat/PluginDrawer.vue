@@ -175,7 +175,7 @@ async function uninstall(plugin: Plugin) {
           <input
             ref="fileInput"
             type="file"
-            accept=".js,application/javascript,text/javascript"
+            accept=".js,.ts,.mts,application/javascript,text/javascript"
             @change="onPickFile"
           />
           <UiButton variant="outline" size="small" :loading="installing" @click="pickFile">
