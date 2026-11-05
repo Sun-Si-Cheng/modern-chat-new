@@ -37,7 +37,9 @@ type ConversationView struct {
 	LastMessagePreview *string    `json:"lastMessagePreview"`
 	// LastMessageType 最后一条消息的类型：前端据此把图片/语音的 URL 预览换成占位文案
 	LastMessageType *string `json:"lastMessageType"`
-	UnreadCount     int     `json:"unreadCount"`
+	// LastReadMessageID 当前用户在该会话的已读游标（用于离线补齐与多端同步）
+	LastReadMessageID uint64 `json:"lastReadMessageId"`
+	UnreadCount       int    `json:"unreadCount"`
 	// 会话级个人设置（存在 user_conversations，不影响其他成员）
 	Pinned bool `json:"pinned"`
 	Muted  bool `json:"muted"`

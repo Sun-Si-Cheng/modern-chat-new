@@ -300,21 +300,22 @@ func (s *ConversationStore) SingleExists(a, b uint) (*model.Conversation, error)
 // ---- 列表组装 ----
 
 type convRow struct {
-	ID              uint
-	Type            int8
-	Name            *string
-	Avatar          string
-	OwnerID         *uint
-	LastMessageID   *uint64
-	LastMessageAt   *time.Time
-	UnreadCount     int
-	Pinned          bool
-	Muted           bool
-	MentionUnread   bool
-	Announcement    *string
-	AnnouncementAt  *time.Time
-	AnnouncementBy  *uint
-	AnnouncementWho *string
+	ID                uint
+	Type              int8
+	Name              *string
+	Avatar            string
+	OwnerID           *uint
+	LastMessageID     *uint64
+	LastMessageAt     *time.Time
+	LastReadMessageID uint64
+	UnreadCount       int
+	Pinned            bool
+	Muted             bool
+	MentionUnread     bool
+	Announcement      *string
+	AnnouncementAt    *time.Time
+	AnnouncementBy    *uint
+	AnnouncementWho   *string
 }
 
 // ListFor 用户会话列表：收件箱行 join 会话，再聚合预览 / 成员数 / peer。
@@ -322,7 +323,7 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	var rows []convRow
 	err := s.db.Raw(`
 		SELECT c.id, c.type, c.name, COALESCE(c.avatar, '') AS avatar, c.owner_id,
-		       uc.last_message_id, uc.last_message_at, uc.unread_count,
+		       uc.last_message_id, uc.last_message_at, uc.last_read_message_id, uc.unread_count,
 		       uc.pinned, uc.muted, uc.mention_unread,
 		       c.announcement, c.announcement_at, c.announcement_by,
 		       COALESCE(au.nickname, '') AS announcement_who
@@ -386,17 +387,18 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	out := make([]model.ConversationView, 0, len(rows))
 	for _, r := range rows {
 		v := model.ConversationView{
-			ID:            r.ID,
-			Type:          r.Type,
-			Name:          r.Name,
-			Avatar:        r.Avatar,
-			OwnerID:       r.OwnerID,
-			LastMessageID: r.LastMessageID,
-			LastMessageAt: r.LastMessageAt,
-			UnreadCount:   r.UnreadCount,
-			Pinned:        r.Pinned,
-			Muted:         r.Muted,
-			MentionUnread: r.MentionUnread,
+			ID:                r.ID,
+			Type:              r.Type,
+			Name:              r.Name,
+			Avatar:            r.Avatar,
+			OwnerID:           r.OwnerID,
+			LastMessageID:     r.LastMessageID,
+			LastMessageAt:     r.LastMessageAt,
+			LastReadMessageID: r.LastReadMessageID,
+			UnreadCount:       r.UnreadCount,
+			Pinned:            r.Pinned,
+			Muted:             r.Muted,
+			MentionUnread:     r.MentionUnread,
 		}
 		if r.Announcement != nil {
 			v.Announcement = *r.Announcement

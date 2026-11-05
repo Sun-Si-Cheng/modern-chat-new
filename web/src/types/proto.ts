@@ -44,6 +44,8 @@ export interface Conversation {
   lastMessagePreview: string | null
   /** 最后一条消息的类型：image/audio 时列表里显示占位文案而不是文件地址 */
   lastMessageType: string | null
+  /** 当前用户已读游标（离线补齐与多端同步用） */
+  lastReadMessageId?: number
   unreadCount: number
   /** 置顶（个人设置，不影响其他成员） */
   pinned: boolean
@@ -99,6 +101,8 @@ export interface Message {
   recalledAt?: string | null
   /** 编辑时间；有值表示消息被编辑过 */
   editedAt?: string | null
+  /** 单聊送达时间（客户端确认收到后由服务端回传；仅本地状态） */
+  deliveredAt?: string | null
   /** 表情回应聚合（随历史分页下发） */
   reactions?: ReactionView[]
   /** 引用的消息 id（须同会话） */
@@ -203,6 +207,7 @@ export type ClientFrame =
   | { type: 'recall'; messageId: number }
   | { type: 'edit'; messageId: number; content: string }
   | { type: 'reaction'; messageId: number; emoji: string; action: 'set' | 'remove' }
+  | { type: 'delivered'; messageId: number }
   | { type: 'ping' }
 
 export type ServerFrame =
@@ -235,6 +240,7 @@ export type ServerFrame =
       userId: number
       action: 'set' | 'remove'
     }
+  | { type: 'message_delivered'; messageId: number; convId: number; userId: number }
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }

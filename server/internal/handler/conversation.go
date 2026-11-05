@@ -188,10 +188,24 @@ func (h *ConversationHandler) Messages(c *gin.Context) {
 	}
 	beforeID := parseUint64(c.Query("beforeId"))
 	limit := int(parseUint64Default(c.Query("limit"), 30))
-	if limit < 1 || limit > 50 {
+	afterID := parseUint64(c.Query("afterId"))
+	maxLimit := 50
+	if afterID > 0 {
+		// 增量补齐一次可以多取一些，减少离线恢复时的往返次数
+		maxLimit = 200
+	}
+	if limit < 1 || limit > maxLimit {
 		limit = 30
 	}
-	rows, hasMore, err := h.msgs.PageBefore(convID, middleware.UserFrom(c).ID, beforeID, limit)
+	var rows []model.Message
+	var hasMore bool
+	var err error
+	if afterID > 0 {
+		// 增量补齐：只取 afterId 之后的消息（升序），用于离线/断线场景
+		rows, hasMore, err = h.msgs.AfterID(convID, middleware.UserFrom(c).ID, afterID, limit)
+	} else {
+		rows, hasMore, err = h.msgs.PageBefore(convID, middleware.UserFrom(c).ID, beforeID, limit)
+	}
 	if err != nil {
 		internal(c, err)
 		return
@@ -600,8 +614,8 @@ func (h *ConversationHandler) Read(c *gin.Context) {
 	}
 	if affected > 0 {
 		if ids, err := h.convs.MemberUserIDs(convID); err == nil {
-			others := without(ids, me.ID)
-			notifyFor(c).ToUsers(others, gin.H{
+			// 包括调用的账号自身：同账号其他在线端需要同步清未读
+			notifyFor(c).ToUsers(ids, gin.H{
 				"type": "read", "convId": convID, "userId": me.ID, "upToId": req.UpToID,
 			})
 		}

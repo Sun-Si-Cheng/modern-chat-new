@@ -184,6 +184,15 @@ export const useConversationsStore = defineStore('conversations', () => {
         loadingMessages.value = false
       }
     }
+    // 离线期间可能积压超过一页：按服务端已读游标补齐最新页之前的缺口
+    const conv = conversations.value.find((c) => c.id === convId)
+    if (conv && conv.unreadCount > 0 && (conv.lastReadMessageId ?? 0) > 0) {
+      try {
+        await catchUp(convId)
+      } catch {
+        /* 补齐失败不阻断打开会话，用户仍可继续上翻加载 */
+      }
+    }
     // 等消息真正落地后再上报已读：此前 upToId 只能算到 0，本地清未读而服务端仍记未读
     markRead(convId)
   }
@@ -259,6 +268,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       conv.unreadCount = 0
       // 服务端在 MarkRead 时一并清掉；本地同步置 false，否则「有人@我」要等刷新才消失
       conv.mentionUnread = false
+      conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, maxId)
     }
     if (maxId > 0 && maxId !== lastReportedReadByConv.get(convId)) {
       lastReportedReadByConv.set(convId, maxId)
@@ -463,8 +473,11 @@ export const useConversationsStore = defineStore('conversations', () => {
   /** 拉取最新一页并与本地合并：保留已读历史，追加断线期间的新消息 */
   async function loadLatest(convId: number) {
     const page = await convApi.messages(convId)
-    // 接口按 id 倒序返回（新→旧），本地列表是正序，需先反转
-    const incoming = (page.messages ?? []).slice().reverse()
+    mergeServerPage(convId, (page.messages ?? []).slice().reverse(), page.hasMore)
+  }
+
+  /** 把服务端返回的消息合并进本地列表（按 id 去重，按 clientMsgId 确认本地 pending） */
+  function mergeServerPage(convId: number, incoming: Message[], hasMore?: boolean) {
     const list = (messagesByConv[convId] ??= [])
     const knownIds = new Set(list.map((m) => m.id))
     const byClientId = new Map(list.filter((m) => m.clientMsgId).map((m) => [m.clientMsgId, m] as const))
@@ -475,7 +488,31 @@ export const useConversationsStore = defineStore('conversations', () => {
       if (local) Object.assign(local, m) // 服务端已落库：就地确认，避免重复气泡
       else list.push(m)
     }
-    if (list.length) hasMoreByConv[convId] = page.hasMore
+    if (hasMore !== undefined && list.length) hasMoreByConv[convId] = hasMore
+  }
+
+  /**
+   * 离线补齐：从服务端已读游标往后拉，填上「最新一页」与「上次已读位置」之间的缺口。
+   * 最多翻 10 页（约 1000 条），防止超大群一次拉全量历史。
+   */
+  async function catchUp(convId: number) {
+    const conv = conversations.value.find((c) => c.id === convId)
+    let after = conv?.lastReadMessageId ?? 0
+    if (after <= 0) return
+    const earliestLoaded = (messagesByConv[convId] ?? []).find((m) => m.id > 0)?.id ?? 0
+    for (let i = 0; i < 10; i++) {
+      const page = await convApi.messagesAfter(convId, after, 100)
+      const incoming = page.messages ?? []
+      if (!incoming.length) break
+      mergeServerPage(convId, incoming)
+      const next = incoming[incoming.length - 1]?.id ?? after
+      if (next <= after) break
+      after = next
+      // 已经接上本地最早一条，缺口已填满
+      if (earliestLoaded > 0 && after >= earliestLoaded) break
+      if (!page.hasMore) break
+    }
+    if (conv) conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, after)
   }
 
   /** 重连后调用：重拉会话列表与当前会话最新消息（断线期间的增量无法从帧恢复） */
@@ -485,6 +522,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       const id = currentConvId.value
       if (id !== null) {
         await loadLatest(id)
+        // 断线期间积压超过一页时，仅拉最新页会漏消息：按已读游标补齐
+        const conv = conversations.value.find((c) => c.id === id)
+        if (conv && conv.unreadCount > 0) await catchUp(id)
         markRead(id)
       }
     } catch {
@@ -545,7 +585,21 @@ export const useConversationsStore = defineStore('conversations', () => {
         break
       }
       case 'read': {
+        // 自己账号的已读：广播会同时到达本人其他在线端，用来同步清未读
+        if (frame.userId === auth.user?.id) {
+          const conv = conversations.value.find((c) => c.id === frame.convId)
+          if (conv) {
+            conv.unreadCount = 0
+            conv.mentionUnread = false
+            conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, frame.upToId)
+          }
+        }
         ;(readByConv[frame.convId] ??= {})[frame.userId] = frame.upToId
+        break
+      }
+      case 'message_delivered': {
+        const m = messagesByConv[frame.convId]?.find((x) => x.id === frame.messageId)
+        if (m) m.deliveredAt = new Date().toISOString()
         break
       }
       case 'typing': {
@@ -661,6 +715,8 @@ export const useConversationsStore = defineStore('conversations', () => {
       conv.lastMessageAt = frame.createdAt
       conv.lastMessagePreview = frame.content
       if (convId !== currentConvId.value) conv.unreadCount += 1
+      // 单聊：收到即回送达回执，发送方据此显示「已送达」
+      if (conv.type === 1) sendFrame({ type: 'delivered', messageId: frame.id })
     }
     if (convId === currentConvId.value) markRead(convId)
   }

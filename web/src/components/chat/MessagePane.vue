@@ -650,6 +650,15 @@ const peerReadUpTo = computed(() => {
   return convStore.readByConv[c.id]?.[c.peer.id] ?? 0
 })
 
+/** 单聊消息状态：发送中 → 已发送 → 已送达 → 已读 */
+function messageStatus(m: Message): string {
+  if (m.failed) return t('message.sendFailed')
+  if (m.pending) return t('message.sending')
+  if (peerReadUpTo.value >= m.id) return t('message.read')
+  if (m.deliveredAt) return t('message.delivered')
+  return t('message.sent')
+}
+
 // ===== 正在输入 =====
 
 const typingNames = computed(() => {
@@ -1047,7 +1056,7 @@ const senderName = (m: Message) => {
 
                 <div class="mc-msg__meta text-placeholder num">
                   <template v-if="senderOf(item.msg) && conv?.type === 1">
-                    {{ peerReadUpTo >= item.msg.id ? t('message.read') : t('message.unread') }} ·
+                    {{ messageStatus(item.msg) }} ·
                   </template>
                   {{ fmtTime(item.msg.createdAt) }}
                   <span v-if="item.msg.editedAt"> · {{ t('message.edited') }}</span>

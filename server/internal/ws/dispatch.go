@@ -56,6 +56,8 @@ func (h *Hub) Dispatch(c *Client, data []byte) {
 		h.handleEdit(c, &f)
 	case "reaction":
 		h.handleReaction(c, &f)
+	case "delivered":
+		h.handleDelivered(c, &f)
 	default:
 		h.sendError(c, "未知帧类型")
 	}
@@ -274,7 +276,8 @@ func (h *Hub) handleRead(c *Client, f *clientFrame) {
 	if err != nil {
 		return
 	}
-	h.ToUsers(withoutID(ids, c.UserID), ginH{
+	// 广播给包括自己在内的所有端：同账号其他设备也要把未读清掉
+	h.ToUsers(ids, ginH{
 		"type": "read", "convId": f.ConvID, "userId": c.UserID, "upToId": f.UpToID,
 	})
 }
@@ -324,6 +327,28 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 		"messageId":  msg.ID,
 		"convId":     msg.ConversationID,
 		"recalledAt": recalledAt.UTC().Format(time.RFC3339Nano),
+	})
+}
+
+// handleDelivered 单聊送达回执：接收方客户端确认已收到，转发给发送者用于展示「已送达」。
+func (h *Hub) handleDelivered(c *Client, f *clientFrame) {
+	if f.MessageID == 0 || h.deps == nil || h.deps.Messages == nil {
+		return
+	}
+	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	if err != nil || msg == nil || msg.SenderID == c.UserID {
+		return
+	}
+	if !h.requireMember(c, msg.ConversationID) {
+		return
+	}
+	conv, err := h.deps.Convs.ByID(msg.ConversationID)
+	if err != nil || conv == nil || conv.Type != 1 {
+		return
+	}
+	h.ToUsers([]uint{msg.SenderID}, ginH{
+		"type": "message_delivered", "messageId": msg.ID, "convId": msg.ConversationID,
+		"userId": c.UserID,
 	})
 }
 

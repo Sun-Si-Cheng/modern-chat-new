@@ -99,6 +99,9 @@ export const convApi = {
   createGroup: (name: string) => http.post<Conversation>('/conversations/group', { name }),
   messages: (convId: number, beforeId?: number, limit = 30) =>
     http.get<MessagesPage>(`/conversations/${convId}/messages`, { beforeId, limit }),
+  /** 离线/断线增量补齐：返回 afterId 之后的消息（升序） */
+  messagesAfter: (convId: number, afterId: number, limit = 100) =>
+    http.get<MessagesPage>(`/conversations/${convId}/messages`, { afterId, limit }),
   members: (convId: number) => http.get<ConversationMember[]>(`/conversations/${convId}/members`),
   join: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/join`),
   /** 拉人入群：只能邀请自己的好友，已入群的人会被忽略 */

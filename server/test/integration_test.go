@@ -1248,6 +1248,104 @@ func TestGroupAdminAndMute(t *testing.T) {
 	}
 }
 
+// TestMessageReliability 送达回执、多端已读广播与 afterId 增量补齐。
+func TestMessageReliability(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "mr-admin")
+	tokenA, userA := register(t, e, "mr-alice")
+	tokenB, userB := register(t, e, "mr-bob")
+
+	makeFriends := func(fromToken, toUsername, toToken string) {
+		t.Helper()
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", fromToken,
+			fmt.Sprintf(`{"toUsername":%q}`, toUsername)); code != http.StatusOK {
+			t.Fatalf("apply status = %d", code)
+		}
+		_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", toToken, "")
+		reqs, _ := reqsAny.([]any)
+		reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", toToken,
+			fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+			t.Fatalf("handle status = %d", code)
+		}
+	}
+	makeFriends(tokenA, userB.Username, tokenB)
+
+	code, conv := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("create single status = %d", code)
+	}
+	convID := uint64(conv["id"].(float64))
+
+	connA := wsDial(t, e, tokenA)
+	connA2 := wsDial(t, e, tokenA) // 同账号第二端
+	connB := wsDial(t, e, tokenB)
+
+	send := func(client *websocket.Conn, cid, content string) uint64 {
+		t.Helper()
+		if err := client.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":%q,"content":%q}`, convID, cid, content))); err != nil {
+			t.Fatalf("ws send: %v", err)
+		}
+		return uint64(readFrame(t, client, "message")["id"].(float64))
+	}
+	msg1 := send(connA, "mr-1", "one")
+
+	// 送达回执：B 收到消息后回 delivered，A 收到 message_delivered
+	readFrame(t, connB, "message")
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"delivered","messageId":%d}`, msg1))); err != nil {
+		t.Fatalf("ws delivered: %v", err)
+	}
+	if f := readFrame(t, connA, "message_delivered"); uint64(f["messageId"].(float64)) != msg1 {
+		t.Fatalf("送达回执异常: %v", f)
+	}
+
+	// 已读广播包含本人其他端：A 在第一端上报，第二端应收到 userId=A 的 read 帧
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"read","convId":%d,"upToId":%d}`, convID, msg1))); err != nil {
+		t.Fatalf("ws read: %v", err)
+	}
+	for {
+		f := readFrame(t, connA2, "read")
+		if uint64(f["userId"].(float64)) == uint64(userA.ID) {
+			break
+		}
+	}
+
+	msg2 := send(connA, "mr-2", "two")
+	readFrame(t, connB, "message")
+	msg3 := send(connA, "mr-3", "three")
+	readFrame(t, connB, "message")
+
+	// afterId 增量补齐：只取 msg1 之后的 2 条，且按升序
+	_, page := apiJSON(t, e, "GET",
+		fmt.Sprintf("/api/conversations/%d/messages?afterId=%d&limit=100", convID, msg1), tokenB, "")
+	msgs, _ := page["messages"].([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("afterId 应返回 2 条，got %d", len(msgs))
+	}
+	first, second := msgs[0].(map[string]any), msgs[1].(map[string]any)
+	if uint64(first["id"].(float64)) != msg2 || uint64(second["id"].(float64)) != msg3 {
+		t.Fatalf("afterId 顺序异常: %v / %v", first["id"], second["id"])
+	}
+	_, convListAny := apiAny(t, e, "GET", "/api/conversations", tokenA, "")
+	foundRead := false
+	for _, cv := range convListAny.([]any) {
+		m := cv.(map[string]any)
+		if uint64(m["id"].(float64)) == convID {
+			if uint64(m["lastReadMessageId"].(float64)) < msg1 {
+				t.Fatalf("lastReadMessageId 未推进: %v", m["lastReadMessageId"])
+			}
+			foundRead = true
+		}
+	}
+	if !foundRead {
+		t.Fatalf("会话列表应包含该会话")
+	}
+}
+
 func TestPluginInstallAndFetch(t *testing.T) {
 	e := setup(t)
 	// 首个注册者才是站长：必须先注册后台账号，再用它跑 /api/admin/* 断言。

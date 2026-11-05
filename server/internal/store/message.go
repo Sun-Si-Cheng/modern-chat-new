@@ -42,6 +42,23 @@ func (s *MessageStore) ByClientMsg(convID uint, clientMsgID string) (*model.Mess
 	return &m, nil
 }
 
+// AfterID 增量补齐：返回 id > afterID 的消息（升序），用于离线期间按游标补齐。
+func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int) ([]model.Message, bool, error) {
+	var rows []model.Message
+	if err := s.db.Where(
+		"conversation_id = ? AND id > ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id)",
+		convID, afterID, viewerID,
+	).Order("id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, false, err
+	}
+	hasMore := false
+	if len(rows) > limit {
+		rows = rows[:limit]
+		hasMore = true
+	}
+	return rows, hasMore, nil
+}
+
 // PageBefore 游标分页：按 id 降序，beforeID=0 表示从最新开始。返回 (页, 是否还有更早)。
 // viewerID 的「仅自己删除」记录会被排除，避免分页里再次出现被删消息。
 func (s *MessageStore) PageBefore(convID, viewerID uint, beforeID uint64, limit int) ([]model.Message, bool, error) {
