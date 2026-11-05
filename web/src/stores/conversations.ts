@@ -674,14 +674,21 @@ export const useConversationsStore = defineStore('conversations', () => {
         break
       }
       case 'conv_change': {
-        // meta 帧 = 成员/群名/公告变了，清成员缓存并通知详情面板重拉；
-        // 普通帧 = 只是来了新消息（后端用它刷新列表预览），不能清缓存——
-        // 否则每收一条消息都要多打两个接口。
+        // meta 帧 = 成员/群名/公告变了：清成员缓存并通知详情面板重拉，
+        // 列表里的群名/头像/成员数也可能变了，需要重拉一次。
         if (frame.meta) {
           if (frame.convId) delete membersByConv[frame.convId]
           convChangeTick.value++
+          void loadConversations()
+          break
         }
-        void loadConversations()
+        // 普通帧只是「有新消息」：message 帧已经把本地摘要（最后一条/未读）更新过了。
+        // 旧实现在这里无条件全量重拉 /api/conversations —— 群里每来一条别人的消息
+        // 就是一次全量请求 + 整份会话数组换引用（列表、分组栏、聊天页全部重渲）。
+        // 只有「本地还没有这个会话」（新会话/刚被拉进群）时才需要补拉。
+        if (frame.convId && !conversations.value.some((c) => c.id === frame.convId)) {
+          void loadConversations()
+        }
         break
       }
     }

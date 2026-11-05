@@ -21,11 +21,25 @@ type UserStore struct {
 
 func NewUserStore(db *gorm.DB) *UserStore { return &UserStore{db: db} }
 
-// Count 全表用户数（用于判定首个注册者为站长）。
+// Count 全表用户数。
 func (s *UserStore) Count() (int64, error) {
 	var n int64
 	err := s.db.Model(&model.User{}).Count(&n).Error
 	return n, err
+}
+
+// HasUsers 是否已有用户。
+//
+// 用于「是否首个注册者」这类**只有布尔语义**的判断。不要用 Count()：
+// `GET /api/site` 每 30 秒被每个在线客户端轮询一次，而 InnoDB 的 COUNT(*) 要
+// 遍历最小索引全部条目，用户越多越慢；EXISTS 命中一行就返回。
+func (s *UserStore) HasUsers() (bool, error) {
+	var one int
+	err := s.db.Raw("SELECT 1 FROM users LIMIT 1").Scan(&one).Error
+	if err != nil {
+		return false, err
+	}
+	return one == 1, nil
 }
 
 // CountAdminsBefore 统计 id 小于给定值的站长数。

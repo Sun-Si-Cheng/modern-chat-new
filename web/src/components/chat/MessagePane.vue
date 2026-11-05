@@ -236,7 +236,13 @@ async function loadMemberNames() {
   if (memberNamesLoading || !conv.value || memberNamesFailed) return
   memberNamesLoading = true
   try {
-    const members = await convApi.members(conv.value.id)
+    // 复用 store 的成员缓存（自带 in-flight 去重）：
+    // 同一份 /conversations/:id/members 原来会被输入区 @ 选人、详情面板和这里各拉一次
+    const members = await convStore.loadMembers(conv.value.id)
+    if (!members.length) {
+      memberNamesFailed = true
+      return
+    }
     for (const m of members) {
       memberNameCache[m.userId] = m.user.nickname
       if (m.userId === auth.user?.id) myGroupRole.value = m.role
@@ -994,7 +1000,7 @@ const senderName = (m: Message) => {
       ref="scrollerRef"
       class="mc-msgpane__list"
       :items="displayItems"
-      :min-item-size="52"
+      :min-item-size="88"
       key-field="key"
       @scroll="onScroll"
     >

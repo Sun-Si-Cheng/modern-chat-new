@@ -472,7 +472,7 @@ const sortedConvs = computed(() => {
         :key="c.id"
         type="button"
         class="mc-conv-item"
-        :class="{ active: c.id === convStore.currentConvId, 'is-pinned': convStore.isPinned(c.id) }"
+        :class="{ active: c.id === convStore.currentConvId, 'is-pinned': c.pinned }"
         :aria-current="c.id === convStore.currentConvId ? 'true' : undefined"
         @click="convStore.openConversation(c.id)"
         @contextmenu.prevent="openConvMenu($event, c)"

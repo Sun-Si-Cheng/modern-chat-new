@@ -600,20 +600,29 @@ function createHost() {
     offFrame = ws.onFrame(handleBroadcastFrame)
     state.started = true
 
+    // 并发拉取：串行 await 会让第 N 个插件等前 N-1 个全部返回
+    //（5 个插件 × 200ms 延迟 ≈ 1 秒才挂上最后一个）。挂载仍按顺序做，避免 DOM 顺序抖动。
     const failed: string[] = []
-    for (const p of pluginsStore.plugins) {
-      if (p.globalDisabled) continue
-      try {
-        const code = await fetchPluginCode(p.id)
-        // 非 200（被全局下架 / 已 purge / 网络抖动）会拿到空串：不要挂一个空 iframe
-        if (!code) throw new Error('empty plugin code')
-        pluginCodeCache.set(p.id, code)
-        mountRuntime(p)
-      } catch (e) {
-        // 一个插件坏掉不能连累其他插件
-        failed.push(p.name)
-        console.warn(`[plugin:${p.name}] load failed:`, e)
-      }
+    const active = pluginsStore.plugins.filter((p) => !p.globalDisabled)
+    const loaded = await Promise.all(
+      active.map(async (p) => {
+        try {
+          const code = await fetchPluginCode(p.id)
+          // 非 200（被全局下架 / 已 purge / 网络抖动）会拿到空串：不要挂一个空 iframe
+          if (!code) throw new Error('empty plugin code')
+          return { p, code }
+        } catch (e) {
+          // 一个插件坏掉不能连累其他插件
+          failed.push(p.name)
+          console.warn(`[plugin:${p.name}] load failed:`, e)
+          return null
+        }
+      }),
+    )
+    for (const row of loaded) {
+      if (!row) continue
+      pluginCodeCache.set(row.p.id, row.code)
+      mountRuntime(row.p)
     }
     if (failed.length) {
       void MessagePlugin.warning(

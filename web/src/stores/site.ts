@@ -33,9 +33,15 @@ export const useSiteStore = defineStore('site', () => {
 
   async function refresh() {
     try {
-      config.value = await siteApi.get()
+      const next = await siteApi.get()
+      const prev = config.value
+      // 值没变就不要整体替换 config：MessagePane 的 canRecall、输入区字数上限、
+      // 上传体积提示等都订阅了 config，替换对象会让它们每 30 秒全部失效重算
+      //（表现为整屏消息气泡重渲一次）。
+      const changed = (Object.keys(next) as Array<keyof SiteConfig>).some((k) => next[k] !== prev[k])
+      if (changed) config.value = next
       loaded.value = true
-      document.title = config.value.name
+      document.title = next.name
     } catch {
       // 保持上一次的值：拉取失败不能误判成「维护结束」把用户放进去
     }

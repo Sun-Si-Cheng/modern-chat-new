@@ -146,7 +146,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		inviteUsed = code
 	}
 
-	count, err := h.users.Count()
+	// 只需要布尔语义（是否首个账号）：用 EXISTS 而不是 COUNT(*)，
+	// 注册路径同样不该为一次判空扫全表
+	hasUsers, err := h.users.HasUsers()
 	if err != nil {
 		internal(c, err)
 		return
@@ -156,7 +158,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// 「忘记密码」（只能改库或让站长重置）。验证码只在「非首账号 && SMTP 可用」
 	// 时才要求：首账号豁免，避免把刚部署完的部署者锁在注册页外。
 	// 放在邀请码之后：验证失败时上面的 defer 会把已核销的邀请码退还。
-	needCode := ops.RequireEmailVerify && h.mailerReady() && count > 0
+	needCode := ops.RequireEmailVerify && h.mailerReady() && hasUsers
 	var emailPtr *string
 	emailVerified := false
 	if ops.RequireEmailVerify {
@@ -199,7 +201,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 		emailPtr = &email
 	}
-	if ops.RequireEmailVerify && count == 0 {
+	if ops.RequireEmailVerify && !hasUsers {
 		slog.Info("first account skips email verification (bootstrap)")
 	}
 	if ops.RequireEmailVerify && !h.mailerReady() {

@@ -464,7 +464,20 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	if err != nil {
 		return nil, err
 	}
-	members, err := s.memberBriefs(convIDs)
+	// 只取「成员数」和「单聊对方」：
+	// 旧实现把用户所有会话的全部成员行 JOIN users 拉回来，只为 len() 求成员数，
+	// 20 个 200 人群就是 4000 行/次列表请求。成员摘要由详情面板按需拉取。
+	counts, err := s.memberCounts(convIDs)
+	if err != nil {
+		return nil, err
+	}
+	singleIDs := make([]uint, 0, len(rows))
+	for _, r := range rows {
+		if r.Type == 1 {
+			singleIDs = append(singleIDs, r.ID)
+		}
+	}
+	peers, err := s.singlePeers(singleIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -502,15 +515,11 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 				v.LastMessageType = &msgType
 			}
 		}
-		ms := members[r.ID]
-		v.MemberCount = len(ms)
+		v.MemberCount = counts[r.ID]
 		if r.Type == 1 {
-			for _, m := range ms {
-				if m.ID != userID {
-					peer := m
-					v.Peer = &peer
-					break
-				}
+			if p, ok := peers[r.ID]; ok {
+				peer := p
+				v.Peer = &peer
 			}
 		}
 		out = append(out, v)
@@ -598,9 +607,32 @@ func (s *ConversationStore) previewMap(ids []uint64) (map[uint64]previewInfo, er
 	return out, nil
 }
 
-// memberBriefs convID -> 成员摘要列表。
-func (s *ConversationStore) memberBriefs(convIDs []uint) (map[uint][]model.UserBrief, error) {
-	out := make(map[uint][]model.UserBrief, len(convIDs))
+// memberCounts convID -> 成员数（一条 GROUP BY，避免物化全部成员行）。
+func (s *ConversationStore) memberCounts(convIDs []uint) (map[uint]int, error) {
+	out := make(map[uint]int, len(convIDs))
+	if len(convIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ConversationID uint `gorm:"column:conversation_id"`
+		N              int  `gorm:"column:n"`
+	}
+	if err := s.db.Table("conversation_members").
+		Select("conversation_id, COUNT(*) AS n").
+		Where("conversation_id IN ?", convIDs).
+		Group("conversation_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ConversationID] = r.N
+	}
+	return out, nil
+}
+
+// singlePeers convID -> 单聊对方资料（群聊不查，群成员由详情面板按需拉取）。
+func (s *ConversationStore) singlePeers(convIDs []uint, userID uint) (map[uint]model.UserBrief, error) {
+	out := make(map[uint]model.UserBrief, len(convIDs))
 	if len(convIDs) == 0 {
 		return out, nil
 	}
@@ -615,14 +647,14 @@ func (s *ConversationStore) memberBriefs(convIDs []uint) (map[uint][]model.UserB
 	if err := s.db.Table("conversation_members cm").
 		Select("cm.conversation_id, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
 		Joins("JOIN users u ON u.id = cm.user_id").
-		Where("cm.conversation_id IN ?", convIDs).
+		Where("cm.conversation_id IN ? AND cm.user_id <> ?", convIDs, userID).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		out[r.ConversationID] = append(out[r.ConversationID], model.UserBrief{
+		out[r.ConversationID] = model.UserBrief{
 			ID: r.ID, Username: r.Username, Nickname: r.Nickname, AvatarColor: r.AvatarColor, Avatar: r.Avatar,
-		})
+		}
 	}
 	return out, nil
 }
@@ -634,17 +666,23 @@ func (s *ConversationStore) SearchGroups(kw string, limit int) ([]model.Conversa
 	if err := s.db.Where("type = 2 AND name LIKE ?", pat).Order("id ASC").Limit(limit).Find(&cs).Error; err != nil {
 		return nil, err
 	}
+	// 一次 GROUP BY 拿全部成员数：旧实现是「命中 N 个群就查 N 次 COUNT」，
+	// 20 个结果就是 21 次数据库往返
+	ids := make([]uint, 0, len(cs))
+	for i := range cs {
+		ids = append(ids, cs[i].ID)
+	}
+	counts, err := s.memberCounts(ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]model.ConversationView, 0, len(cs))
 	for i := range cs {
-		n, err := s.CountMembers(cs[i].ID)
-		if err != nil {
-			return nil, err
-		}
 		c := cs[i]
 		// 头像也一并下发：搜索结果里直接显示群头像
 		out = append(out, model.ConversationView{
 			ID: c.ID, Type: c.Type, Name: c.Name, Avatar: c.Avatar,
-			OwnerID: c.OwnerID, MemberCount: int(n),
+			OwnerID: c.OwnerID, MemberCount: counts[c.ID],
 		})
 	}
 	return out, nil

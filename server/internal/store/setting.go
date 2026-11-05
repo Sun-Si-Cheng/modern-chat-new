@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"gorm.io/gorm"
 
@@ -102,6 +103,12 @@ type SettingStore struct {
 
 	mu    sync.RWMutex
 	cache map[string]string // 解密后的明文缓存
+	// ops 解析后的业务规则缓存。
+	//
+	// Ops() 在每个请求里至少被调用 2 次（维护中间件 + handler 本身），
+	// 每次都从 map 深拷贝再解析 ~20 个键（TrimSpace / strconv / 敏感词拆分）。
+	// 配置很少变，这里缓存解析结果；Save/Invalidate 时置空重算。
+	ops atomic.Pointer[Ops]
 }
 
 func NewSettingStore(db *gorm.DB, box *SecretBox) *SettingStore {
@@ -199,6 +206,7 @@ func (s *SettingStore) Save(updates map[string]string, by uint) error {
 	s.mu.Lock()
 	s.cache = nil // 失效缓存，下次读取重新加载
 	s.mu.Unlock()
+	s.ops.Store(nil) // 解析结果一并失效，否则新配置要等进程重启才生效
 	return nil
 }
 
@@ -207,6 +215,7 @@ func (s *SettingStore) Invalidate() {
 	s.mu.Lock()
 	s.cache = nil
 	s.mu.Unlock()
+	s.ops.Store(nil)
 }
 
 // Ops 可在后台调整的业务规则（站点 / 聊天 / 上传）。
@@ -261,12 +270,22 @@ func DefaultOps() Ops {
 
 // Ops 读取业务规则。任何一项缺失或非法都回落到默认值，
 // 不会因为后台存了个错值就把功能卡死。
+//
+// 返回值是结构体拷贝（与之前语义一致）；内部切片字段（敏感词）只读，
+// 调用方不要原地修改。
 func (s *SettingStore) Ops() Ops {
-	all, err := s.All()
-	if err != nil {
-		return DefaultOps()
+	if p := s.ops.Load(); p != nil {
+		return *p
 	}
-	return OpsFrom(all)
+	all, err := s.All()
+	var out Ops
+	if err != nil {
+		out = DefaultOps()
+	} else {
+		out = OpsFrom(all)
+	}
+	s.ops.Store(&out)
+	return out
 }
 
 // OpsFrom 把原始 KV 解析成 Ops（纯函数，便于单测）。

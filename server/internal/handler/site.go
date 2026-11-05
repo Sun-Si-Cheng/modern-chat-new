@@ -35,10 +35,12 @@ func (h *SiteHandler) Get(c *gin.Context) {
 	//   requireEmailVerify —— 是否还需要验证码（开关 && SMTP 可用 && 已有账号；
 	//                         首个账号豁免、未配 SMTP 也不强制，否则会把部署者锁在门外）
 	mailerReady := h.mailer != nil && h.mailer.Config().Enabled()
-	userCount := int64(0)
+	// 只需要「是否已有账号」这一个布尔值：用 EXISTS/ LIMIT 1，避免每 30 秒
+	// 每个在线客户端都触发一次 users 全表 COUNT
+	hasUsers := false
 	if h.users != nil {
-		if n, err := h.users.Count(); err == nil {
-			userCount = n
+		if ok, err := h.users.HasUsers(); err == nil {
+			hasUsers = ok
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -48,7 +50,7 @@ func (h *SiteHandler) Get(c *gin.Context) {
 		"maintenanceMessage": ops.MaintenanceMessage,
 		"requireInviteCode":  ops.RequireInviteCode,
 		"requireEmail":       ops.RequireEmailVerify,
-		"requireEmailVerify": ops.RequireEmailVerify && mailerReady && userCount > 0,
+		"requireEmailVerify": ops.RequireEmailVerify && mailerReady && hasUsers,
 		"maxMessageLength":   ops.MaxMessageLength,
 		"recallMinutes":      ops.RecallMinutes,
 		"maxGroupMembers":    ops.MaxGroupMembers,
