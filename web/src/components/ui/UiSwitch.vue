@@ -25,15 +25,19 @@ const trackCls = computed(() => [
 ])
 
 const knobCls = computed(() => [
-  'ui-switch__knob absolute rounded-full bg-white shadow-sm',
+  // 显式 top/left 定位：不依赖「flex 容器内 absolute 子元素的静态位置」，
+  // 各浏览器对该位置的处理不一致，曾导致圆圈垂直不居中。
+  // 两种尺寸下 (轨道高-滑钮直径)/2 都是 2px，top/left 统一 2px。
+  // 开状态位移 = 轨道宽 - 滑钮 - 2×2px（两端留白对称），medium 18px / small 14px。
+  'ui-switch__knob absolute top-[2px] left-[2px] rounded-full bg-white shadow-sm',
   props.size === 'small' ? 'w-3.5 h-3.5' : 'w-[18px] h-[18px]',
   props.size === 'small'
     ? props.value
-      ? 'translate-x-[15px]'
-      : 'translate-x-[2px]'
+      ? 'translate-x-[14px]'
+      : 'translate-x-0'
     : props.value
-      ? 'translate-x-[19px]'
-      : 'translate-x-[2px]',
+      ? 'translate-x-[18px]'
+      : 'translate-x-0',
 ])
 
 function toggle() {
@@ -57,14 +61,11 @@ function toggle() {
 </template>
 
 <style scoped>
-/* 轨道：颜色变化走对称曲线（只变颜色，不需要方向感） */
+/* 轨道：颜色变化走对称曲线（只变颜色，不需要方向感），按压内缩走 ease-out */
 .ui-switch__track {
-  transition: background-color 180ms var(--mc-ease-in-out);
-}
-
-/* 滑钮：位移走弹性曲线 —— 开关是「按下去弹过来」的物理动作 */
-.ui-switch__knob {
-  transition: transform var(--mc-dur-base) var(--mc-ease-spring);
+  transition:
+    background-color 180ms var(--mc-ease-in-out),
+    transform 100ms var(--mc-ease-out);
 }
 
 /* 按压：整颗轻微内缩 */
@@ -72,10 +73,9 @@ function toggle() {
   transform: scale(0.96);
 }
 
-.ui-switch__track {
-  transition:
-    background-color 180ms var(--mc-ease-in-out),
-    transform 100ms var(--mc-ease-out);
+/* 滑钮：位移走弹性曲线 —— 开关是「按下去弹过来」的物理动作 */
+.ui-switch__knob {
+  transition: transform var(--mc-dur-base) var(--mc-ease-spring);
 }
 
 @media (prefers-reduced-motion: reduce) {
