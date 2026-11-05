@@ -285,6 +285,92 @@ const announceMeta = computed(() => {
   return `${who} · ${day} ${fmtTime(c.announcementAt)}`
 })
 
+// ===== 多选 / 合并转发 =====
+
+const selectMode = ref(false)
+const selectedIds = ref<number[]>([])
+/** 非 null 时表示正在为「合并转发」选择目标会话 */
+const mergeSourceIds = ref<number[] | null>(null)
+
+const MAX_MERGE = 20
+
+function enterSelect(m: Message) {
+  selectMode.value = true
+  selectedIds.value = m.id > 0 ? [m.id] : []
+}
+
+function exitSelect() {
+  selectMode.value = false
+  selectedIds.value = []
+}
+
+function toggleSelect(m: Message) {
+  if (m.id <= 0) return
+  const i = selectedIds.value.indexOf(m.id)
+  if (i >= 0) selectedIds.value.splice(i, 1)
+  else selectedIds.value.push(m.id)
+}
+
+function isSelected(m: Message): boolean {
+  return selectedIds.value.includes(m.id)
+}
+
+/** 媒体消息在多选模式下点击=选中，否则维持原来的预览行为 */
+function onMediaClick(m: Message) {
+  if (selectMode.value) {
+    toggleSelect(m)
+    return
+  }
+  previewSrc.value = m.content
+}
+
+/** 把选中的消息拼成一条「合并转发」文本；媒体用占位文案代替 URL */
+function mergeText(msgs: Message[]): string {
+  const lines = msgs.slice(0, MAX_MERGE).map((m) => {
+    let body = m.content
+    if (m.msgType === 'image') body = t('message.quoteImage')
+    else if (m.msgType === 'audio') body = t('message.quoteAudio')
+    else if (m.msgType === 'sticker') body = t('message.quoteSticker')
+    else if (m.msgType !== 'text') body = t('message.unknownType', { type: m.msgType })
+    body = [...body].slice(0, 100).join('')
+    const who = senderOf(m) ? (auth.user?.nickname ?? '') : senderName(m)
+    return `${who}: ${body}`
+  })
+  return `【${t('message.mergeForward')}】\n${lines.join('\n')}`
+}
+
+function startMergeForward() {
+  if (!selectedIds.value.length) return
+  mergeSourceIds.value = [...selectedIds.value]
+}
+
+function doMergeForward(convId: number) {
+  const ids = mergeSourceIds.value
+  if (!ids) return
+  const msgs = messages.value.filter((m) => ids.includes(m.id))
+  if (!msgs.length) return
+  const text = mergeText(msgs)
+  if (text.length > siteStore.config.maxMessageLength) {
+    void MessagePlugin.warning(t('message.mergeTooLong', { max: siteStore.config.maxMessageLength }))
+    return
+  }
+  convStore.sendText(convId, text, { forwarded: true })
+  mergeSourceIds.value = null
+  exitSelect()
+  void MessagePlugin.success(t('message.forwardOk'))
+}
+
+/** 目标会话选择框的点击：普通转发与合并转发共用 */
+function pickForwardTarget(convId: number) {
+  if (mergeSourceIds.value) doMergeForward(convId)
+  else doForward(convId)
+}
+
+function closeForwardPicker() {
+  forwardSource.value = null
+  mergeSourceIds.value = null
+}
+
 // ===== 转发 =====
 
 /** 待选择目标会话的消息；非 null 时弹出会话选择框 */
@@ -293,6 +379,11 @@ const forwardSource = ref<Message | null>(null)
 const forwardTargets = computed(() =>
   // type=3 是系统公告会话，不能往里转发
   convStore.conversations.filter((c) => c.type !== 3),
+)
+
+/** 禁止选择的目标会话：普通转发不能发回原会话；合并转发同理 */
+const forwardDisabledId = computed(() =>
+  mergeSourceIds.value ? conv.value?.id : forwardSource.value?.conversationId,
 )
 
 function convLabel(c: Conversation): string {
@@ -553,7 +644,8 @@ function commonActions(m: Message, dividerFirst: boolean): ContextMenuItem[] {
     })
   }
   if (actionable) {
-    items.push({ key: 'delete', label: t('message.delete'), danger: true, dividerBefore: true })
+    items.push({ key: 'select', label: t('message.select'), dividerBefore: true })
+    items.push({ key: 'delete', label: t('message.delete'), danger: true })
     // 举报他人消息（自己的消息不提供举报入口）
     if (!senderOf(m)) {
       items.push({ key: 'report', label: t('message.report'), danger: true })
@@ -634,6 +726,7 @@ function onMenuSelect(key: string) {
   if (key === 'delete') confirmDelete(m)
   if (key === 'report') startReport(m)
   if (key === 'adminDelete') confirmAdminDelete(m)
+  if (key === 'select') enterSelect(m)
 }
 
 // ===== 收藏 / 删除（仅自己） =====
@@ -954,6 +1047,22 @@ const senderName = (m: Message) => {
       </div>
     </div>
 
+    <!-- 多选工具条：选中后可合并转发 -->
+    <div v-if="selectMode" class="mc-selectbar">
+      <span class="mc-selectbar__count">
+        {{ t('message.selectedCount', { n: selectedIds.length }) }}
+      </span>
+      <UiButton size="small" variant="text" @click="exitSelect">{{ t('common.cancel') }}</UiButton>
+      <UiButton
+        size="small"
+        theme="primary"
+        :disabled="!selectedIds.length"
+        @click="startMergeForward"
+      >
+        {{ t('message.mergeForward') }}
+      </UiButton>
+    </div>
+
     <DynamicScroller
       v-if="conv && (messages.length || convStore.loadingMessages)"
       ref="scrollerRef"
@@ -984,9 +1093,19 @@ const senderName = (m: Message) => {
                 mine: senderOf(item.msg),
                 'is-recalled': item.msg.isRecalled,
                 'is-flash': flashId === item.msg.id,
+                'is-selected': selectMode && isSelected(item.msg),
+                'is-selecting': selectMode,
               }"
+              @click="selectMode && toggleSelect(item.msg)"
               @contextmenu.prevent="openMenu($event, item.msg)"
             >
+              <!-- 多选标记 -->
+              <span
+                v-if="selectMode && !item.msg.isRecalled"
+                class="mc-msg__check"
+                :class="{ 'is-on': isSelected(item.msg) }"
+                aria-hidden="true"
+              >✓</span>
               <!-- 头像：自己的消息也显示（.mine 的 row-reverse 会把它排到最右）。
                    撤回提示是系统文案，居中显示，不带头像。 -->
               <AvatarBadge
@@ -1045,7 +1164,7 @@ const senderName = (m: Message) => {
                     :src="item.msg.content"
                     alt=""
                     decoding="async"
-                    @click="previewSrc = item.msg.content"
+                    @click="onMediaClick(item.msg)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />
                 </div>
@@ -1063,7 +1182,7 @@ const senderName = (m: Message) => {
                     :src="item.msg.content"
                     alt=""
                     decoding="async"
-                    @click="previewSrc = item.msg.content"
+                    @click="onMediaClick(item.msg)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />
                 </div>
@@ -1090,10 +1209,10 @@ const senderName = (m: Message) => {
                     role="button"
                     tabindex="0"
                     :aria-label="t('message.recallAria')"
-                    @click="recall(item.msg)"
+                    @click.stop="recall(item.msg)"
                     @keydown.enter="recall(item.msg)"
                   >{{ t('message.recall') }}</span>
-                  <span v-if="item.msg.failed" class="mc-msg__resend" @click="convStore.resend(item.msg)">
+                  <span v-if="item.msg.failed" class="mc-msg__resend" @click.stop="convStore.resend(item.msg)">
                     {{ t('message.resend') }}
                   </span>
                 </div>
@@ -1178,17 +1297,21 @@ const senderName = (m: Message) => {
       @select="onMenuSelect"
     />
 
-    <!-- 转发：选择目标会话 -->
+    <!-- 转发 / 合并转发：选择目标会话 -->
     <Teleport to="body">
-      <div v-if="forwardSource" class="mc-forward" @click.self="forwardSource = null">
+      <div
+        v-if="forwardSource || mergeSourceIds"
+        class="mc-forward"
+        @click.self="closeForwardPicker"
+      >
         <div class="mc-forward__panel" role="dialog" aria-modal="true">
           <div class="mc-forward__head">
-            <span>{{ t('message.forwardTitle') }}</span>
+            <span>{{ mergeSourceIds ? t('message.mergeForward') : t('message.forwardTitle') }}</span>
             <button
               type="button"
               class="mc-forward__close"
               :aria-label="t('common.cancel')"
-              @click="forwardSource = null"
+              @click="closeForwardPicker"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -1201,12 +1324,12 @@ const senderName = (m: Message) => {
               :key="c.id"
               type="button"
               class="mc-forward__item"
-              :class="{ 'is-disabled': c.id === forwardSource.conversationId }"
-              :disabled="c.id === forwardSource.conversationId"
-              @click="doForward(c.id)"
+              :class="{ 'is-disabled': c.id === forwardDisabledId }"
+              :disabled="c.id === forwardDisabledId"
+              @click="pickForwardTarget(c.id)"
             >
               <span class="mc-forward__name">{{ convLabel(c) }}</span>
-              <span v-if="c.id === forwardSource.conversationId" class="mc-forward__hint">
+              <span v-if="c.id === forwardDisabledId" class="mc-forward__hint">
                 {{ t('message.forwardSameConv') }}
               </span>
             </button>
@@ -1683,6 +1806,55 @@ const senderName = (m: Message) => {
   border-color: transparent;
   box-shadow: none;
   padding: 2px 0;
+}
+
+/* ===== 多选 / 合并转发 ===== */
+.mc-selectbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--mc-hairline);
+  background: var(--td-bg-color-container);
+}
+
+.mc-selectbar__count {
+  flex: 1;
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+}
+
+.mc-msg.is-selecting {
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: var(--mc-radius-sm);
+  cursor: pointer;
+}
+
+.mc-msg.is-selected {
+  background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
+}
+
+.mc-msg__check {
+  flex-shrink: 0;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--td-component-border);
+  border-radius: 50%;
+  background: var(--td-bg-color-container);
+  color: transparent;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.mc-msg__check.is-on {
+  border-color: var(--td-brand-color);
+  background: var(--td-brand-color);
+  color: #fff;
 }
 
 /* ===== 群公告 ===== */

@@ -3,7 +3,7 @@ import UiPopup from '@/components/ui/UiPopup.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin } from 'tdesign-vue-next'
-import { ChatIcon, SettingIcon, StarIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
+import { ChatIcon, NotificationIcon, SettingIcon, StarIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import ProfileCard from './ProfileCard.vue'
@@ -25,6 +25,7 @@ defineProps<{ view: 'chats' | 'contacts' }>()
 const emit = defineEmits<{
   'update:view': [v: 'chats' | 'contacts']
   'open-favorites': []
+  'open-notifications': []
 }>()
 
 const router = useRouter()
@@ -40,6 +41,13 @@ const profileVisible = ref(false)
 // 系统公告会话（type=3）不在列表展示，未读也不应点亮图标栏红点
 const hasUnread = computed(() =>
   convStore.conversations.some((c) => c.type !== 3 && c.unreadCount > 0),
+)
+
+/** 通知中心红点：有人@我，或有待处理的好友申请 */
+const hasNotifications = computed(
+  () =>
+    convStore.conversations.some((c) => c.type !== 3 && c.mentionUnread) ||
+    friendsStore.requestCount > 0,
 )
 
 function confirmLogout() {
@@ -115,6 +123,19 @@ function setView(v: 'chats' | 'contacts') {
         <span class="app-rail__icon">
           <UserCircleIcon />
           <i v-if="friendsStore.requestCount > 0" class="app-rail__dot" />
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="app-rail__btn"
+        :aria-label="t('notify.title')"
+        :title="t('notify.title')"
+        @click="emit('open-notifications')"
+      >
+        <span class="app-rail__icon">
+          <NotificationIcon />
+          <i v-if="hasNotifications" class="app-rail__dot" />
         </span>
       </button>
 

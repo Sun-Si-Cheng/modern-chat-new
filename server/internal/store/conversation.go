@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -285,6 +287,37 @@ func (s *ConversationStore) SetOwner(convID, newOwnerID, oldOwnerID uint) error 
 			Where("conversation_id = ? AND user_id = ?", convID, oldOwnerID).
 			Update("role", "member").Error
 	})
+}
+
+// CreateInvite 生成群邀请链接。expiresAt=nil 表示永久有效。
+func (s *ConversationStore) CreateInvite(convID, by uint, expiresAt *time.Time) (*model.ConversationInvite, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	inv := &model.ConversationInvite{
+		Token:          hex.EncodeToString(b),
+		ConversationID: convID,
+		CreatedBy:      by,
+		ExpiresAt:      expiresAt,
+	}
+	if err := s.db.Create(inv).Error; err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
+// InviteByToken 按 token 查邀请链接（不存在返回 nil,nil）。
+func (s *ConversationStore) InviteByToken(token string) (*model.ConversationInvite, error) {
+	var inv model.ConversationInvite
+	err := s.db.Where("token = ?", token).First(&inv).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
 }
 
 // OtherMemberID 单聊里除指定用户外的另一方 id（拉黑拦截用）。

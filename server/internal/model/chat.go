@@ -143,6 +143,34 @@ type MessageReport struct {
 	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"createdAt"`
 }
 
+// PushSubscription Web Push 订阅（每个浏览器端点一行）。
+type PushSubscription struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"-"`
+	Endpoint  string    `gorm:"size:500;uniqueIndex" json:"endpoint"`
+	P256dh    string    `gorm:"size:255;not null" json:"p256dh"`
+	Auth      string    `gorm:"size:128;not null" json:"auth"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
+// ConversationInvite 群邀请链接。token 为 32 位 hex，撤销/过期即不可用。
+type ConversationInvite struct {
+	Token          string     `gorm:"primaryKey;size:32" json:"token"`
+	ConversationID uint       `gorm:"index;not null" json:"conversationId"`
+	CreatedBy      uint       `gorm:"not null" json:"createdBy"`
+	ExpiresAt      *time.Time `gorm:"type:datetime(3)" json:"expiresAt"`
+	Revoked        bool       `gorm:"default:false" json:"revoked"`
+	CreatedAt      time.Time  `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
+// Valid 邀请链接当前是否可用。
+func (c *ConversationInvite) Valid() bool {
+	if c.Revoked {
+		return false
+	}
+	return c.ExpiresAt == nil || c.ExpiresAt.After(time.Now())
+}
+
 // Friend 好友关系：user_id 视角指向 friend_id。
 // status: 0=待申请（user 申请加 friend）1=已通过 2=已拒绝。
 type Friend struct {

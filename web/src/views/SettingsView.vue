@@ -13,9 +13,12 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import {
   notificationsEnabled,
   notificationsSupported,
+  pushEnabled,
+  pushSupported,
   setNotificationsEnabled,
+  setPushEnabled,
 } from '@/composables/notifications'
-import { systemApi, type VersionInfo } from '@/api'
+import { authApi, systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
@@ -35,6 +38,30 @@ const { t, te } = useAppI18n()
 // ===== 桌面通知 =====
 const notifyOn = ref(notificationsEnabled())
 const notifySupported = notificationsSupported()
+
+// ===== 离线推送（Web Push）=====
+const pushOn = ref(pushEnabled())
+const pushIsSupported = pushSupported()
+
+async function onPushToggle(v: unknown) {
+  const on = v === true
+  if (on && !pushIsSupported) {
+    void MessagePlugin.warning(t('settings.pushUnsupported'))
+    return
+  }
+  try {
+    const ok = await setPushEnabled(on)
+    pushOn.value = ok
+    if (on && !ok) {
+      void MessagePlugin.error(t('settings.pushUnavailable'))
+    } else {
+      void MessagePlugin.success(on ? t('settings.pushOn') : t('settings.pushOff'))
+    }
+  } catch {
+    pushOn.value = false
+    void MessagePlugin.error(t('settings.pushUnavailable'))
+  }
+}
 
 async function onNotifyToggle(v: unknown) {
   const on = v === true
@@ -142,6 +169,29 @@ function confirmLogout() {
   })
 }
 
+/** 退出所有设备：让后端 token_version+1，所有旧令牌失效；当前端也会退出 */
+function confirmLogoutOthers() {
+  const dialog = DialogPlugin.confirm({
+    header: t('settings.logoutOthers'),
+    body: t('settings.logoutOthersConfirm'),
+    theme: 'warning',
+    onConfirm: async () => {
+      try {
+        await authApi.logoutOthers()
+      } catch (e) {
+        // 令牌已经失效时继续走本地登出，避免停在半登录状态
+        void MessagePlugin.error(te(e))
+      }
+      auth.logout()
+      ws.disconnect()
+      convStore.reset()
+      friendsStore.reset()
+      void router.push('/login')
+      dialog.destroy()
+    },
+  })
+}
+
 // ===== 关于 =====
 
 const build = ref<VersionInfo | null>(null)
@@ -222,12 +272,20 @@ function goBack() {
       <!-- 桌面通知 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.notify') }}</h2>
-        <div class="settings-row settings-row--last">
+        <div class="settings-row">
           <div class="settings-row__text">
             <span class="settings-row__label">{{ t('settings.notifyLabel') }}</span>
             <span class="settings-row__hint text-placeholder">{{ t('settings.notifyHint') }}</span>
           </div>
           <UiSwitch :value="notifyOn" @change="onNotifyToggle" />
+        </div>
+        <!-- 离线推送：应用完全关闭时也能收到消息提醒（需 HTTPS 与浏览器授权） -->
+        <div v-if="auth.token" class="settings-row settings-row--last">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.pushLabel') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.pushHint') }}</span>
+          </div>
+          <UiSwitch :value="pushOn" @change="onPushToggle" />
         </div>
       </section>
 
@@ -260,6 +318,18 @@ function goBack() {
 
           <div class="settings-actions">
             <UiButton theme="primary" :loading="saving" @click="saveProfile">{{ t('settings.save') }}</UiButton>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row__text">
+              <span class="settings-row__label">{{ t('settings.logoutOthers') }}</span>
+              <span class="settings-row__hint text-placeholder">
+                {{ t('settings.logoutOthersHint') }}
+              </span>
+            </div>
+            <UiButton variant="outline" size="small" @click="confirmLogoutOthers">
+              {{ t('settings.logoutOthers') }}
+            </UiButton>
           </div>
 
           <div class="settings-row settings-row--last">

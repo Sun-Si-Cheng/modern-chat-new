@@ -27,6 +27,13 @@ const router = createRouter({
       meta: { legal: 'privacy' },
     },
     { path: '/chat', name: 'chat', component: () => import('@/views/ChatLayout.vue'), meta: { requiresAuth: true } },
+    // 群邀请落地页：未登录时先跳登录，登录后回到这里
+    {
+      path: '/join/:token',
+      name: 'join',
+      component: () => import('@/views/JoinView.vue'),
+      meta: { requiresAuth: true },
+    },
     {
       path: '/admin',
       name: 'admin',

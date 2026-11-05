@@ -395,6 +395,20 @@ function toggleInvite(userId: number, checked: boolean) {
   }
 }
 
+/** 生成邀请链接并复制到剪贴板（有效期 7 天） */
+async function copyInviteLink() {
+  const c = conv.value
+  if (!c) return
+  try {
+    const r = await convApi.createInviteLink(c.id, 7)
+    const url = `${window.location.origin}${r.path}`
+    await navigator.clipboard.writeText(url)
+    void MessagePlugin.success(t('group.inviteLinkOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  }
+}
+
 async function doInvite() {
   const c = conv.value
   if (!c || !inviteSelected.value.length || inviting.value) return
@@ -759,6 +773,7 @@ async function leave() {
           </span>
           <span class="mc-detail__actions">
             <a @click="openInvite">{{ t('group.invite') }}</a>
+            <a @click="copyInviteLink">{{ t('group.inviteLink') }}</a>
             <template v-if="isOwner">
               <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
               <a @click="transferVisible = true">{{ t('group.transfer') }}</a>

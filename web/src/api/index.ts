@@ -27,6 +27,8 @@ export const authApi = {
   reset: (body: { token: string; newPassword: string }) =>
     http.post<{ ok: true }>('/auth/reset', { token: body.token, newPassword: body.newPassword }),
   me: () => http.get<User>('/me'),
+  /** 退出所有设备：后端 token_version+1，所有旧 JWT 失效 */
+  logoutOthers: () => http.post<{ ok: true }>('/me/logout-others'),
   updateMe: (body: { nickname?: string; email?: string; avatar?: string }) => http.patch<User>('/me', body),
 }
 
@@ -111,6 +113,12 @@ export const convApi = {
   /** 拉人入群：只能邀请自己的好友，已入群的人会被忽略 */
   invite: (convId: number, userIds: number[]) =>
     http.post<{ ok: true; added: number }>(`/conversations/${convId}/invite`, { userIds }),
+  /** 生成群邀请链接（expiresDays=0 表示永久有效） */
+  createInviteLink: (convId: number, expiresDays = 7) =>
+    http.post<{ token: string; path: string; expiresAt?: string }>(
+      `/conversations/${convId}/invite-link`,
+      { expiresDays },
+    ),
   leave: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/leave`),
   read: (convId: number, upToId: number) => http.post<{ ok: true }>(`/conversations/${convId}/read`, { upToId }),
   rename: (convId: number, name: string) => http.patch<{ ok: true }>(`/conversations/${convId}`, { name }),
@@ -153,6 +161,31 @@ export const convApi = {
   /** 仅自己删除：只从当前账号的聊天记录移除，对方仍可见 */
   deleteMessage: (convId: number, messageId: number) =>
     http.delete<{ ok: true }>(`/conversations/${convId}/messages/${messageId}`),
+}
+
+// ===== Web Push =====
+
+export const pushApi = {
+  /** 是否启用 + VAPID 公钥 */
+  key: () => http.get<{ enabled: boolean; key: string }>('/push/key'),
+  subscribe: (s: { endpoint: string; p256dh: string; auth: string }) =>
+    http.post<{ ok: true }>('/push/subscribe', s),
+  unsubscribe: (endpoint: string) =>
+    http.delete<{ ok: true }>(`/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`),
+}
+
+/** 群邀请链接（免登录可查群信息，加入需要登录） */
+export interface InviteInfo {
+  convId: number
+  name: string | null
+  avatar: string
+  memberCount: number
+}
+
+export const inviteApi = {
+  info: (token: string) => http.get<InviteInfo>(`/invite/${token}`),
+  join: (token: string) =>
+    http.post<{ ok: true; convId: number; alreadyMember?: boolean }>(`/invite/${token}/join`),
 }
 
 // ===== 消息搜索 =====

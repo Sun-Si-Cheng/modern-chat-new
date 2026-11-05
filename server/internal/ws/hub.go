@@ -30,13 +30,16 @@ type Deps struct {
 	Convs      *store.ConversationStore
 	Messages   *store.MessageStore
 	Friends    *store.FriendStore
-	Users      *store.UserStore   // 连接级封禁 / token_version 复核（可为 nil）
+	Users      *store.UserStore       // 连接级封禁 / token_version 复核（可为 nil）
 	Moderation *store.ModerationStore // 单聊拉黑拦截（可为 nil，测试环境跳过）
 	MsgLimiter middleware.Limiter     // 每用户 20 条/分（内存或 Redis）
 	// Storage 用于校验图片/语音消息的 URL 归属（可为 nil，测试环境走本地前缀兜底）
 	Storage service.Storage
 	// Settings 提供可运营的聊天规则（消息长度、撤回时限）。可为 nil，回落默认值。
 	Settings *store.SettingStore
+	// Push / PushSubs Web Push：离线用户的新消息提醒（Push 为 nil 或未配置时跳过）
+	Push     *service.PushService
+	PushSubs *store.PushStore
 }
 
 // Hub 在线连接注册表（按用户分片锁）。
@@ -85,6 +88,14 @@ func NewHub(deps *Deps) *Hub {
 // Run 阻塞至 Close（预留统一事件循环扩展位）。
 func (h *Hub) Run() {
 	<-h.done
+}
+
+// IsOnline 该用户当前是否有任意在线连接。
+func (h *Hub) IsOnline(uid uint) bool {
+	s := h.shards[uid%ShardCount]
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.conns[uid]) > 0
 }
 
 // Register 连接上线。

@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
@@ -28,4 +30,18 @@ func (h *UserHandler) Search(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+// LogoutOthers 让该账号的所有登录态失效（token_version+1）。
+//
+// 当前 JWT 是无状态的，没有「单条会话」标识，因此这里只能一次性让全部设备
+// 重新登录。对用户表现为「退出所有设备」，对安全场景（怀疑令牌泄露）够用。
+func (h *UserHandler) LogoutOthers(c *gin.Context) {
+	me := middleware.UserFrom(c)
+	if err := h.users.BumpTokenVersion(me.ID); err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("logout all devices", "uid", me.ID)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

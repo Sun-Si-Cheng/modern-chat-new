@@ -33,6 +33,8 @@ type Deps struct {
 	Storage  service.Storage
 	// Backup 备份服务（可为 nil：测试环境或未启用）
 	Backup *service.BackupService
+	// Push Web Push 服务（可为 nil 或未配置，此时前端显示「未启用」）
+	Push *service.PushService
 }
 
 // New 装配引擎。
@@ -91,6 +93,7 @@ func New(d Deps) *gin.Engine {
 	invites := store.NewInviteStore(d.DB)
 	loginAttempts := store.NewLoginAttemptStore(d.DB)
 	moderation := store.NewModerationStore(d.DB)
+	pushSubs := store.NewPushStore(d.DB)
 	plugins := store.NewPluginStore(d.DB)
 	resets := store.NewPasswordResetStore(d.DB)
 	audits := store.NewAuditStore(d.DB)
@@ -114,6 +117,7 @@ func New(d Deps) *gin.Engine {
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 	opsH := handler.NewOpsHandler(d.Cfg, d.DB, d.Backup)
+	pushH := handler.NewPushHandler(d.Push, pushSubs)
 
 	// 上传文件存储由 main 依据配置构造（本地或 S3 兼容），这里只挂接口与静态服务
 	storage := d.Storage
@@ -139,6 +143,8 @@ func New(d Deps) *gin.Engine {
 	// 站点信息（免鉴权）：站点名、注册开关、消息长度/撤回时限/上传上限。
 	// 不含任何密钥类配置。
 	api.GET("/site", handler.NewSiteHandler(settings).Get)
+	// 群邀请落地页信息（免登录可看；实际加入需要登录）
+	api.GET("/invite/:token", convH.InviteInfo)
 
 	// 认证（免鉴权，按 IP 限流 10/min）
 	authLimit := middleware.RateLimit(d.AuthLimiter, middleware.KeyByIP)
@@ -160,6 +166,8 @@ func New(d Deps) *gin.Engine {
 		authed.PATCH("/me", authH.UpdateMe)
 
 		authed.GET("/users/search", userH.Search)
+		// 退出所有设备：旧 JWT 全部失效（需重新登录）
+		authed.POST("/me/logout-others", userH.LogoutOthers)
 
 		authed.GET("/friends", friendH.List)
 		authed.GET("/friends/requests", friendH.Requests)
@@ -176,6 +184,8 @@ func New(d Deps) *gin.Engine {
 		authed.GET("/conversations/:id/members", convH.Members)
 		authed.POST("/conversations/:id/join", convH.Join)
 		authed.POST("/conversations/:id/invite", convH.Invite)
+		authed.POST("/conversations/:id/invite-link", convH.CreateInviteLink)
+		authed.POST("/invite/:token/join", convH.JoinByInvite)
 		authed.POST("/conversations/:id/leave", convH.Leave)
 		authed.POST("/conversations/:id/read", convH.Read)
 		authed.PATCH("/conversations/:id", convH.Rename)
@@ -212,6 +222,10 @@ func New(d Deps) *gin.Engine {
 		authed.DELETE("/users/:id/block", modH.Unblock)
 		authed.POST("/messages/:messageId/report", modH.Report)
 		authed.POST("/messages/:messageId/admin-delete", modH.AdminDeleteMessage)
+		// Web Push：公钥下发与订阅管理
+		authed.GET("/push/key", pushH.Key)
+		authed.POST("/push/subscribe", pushH.Subscribe)
+		authed.DELETE("/push/subscribe", pushH.Unsubscribe)
 
 		authed.GET("/plugins", pluginH.List)
 		authed.GET("/plugins/active", pluginH.Active)

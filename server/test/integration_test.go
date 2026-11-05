@@ -51,7 +51,7 @@ func setup(t *testing.T) *env {
 	if err := store.AutoMigrate(db); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	for _, table := range []string{"system_settings", "message_reactions", "message_reports", "user_blocks", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
+	for _, table := range []string{"system_settings", "message_reactions", "message_reports", "user_blocks", "push_subscriptions", "conversation_invites", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("清理表 %s: %v", table, err)
 		}
@@ -2151,6 +2151,75 @@ func TestModeration(t *testing.T) {
 		if m, _ := it.(map[string]any); uint64(m["id"].(float64)) == delID {
 			t.Fatalf("被管理员删除的消息不应再出现在历史里：%v", m)
 		}
+	}
+}
+
+// TestInvitePushAndSession 群邀请链接、Web Push 订阅与「退出所有设备」。
+func TestInvitePushAndSession(t *testing.T) {
+	e := setup(t)
+	tokenA, _ := register(t, e, "inv-admin")
+	tokenB, _ := register(t, e, "inv-bob")
+
+	// A 建群并生成邀请链接
+	code, conv := apiJSON(t, e, "POST", "/api/conversations/group", tokenA, `{"name":"邀请测试群"}`)
+	if code != http.StatusOK {
+		t.Fatalf("create group status = %d", code)
+	}
+	convID := uint64(conv["id"].(float64))
+	code, inv := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite-link", convID), tokenA,
+		`{"expiresDays":7}`)
+	if code != http.StatusOK {
+		t.Fatalf("create invite link status = %d", code)
+	}
+	token := inv["token"].(string)
+	if len(token) != 32 {
+		t.Fatalf("邀请 token 长度异常：%q", token)
+	}
+
+	// 免登录可看群信息
+	code, info := apiJSON(t, e, "GET", "/api/invite/"+token, "", "")
+	if code != http.StatusOK || info["name"] != "邀请测试群" {
+		t.Fatalf("邀请信息异常：%d %v", code, info)
+	}
+	// 加入群聊（幂等）
+	code, joined := apiJSON(t, e, "POST", "/api/invite/"+token+"/join", tokenB, "")
+	if code != http.StatusOK || uint64(joined["convId"].(float64)) != convID {
+		t.Fatalf("通过邀请链接入群失败：%d %v", code, joined)
+	}
+	code, joined2 := apiJSON(t, e, "POST", "/api/invite/"+token+"/join", tokenB, "")
+	if code != http.StatusOK || joined2["alreadyMember"] != true {
+		t.Fatalf("重复入群应幂等：%d %v", code, joined2)
+	}
+	// 非法 token
+	if code, _ := apiJSON(t, e, "GET", "/api/invite/not-a-valid-token", "", ""); code != http.StatusNotFound {
+		t.Fatalf("非法邀请 token 应 404，got %d", code)
+	}
+
+	// Web Push：未配置 VAPID 时 enabled=false，但订阅接口仍可保存
+	code, key := apiJSON(t, e, "GET", "/api/push/key", tokenB, "")
+	if code != http.StatusOK || key["enabled"] != false {
+		t.Fatalf("push key 异常：%d %v", code, key)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/push/subscribe", tokenB,
+		`{"endpoint":"https://push.example.com/abc","p256dh":"BPublicKey","auth":"authKey"}`); code != http.StatusOK {
+		t.Fatalf("保存推送订阅失败：%d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/push/subscribe", tokenB,
+		`{"endpoint":"http://insecure.example.com/x","p256dh":"k","auth":"a"}`); code != http.StatusBadRequest {
+		t.Fatalf("http 端点应 400，got %d", code)
+	}
+	if code, _ := apiJSON(t, e, "DELETE",
+		"/api/push/subscribe?endpoint="+url.QueryEscape("https://push.example.com/abc"), tokenB, ""); code != http.StatusOK {
+		t.Fatalf("删除推送订阅失败：%d", code)
+	}
+
+	// 退出所有设备：旧 token 立即失效
+	tokenC, _ := register(t, e, "inv-carol")
+	if code, _ := apiJSON(t, e, "POST", "/api/me/logout-others", tokenC, ""); code != http.StatusOK {
+		t.Fatalf("logout-others status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "GET", "/api/me", tokenC, ""); code != http.StatusUnauthorized {
+		t.Fatalf("旧 token 应失效（401），got %d", code)
 	}
 }
 

@@ -522,6 +522,148 @@ func (h *ConversationHandler) Invite(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "added": len(added)})
 }
 
+// CreateInviteLink 生成群邀请链接（任意群成员可用，与「拉人」的权限一致）。
+func (h *ConversationHandler) CreateInviteLink(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	if !h.requireMember(c, convID) {
+		return
+	}
+	conv, err := h.convs.ByID(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil {
+		fail(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+	if conv.Type != 2 {
+		fail(c, http.StatusUnprocessableEntity, "只有群聊可以生成邀请链接")
+		return
+	}
+	var req struct {
+		// ExpiresDays 有效期（天）；0 表示永久有效
+		ExpiresDays int `json:"expiresDays"`
+	}
+	if c.Request.ContentLength > 0 && !bind(c, &req) {
+		return
+	}
+	if req.ExpiresDays < 0 || req.ExpiresDays > 30 {
+		fail(c, http.StatusBadRequest, "有效期需为 0-30 天")
+		return
+	}
+	var expiresAt *time.Time
+	if req.ExpiresDays > 0 {
+		t := time.Now().Add(time.Duration(req.ExpiresDays) * 24 * time.Hour)
+		expiresAt = &t
+	}
+	inv, err := h.convs.CreateInvite(convID, middleware.UserFrom(c).ID, expiresAt)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	resp := gin.H{"token": inv.Token, "path": "/join/" + inv.Token}
+	if inv.ExpiresAt != nil {
+		resp["expiresAt"] = inv.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// InviteInfo 邀请链接的群信息（免登录可看，便于落地页展示）。
+func (h *ConversationHandler) InviteInfo(c *gin.Context) {
+	token := strings.TrimSpace(c.Param("token"))
+	inv, ok := h.validInvite(c, token)
+	if !ok {
+		return
+	}
+	conv, err := h.convs.ByID(inv.ConversationID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil || conv.Type != 2 {
+		fail(c, http.StatusNotFound, "群聊不存在")
+		return
+	}
+	n, err := h.convs.CountMembers(conv.ID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"convId": conv.ID, "name": conv.Name, "avatar": conv.Avatar, "memberCount": n,
+	})
+}
+
+// JoinByInvite 通过邀请链接加群。
+func (h *ConversationHandler) JoinByInvite(c *gin.Context) {
+	token := strings.TrimSpace(c.Param("token"))
+	inv, ok := h.validInvite(c, token)
+	if !ok {
+		return
+	}
+	me := middleware.UserFrom(c)
+	conv, err := h.convs.ByID(inv.ConversationID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil || conv.Type != 2 {
+		fail(c, http.StatusNotFound, "群聊不存在")
+		return
+	}
+	if m, err := h.convs.MemberOf(conv.ID, me.ID); err != nil {
+		internal(c, err)
+		return
+	} else if m != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "convId": conv.ID, "alreadyMember": true})
+		return
+	}
+	maxMembers := int64(h.maxGroupMembers())
+	if err := h.convs.JoinGroup(conv.ID, me.ID, maxMembers); err != nil {
+		if errors.Is(err, store.ErrGroupFull) {
+			fail(c, http.StatusUnprocessableEntity,
+				fmt.Sprintf("群成员已满（%d 人上限）", maxMembers))
+			return
+		}
+		internal(c, err)
+		return
+	}
+	if err := h.initInboxes(conv.ID, me.ID); err != nil {
+		internal(c, err)
+		return
+	}
+	ids, err := h.convs.MemberUserIDs(conv.ID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	notifyFor(c).ToUsers(ids, convMetaFrame(conv.ID))
+	slog.Info("conversation joined by invite", "conv", conv.ID, "uid", me.ID)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "convId": conv.ID})
+}
+
+// validInvite 校验 token 长度、存在性、过期与撤销状态；失败时已写响应。
+func (h *ConversationHandler) validInvite(c *gin.Context, token string) (*model.ConversationInvite, bool) {
+	if len(token) != 32 {
+		fail(c, http.StatusNotFound, "邀请链接不存在")
+		return nil, false
+	}
+	inv, err := h.convs.InviteByToken(token)
+	if err != nil {
+		internal(c, err)
+		return nil, false
+	}
+	if inv == nil || !inv.Valid() {
+		fail(c, http.StatusNotFound, "邀请链接已失效")
+		return nil, false
+	}
+	return inv, true
+}
+
 // Leave 退群（群主须先转让）。
 func (h *ConversationHandler) Leave(c *gin.Context) {
 	convID, ok := parseConvID(c)

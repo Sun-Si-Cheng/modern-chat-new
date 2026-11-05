@@ -32,8 +32,12 @@ type Config struct {
 	BackupRetain int
 	// MysqldumpPath mysqldump 可执行文件路径（默认取 PATH）
 	MysqldumpPath string
-	Redis         RedisConfig
-	SMTP          SMTPConfig
+	// Web Push（VAPID）；两项都配置才启用
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubject    string
+	Redis           RedisConfig
+	SMTP            SMTPConfig
 }
 
 // RedisConfig 可选：配置后限流使用 Redis 共享配额，连接失败自动降级为内存。
@@ -77,6 +81,9 @@ func Load() (Config, error) {
 		BackupIntervalHours: int(geti("BACKUP_INTERVAL_HOURS", 0)),
 		BackupRetain:        int(geti("BACKUP_RETAIN", 7)),
 		MysqldumpPath:       getv("MYSQLDUMP_PATH", "mysqldump"),
+		VAPIDPublicKey:      getv("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey:     getv("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:        getv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),

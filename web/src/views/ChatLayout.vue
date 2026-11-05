@@ -13,6 +13,7 @@ import DetailPanel from '@/components/chat/DetailPanel.vue'
 import FavoriteDrawer from '@/components/chat/FavoriteDrawer.vue'
 import GroupPane from '@/components/chat/GroupPane.vue'
 import MessagePane from '@/components/chat/MessagePane.vue'
+import NotificationDrawer from '@/components/chat/NotificationDrawer.vue'
 import PluginDrawer from '@/components/chat/PluginDrawer.vue'
 import PaneResizer from '@/components/common/PaneResizer.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -47,6 +48,7 @@ const paneView = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
 const addFriendVisible = ref(false)
 const favoriteDrawerVisible = ref(false)
+const notificationDrawerVisible = ref(false)
 
 // ===== 全站公告弹窗 =====
 
@@ -188,7 +190,11 @@ onUnmounted(() => {
 
 <template>
   <div class="mc-layout" :style="layout.vars" :class="{ 'has-conv': !!convStore.currentConv }">
-    <AppRail v-model:view="paneView" @open-favorites="favoriteDrawerVisible = true" />
+    <AppRail
+      v-model:view="paneView"
+      @open-favorites="favoriteDrawerVisible = true"
+      @open-notifications="notificationDrawerVisible = true"
+    />
 
     <!-- 分组栏：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->
     <template v-if="paneView === 'chats'">
@@ -282,6 +288,7 @@ onUnmounted(() => {
     />
     <PluginDrawer v-model="pluginDrawerVisible" />
     <FavoriteDrawer v-model="favoriteDrawerVisible" />
+    <NotificationDrawer v-model="notificationDrawerVisible" />
     <AddFriendDialog v-model:visible="addFriendVisible" />
     <AnnouncementDialog v-model:visible="announcementVisible" :content="announcementContent" />
 

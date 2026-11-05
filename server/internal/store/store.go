@@ -77,6 +77,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.LoginAttempt{},
 		&model.UserBlock{},
 		&model.MessageReport{},
+		&model.ConversationInvite{},
+		&model.PushSubscription{},
 	)
 }
 

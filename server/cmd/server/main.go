@@ -133,6 +133,12 @@ func main() {
 		go backup.Loop(time.Hour * time.Duration(cfg.BackupIntervalHours))
 	}
 
+	// Web Push（未配置 VAPID 密钥时 Enabled=false，所有推送静默跳过）
+	pushService := service.NewPushService(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
+	if pushService.Enabled() {
+		slog.Info("web push enabled")
+	}
+
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
 		Convs:      store.NewConversationStore(db),
@@ -143,6 +149,8 @@ func main() {
 		MsgLimiter: msgLimiter,
 		Storage:    uploadStorage,
 		Settings:   settings,
+		Push:       pushService,
+		PushSubs:   store.NewPushStore(db),
 	})
 	go hub.Run()
 
@@ -155,6 +163,7 @@ func main() {
 		Settings:      settings,
 		Storage:       uploadStorage,
 		Backup:        backup,
+		Push:          pushService,
 		AuthLimiter:   authLimiter,
 		PluginLimiter: pluginLimiter,
 	})

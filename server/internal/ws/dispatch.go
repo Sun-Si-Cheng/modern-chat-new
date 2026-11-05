@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
@@ -261,6 +263,54 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	others := withoutID(memberIDs, c.UserID)
 	h.ToUsers(memberIDs, mf)
 	h.ToUsers(others, ginH{"type": "conv_change", "convId": f.ConvID})
+	// 离线用户补一条 Web Push（在线用户已经收到桌面通知，不重复打扰）
+	h.notifyPush(others, msg)
+}
+
+// notifyPush 给离线成员推送浏览器通知。失败只记日志，不影响消息投递。
+func (h *Hub) notifyPush(userIDs []uint, msg *model.Message) {
+	if h.deps == nil || h.deps.Push == nil || !h.deps.Push.Enabled() || h.deps.PushSubs == nil {
+		return
+	}
+	body := pushPreview(msg)
+	payload := ginH{"title": "ModernChat", "body": body, "convId": msg.ConversationID, "url": "/chat"}
+	for _, uid := range userIDs {
+		if uid == 0 || h.IsOnline(uid) {
+			continue
+		}
+		go func(uid uint) {
+			subs, err := h.deps.PushSubs.ForUser(uid)
+			if err != nil {
+				slog.Warn("push subscriptions lookup failed", "uid", uid, "err", err.Error())
+				return
+			}
+			for i := range subs {
+				if err := h.deps.Push.Send(&subs[i], payload); err != nil {
+					if errors.Is(err, service.ErrPushGone) {
+						_ = h.deps.PushSubs.Remove(subs[i].Endpoint)
+					} else {
+						slog.Warn("push send failed", "uid", uid, "err", err.Error())
+					}
+				}
+			}
+		}(uid)
+	}
+}
+
+func pushPreview(m *model.Message) string {
+	switch m.MsgType {
+	case "image":
+		return "[图片]"
+	case "audio":
+		return "[语音]"
+	case "sticker":
+		return "[表情]"
+	}
+	s := m.Content
+	if r := []rune(s); len(r) > 60 {
+		s = string(r[:60]) + "…"
+	}
+	return s
 }
 
 // handleTyping 转发正在输入（不落库）。
