@@ -51,7 +51,7 @@ func New(d Deps) *gin.Engine {
 	r.Use(middleware.BodyLimit(1<<20, map[string]int64{
 		"/api/plugins/upload": d.Cfg.PluginMaxSize + 64*1024,
 		// 图片/语音上传走 multipart，单独放宽（上限由 handler 再按 kind 细分）
-		"/api/upload": service.MaxImageBytes + (1 << 20),
+		"/api/upload": service.MaxFileBytes + (1 << 20),
 	}))
 	// REST 响应压缩（设计文档 §9.2）。
 	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
@@ -73,6 +73,8 @@ func New(d Deps) *gin.Engine {
 	friends := store.NewFriendStore(d.DB)
 	convs := store.NewConversationStore(d.DB)
 	msgs := store.NewMessageStore(d.DB)
+	stickers := store.NewStickerStore(d.DB)
+	files := store.NewFileStore(d.DB)
 	plugins := store.NewPluginStore(d.DB)
 	resets := store.NewPasswordResetStore(d.DB)
 	audits := store.NewAuditStore(d.DB)
@@ -89,6 +91,8 @@ func New(d Deps) *gin.Engine {
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs)
 	convH := handler.NewConversationHandler(users, friends, convs, msgs)
+	stickerH := handler.NewStickerHandler(stickers, d.Storage)
+	fileH := handler.NewFileHandler(files, convs, d.Storage)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 
@@ -150,7 +154,18 @@ func New(d Deps) *gin.Engine {
 		// 收藏夹（消息收藏）
 		// 会话个人设置（置顶 / 免打扰）
 		authed.PATCH("/conversations/:id/prefs", convH.SetPrefs)
+		// 群公告（仅群主）
+		authed.PUT("/conversations/:id/announcement", convH.SetAnnouncement)
+		// 群文件（文件本体走 /api/upload?kind=file）
+		authed.GET("/conversations/:id/files", fileH.List)
+		authed.POST("/conversations/:id/files", fileH.Add)
+		authed.DELETE("/files/:id", fileH.Delete)
 		authed.GET("/favorites", convH.Favorites)
+
+		// 个人表情库（表情文件走 /api/upload?kind=sticker）
+		authed.GET("/stickers", stickerH.List)
+		authed.POST("/stickers", stickerH.Add)
+		authed.DELETE("/stickers/:id", stickerH.Delete)
 		authed.POST("/messages/:messageId/favorite", convH.Favorite)
 		authed.DELETE("/messages/:messageId/favorite", convH.Unfavorite)
 

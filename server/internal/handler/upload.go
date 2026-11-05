@@ -38,8 +38,8 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 
 	kind := strings.TrimSpace(c.Query("kind"))
-	if kind != "image" && kind != "audio" {
-		fail(c, http.StatusBadRequest, "kind 只能是 image 或 audio")
+	if kind != "image" && kind != "audio" && kind != "sticker" && kind != "file" {
+		fail(c, http.StatusBadRequest, "kind 只能是 image / audio / sticker / file")
 		return
 	}
 
@@ -52,8 +52,13 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 	maxBytes := int64(service.MaxAudioBytes)
-	if kind == "image" {
+	switch kind {
+	case "image":
 		maxBytes = service.MaxImageBytes
+	case "sticker":
+		maxBytes = service.MaxStickerBytes
+	case "file":
+		maxBytes = service.MaxFileBytes
 	}
 	if file.Size > maxBytes {
 		fail(c, http.StatusRequestEntityTooLarge, "文件过大")

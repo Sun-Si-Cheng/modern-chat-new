@@ -494,6 +494,55 @@ func (h *ConversationHandler) Rename(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// SetAnnouncement 群公告：仅群主可设，传空串表示撤销。
+//
+// 公告存在 conversations 表上（所有成员共享同一份），
+// 与系统公告会话（type=3）不是一回事。
+func (h *ConversationHandler) SetAnnouncement(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	conv, err := h.convs.ByID(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil || conv.Type != 2 {
+		fail(c, http.StatusBadRequest, "只有群聊可以设置公告")
+		return
+	}
+	var req struct {
+		Content string `json:"content"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if n := len([]rune(content)); n > 500 {
+		fail(c, http.StatusBadRequest, "公告最多 500 字")
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireOwner(c, convID, me.ID) {
+		return
+	}
+	if err := h.convs.SetAnnouncement(convID, me.ID, content); err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("group announcement updated", "conv", convID, "by", me.ID, "len", len([]rune(content)))
+
+	// 通知所有成员刷新（公告显示在聊天页顶部，实时生效比等下拉刷新自然）
+	ids, err := h.convs.MemberUserIDs(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	notifyFor(c).ToUsers(ids, gin.H{"type": "conv_change", "convId": convID})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // Kick 群主移出成员。
 func (h *ConversationHandler) Kick(c *gin.Context) {
 	convID, ok := parseConvID(c)

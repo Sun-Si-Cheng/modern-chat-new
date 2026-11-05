@@ -70,6 +70,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.PasswordReset{},
 		&model.AdminAudit{},
 		&model.SystemSetting{},
+		&model.Sticker{},
+		&model.ConversationFile{},
 	)
 }
 

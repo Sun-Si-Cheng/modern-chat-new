@@ -4,7 +4,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'
 
 import AvatarBadge from './AvatarBadge.vue'
-import { mediaApi } from '@/api'
+import { mediaApi, stickerApi, type Sticker } from '@/api'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -114,6 +114,72 @@ async function onImageChange(e: Event) {
     void MessagePlugin.error(String(err))
   } finally {
     uploading.value = false
+  }
+}
+
+// ===== 表情包 =====
+//
+// 表情是"收藏关系 + URL"，文件本身走 upload(kind=sticker)。
+// 点一下就直接发（和微信一致），不做"插入到输入框再发送"。
+
+const stickers = ref<Sticker[]>([])
+const stickerOpen = ref(false)
+const stickerUploading = ref(false)
+const stickerInput = ref<HTMLInputElement | null>(null)
+
+async function loadStickers() {
+  try {
+    stickers.value = await stickerApi.list()
+  } catch {
+    // 拉取失败留着空面板，不阻断聊天
+  }
+}
+
+function toggleStickerPanel() {
+  stickerOpen.value = !stickerOpen.value
+  if (stickerOpen.value) void loadStickers()
+}
+
+function sendSticker(s: Sticker) {
+  const convId = convStore.currentConvId
+  if (!convId || !s.url) return
+  convStore.sendMedia(convId, 'sticker', s.url)
+  stickerOpen.value = false
+}
+
+function pickStickerFile() {
+  stickerInput.value?.click()
+}
+
+async function onStickerChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 2 << 20) {
+    void MessagePlugin.warning(t('message.stickerTooLarge'))
+    return
+  }
+  stickerUploading.value = true
+  try {
+    const up = await mediaApi.upload('sticker', file, file.name)
+    if (!stickers.value.some((s) => s.url === up.url)) {
+      const row = await stickerApi.add(up.url)
+      stickers.value = [row, ...stickers.value]
+    }
+  } catch (err) {
+    void MessagePlugin.error(String(err))
+  } finally {
+    stickerUploading.value = false
+  }
+}
+
+async function removeSticker(s: Sticker) {
+  try {
+    await stickerApi.remove(s.id)
+    stickers.value = stickers.value.filter((x) => x.id !== s.id)
+  } catch (err) {
+    void MessagePlugin.error(String(err))
   }
 }
 
@@ -324,6 +390,38 @@ function onKeydown(e: KeyboardEvent) {
         </button>
       </div>
 
+      <!-- 表情面板：点表情按钮展开，点一下直接发送 -->
+      <div v-if="stickerOpen" class="mc-composer__sticker">
+        <div class="mc-composer__sticker-head">
+          <span class="mc-composer__sticker-title">{{ t('message.stickers') }}</span>
+          <button
+            type="button"
+            class="mc-composer__sticker-add"
+            :disabled="stickerUploading"
+            @click="pickStickerFile"
+          >
+            {{ stickerUploading ? t('message.uploading') : t('message.addSticker') }}
+          </button>
+        </div>
+
+        <div v-if="stickers.length" class="mc-composer__sticker-grid">
+          <button
+            v-for="s in stickers"
+            :key="s.id"
+            type="button"
+            class="mc-composer__sticker-item"
+            :title="t('message.stickerDeleteHint')"
+            @click="sendSticker(s)"
+            @contextmenu.prevent="removeSticker(s)"
+          >
+            <img :src="s.url" alt="" decoding="async" />
+          </button>
+        </div>
+        <p v-else class="mc-composer__sticker-empty text-placeholder">
+          {{ t('message.stickerEmpty') }}
+        </p>
+      </div>
+
       <!-- @ 选人：输入 @ 后浮在输入框上方 -->
       <div v-if="mentionCandidates.length" class="mc-composer__mention" role="listbox">
         <button
@@ -387,6 +485,29 @@ function onKeydown(e: KeyboardEvent) {
               />
             </svg>
           </button>
+          <!-- 表情 -->
+          <button
+            type="button"
+            class="mc-tool"
+            :class="{ 'is-active': stickerOpen }"
+            :disabled="uploading || recording"
+            :title="t('message.stickers')"
+            :aria-label="t('message.stickers')"
+            :aria-expanded="stickerOpen"
+            @click="toggleStickerPanel"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="9" cy="10" r="1.1" fill="currentColor" />
+              <circle cx="15" cy="10" r="1.1" fill="currentColor" />
+              <path
+                d="M8.4 14.2c.9 1.3 2.1 2 3.6 2s2.7-.7 3.6-2"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
           <!-- 语音 -->
           <button
             type="button"
@@ -434,6 +555,13 @@ function onKeydown(e: KeyboardEvent) {
           accept="image/png,image/jpeg,image/webp,image/gif"
           class="mc-composer__file"
           @change="onImageChange"
+        />
+        <input
+          ref="stickerInput"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          class="mc-composer__file"
+          @change="onStickerChange"
         />
 
         <div class="mc-composer__right">
@@ -559,6 +687,97 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 表情按钮的「展开中」态：和录音一样给个底色，表明面板由它控制 */
+.mc-tool.is-active {
+  color: var(--td-brand-color);
+  background: color-mix(in srgb, var(--td-brand-color) 14%, transparent);
+}
+
+/* ===== 表情面板 ===== */
+.mc-composer__sticker {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  padding: 10px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  box-shadow: var(--mc-elev-2);
+}
+
+.mc-composer__sticker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.mc-composer__sticker-title {
+  font-size: var(--mc-fs-sm);
+  color: var(--td-text-color-secondary);
+}
+
+.mc-composer__sticker-add {
+  padding: 3px 8px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--mc-fs-sm);
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+  transition: background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-composer__sticker-add:hover:not(:disabled) {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-composer__sticker-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mc-composer__sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+  max-height: 208px;
+  overflow-y: auto;
+}
+
+.mc-composer__sticker-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 4px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-composer__sticker-item:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-composer__sticker-item img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.mc-composer__sticker-empty {
+  margin: 12px 0;
+  font-size: var(--mc-fs-sm);
+  text-align: center;
 }
 
 .mc-composer__box:focus-within {

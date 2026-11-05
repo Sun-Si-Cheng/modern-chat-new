@@ -111,6 +111,28 @@ func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted *bool) e
 		Updates(updates).Error
 }
 
+// SetAnnouncement 设置群公告。content 为空表示撤销公告。
+// 记录发布人与时间：前端要显示「谁在什么时候发的」。
+func (s *ConversationStore) SetAnnouncement(convID, byUserID uint, content string) error {
+	if content == "" {
+		return s.db.Model(&model.Conversation{}).
+			Where("id = ?", convID).
+			Updates(map[string]any{
+				"announcement":    nil,
+				"announcement_at": nil,
+				"announcement_by": nil,
+			}).Error
+	}
+	now := time.Now()
+	return s.db.Model(&model.Conversation{}).
+		Where("id = ?", convID).
+		Updates(map[string]any{
+			"announcement":    content,
+			"announcement_at": now,
+			"announcement_by": byUserID,
+		}).Error
+}
+
 // PrefsOf 读取会话的个人设置（置顶 / 免打扰）。
 func (s *ConversationStore) PrefsOf(userID, convID uint) (pinned, muted bool, err error) {
 	var row struct {
@@ -200,16 +222,20 @@ func (s *ConversationStore) SingleExists(a, b uint) (*model.Conversation, error)
 // ---- 列表组装 ----
 
 type convRow struct {
-	ID            uint
-	Type          int8
-	Name          *string
-	OwnerID       *uint
-	LastMessageID *uint64
-	LastMessageAt *time.Time
-	UnreadCount   int
-	Pinned        bool
-	Muted         bool
-	MentionUnread bool
+	ID              uint
+	Type            int8
+	Name            *string
+	OwnerID         *uint
+	LastMessageID   *uint64
+	LastMessageAt   *time.Time
+	UnreadCount     int
+	Pinned          bool
+	Muted           bool
+	MentionUnread   bool
+	Announcement    *string
+	AnnouncementAt  *time.Time
+	AnnouncementBy  *uint
+	AnnouncementWho *string
 }
 
 // ListFor 用户会话列表：收件箱行 join 会话，再聚合预览 / 成员数 / peer。
@@ -218,9 +244,12 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 	err := s.db.Raw(`
 		SELECT c.id, c.type, c.name, c.owner_id,
 		       uc.last_message_id, uc.last_message_at, uc.unread_count,
-		       uc.pinned, uc.muted, uc.mention_unread
+		       uc.pinned, uc.muted, uc.mention_unread,
+		       c.announcement, c.announcement_at, c.announcement_by,
+		       COALESCE(au.nickname, '') AS announcement_who
 		FROM user_conversations uc
 		JOIN conversations c ON c.id = uc.conversation_id
+		LEFT JOIN users au ON au.id = c.announcement_by
 		WHERE uc.user_id = ?
 		ORDER BY uc.pinned DESC, uc.last_message_at DESC`, userID).Scan(&rows).Error
 	if err != nil {
@@ -288,6 +317,13 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 			Pinned:        r.Pinned,
 			Muted:         r.Muted,
 			MentionUnread: r.MentionUnread,
+		}
+		if r.Announcement != nil {
+			v.Announcement = *r.Announcement
+		}
+		v.AnnouncementAt = r.AnnouncementAt
+		if r.AnnouncementWho != nil {
+			v.AnnouncementBy = *r.AnnouncementWho
 		}
 		if r.LastMessageID != nil {
 			if p, ok := previews[*r.LastMessageID]; ok {

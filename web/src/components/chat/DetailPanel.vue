@@ -10,7 +10,7 @@ import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import PluginPanel from '@/components/declarative/PluginPanel.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi } from '@/api'
+import { convApi, mediaApi, type ConversationFile } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useWsStore } from '@/stores/ws'
@@ -51,6 +51,109 @@ watch(
 )
 
 // ===== 群管理 =====
+
+// ===== 群文件 =====
+const files = ref<ConversationFile[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadingFile = ref(false)
+
+watch(
+  () => conv.value?.id,
+  async (id) => {
+    files.value = []
+    if (id === undefined || !isGroup.value) return
+    try {
+      files.value = await convApi.files(id)
+    } catch {
+      /* 忽略：列表为空即可 */
+    }
+  },
+  { immediate: true },
+)
+
+function pickFile() {
+  fileInput.value?.click()
+}
+
+function fmtSize(n: number): string {
+  if (!n) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+function canDeleteFile(f: ConversationFile): boolean {
+  return f.uploaderId === auth.user?.id || isOwner.value
+}
+
+async function onFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许连续选同一个文件
+  const c = conv.value
+  if (!file || !c) return
+  if (file.size > 20 << 20) {
+    void MessagePlugin.warning(t('group.fileTooLarge'))
+    return
+  }
+  uploadingFile.value = true
+  try {
+    const up = await mediaApi.upload('file', file, file.name)
+    await convApi.addFile(c.id, { name: file.name, url: up.url, size: file.size })
+    files.value = await convApi.files(c.id)
+  } catch (err) {
+    void MessagePlugin.error(String(err))
+  } finally {
+    uploadingFile.value = false
+  }
+}
+
+async function removeFile(f: ConversationFile) {
+  const c = conv.value
+  if (!c) return
+  try {
+    await convApi.removeFile(f.id)
+    files.value = files.value.filter((x) => x.id !== f.id)
+  } catch (err) {
+    void MessagePlugin.error(te(err))
+  }
+}
+
+// ===== 群公告（仅群主可编辑）=====
+const editingAnnounce = ref(false)
+const announceDraft = ref('')
+const savingAnnounce = ref(false)
+
+function startEditAnnounce() {
+  announceDraft.value = conv.value?.announcement ?? ''
+  editingAnnounce.value = true
+}
+
+/** content 传空串表示撤销公告 */
+async function saveAnnouncement(content: string) {
+  const c = conv.value
+  if (!c) return
+  savingAnnounce.value = true
+  try {
+    await convApi.setAnnouncement(c.id, content)
+    editingAnnounce.value = false
+    void MessagePlugin.success(t('group.announcementOk'))
+    // 公告在 conversations 上，重新拉一次列表拿到最新值（含发布者与时间）
+    await convStore.loadConversations()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    savingAnnounce.value = false
+  }
+}
+
+function saveAnnounce() {
+  void saveAnnouncement(announceDraft.value.trim())
+}
+
+function clearAnnounce() {
+  void saveAnnouncement('')
+}
 
 const renameVisible = ref(false)
 const newName = ref('')
@@ -198,6 +301,92 @@ async function leave() {
   <div class="mc-detail">
     <!-- 群信息 / 群管理 -->
     <template v-if="conv">
+      <!-- 群公告：所有成员可见，仅群主可编辑 -->
+      <div v-if="isGroup" class="mc-detail__section">
+        <div class="mc-detail__title">
+          <span class="mc-detail__heading">{{ t('group.announcement') }}</span>
+          <span v-if="isOwner && !editingAnnounce" class="mc-detail__actions">
+            <a @click="startEditAnnounce">
+              {{ conv.announcement ? t('group.announcementEdit') : t('group.announcementSet') }}
+            </a>
+          </span>
+        </div>
+
+        <template v-if="editingAnnounce">
+          <textarea
+            v-model="announceDraft"
+            class="mc-detail__announce-input"
+            rows="3"
+            maxlength="500"
+            :placeholder="t('group.announcementPlaceholder')"
+          />
+          <div class="mc-detail__announce-actions">
+            <UiButton size="small" theme="primary" :loading="savingAnnounce" @click="saveAnnounce">
+              {{ t('group.announcementSave') }}
+            </UiButton>
+            <UiButton
+              v-if="conv.announcement"
+              size="small"
+              variant="outline"
+              :disabled="savingAnnounce"
+              @click="clearAnnounce"
+            >
+              {{ t('group.announcementClear') }}
+            </UiButton>
+            <UiButton
+              size="small"
+              variant="text"
+              :disabled="savingAnnounce"
+              @click="editingAnnounce = false"
+            >
+              {{ t('common.cancel') }}
+            </UiButton>
+          </div>
+        </template>
+        <p v-else-if="conv.announcement" class="mc-detail__announce-text">{{ conv.announcement }}</p>
+        <p v-else class="mc-detail__announce-empty text-placeholder">
+          {{ t('group.announcementEmpty') }}
+        </p>
+      </div>
+
+      <!-- 群文件：成员都可上传，上传者本人或群主可删 -->
+      <div v-if="isGroup" class="mc-detail__section">
+        <div class="mc-detail__title">
+          <span class="mc-detail__heading">{{ t('group.files') }}</span>
+          <span class="mc-detail__actions">
+            <a @click="pickFile">
+              {{ uploadingFile ? t('message.uploading') : t('group.fileUpload') }}
+            </a>
+          </span>
+        </div>
+
+        <div v-if="files.length" class="mc-detail__files">
+          <div v-for="f in files" :key="f.id" class="mc-detail__file">
+            <a class="mc-detail__file-name" :href="f.url" :download="f.name" :title="f.name">
+              {{ f.name }}
+            </a>
+            <span class="mc-detail__file-meta text-placeholder">
+              {{ fmtSize(f.size) }} · {{ f.uploaderName }}
+            </span>
+            <button
+              v-if="canDeleteFile(f)"
+              type="button"
+              class="mc-detail__file-del"
+              :title="t('group.fileDelete')"
+              :aria-label="t('group.fileDelete')"
+              @click="removeFile(f)"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <p v-else class="mc-detail__announce-empty text-placeholder">{{ t('group.fileEmpty') }}</p>
+
+        <input ref="fileInput" type="file" class="mc-detail__file-input" @change="onFileChange" />
+      </div>
+
       <div v-if="isGroup" class="mc-detail__section">
         <div class="mc-detail__title">
           <span class="mc-detail__heading">
@@ -313,6 +502,108 @@ async function leave() {
   /* 面板是 flex column 且整体滚动：子项默认会被等比压缩，
      成员一多就把底部「退群」按钮挤成一条细线。固定住高度让它滚动而不是压缩。 */
   flex-shrink: 0;
+}
+
+/* 群文件 */
+.mc-detail__files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mc-detail__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: var(--mc-radius-sm);
+}
+
+.mc-detail__file:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-detail__file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--mc-fs-body);
+  color: var(--td-brand-color);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-detail__file-name:hover {
+  text-decoration: underline;
+}
+
+.mc-detail__file-meta {
+  flex-shrink: 0;
+  font-size: var(--mc-fs-caption);
+}
+
+.mc-detail__file-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  cursor: pointer;
+}
+
+.mc-detail__file-del:hover {
+  background: color-mix(in srgb, var(--td-error-color) 16%, transparent);
+  color: var(--td-error-color);
+}
+
+.mc-detail__file-input {
+  display: none;
+}
+
+/* 群公告 */
+.mc-detail__announce-text {
+  margin: 0;
+  font-size: var(--mc-fs-body);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.mc-detail__announce-empty {
+  margin: 0;
+  font-size: var(--mc-fs-sm);
+}
+
+.mc-detail__announce-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-page);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: var(--mc-fs-body);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.mc-detail__announce-input:focus {
+  outline: none;
+  border-color: var(--td-brand-color);
+}
+
+.mc-detail__announce-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .mc-detail__title {

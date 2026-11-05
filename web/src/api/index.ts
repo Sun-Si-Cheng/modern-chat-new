@@ -52,9 +52,34 @@ export interface MessagesPage {
   hasMore: boolean
 }
 
+/** 个人表情库：表情文件走 upload(kind=sticker)，这里只维护收藏关系 */
+export const stickerApi = {
+  list: () => http.get<Sticker[]>('/stickers'),
+  add: (url: string) => http.post<Sticker>('/stickers', { url }),
+  remove: (id: number) => http.delete<{ ok: true }>(`/stickers/${id}`),
+}
+
+export interface Sticker {
+  id: number
+  url: string
+  createdAt: string
+}
+
+/** 群文件（文件本体在存储里，这里只是目录项） */
+export interface ConversationFile {
+  id: number
+  conversationId: number
+  uploaderId: number
+  uploaderName: string
+  name: string
+  url: string
+  size: number
+  createdAt: string
+}
+
 /** 图片 / 语音上传：先传文件拿到 URL，再发消息（消息里只存 URL） */
 export const mediaApi = {
-  upload: (kind: 'image' | 'audio', file: Blob, filename = 'file') => {
+  upload: (kind: 'image' | 'audio' | 'sticker' | 'file', file: Blob, filename = 'file') => {
     const form = new FormData()
     form.append('file', file, filename)
     return http.upload<{ url: string; size: number; kind: string }>(`/upload?kind=${kind}`, form)
@@ -73,6 +98,16 @@ export const convApi = {
   leave: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/leave`),
   read: (convId: number, upToId: number) => http.post<{ ok: true }>(`/conversations/${convId}/read`, { upToId }),
   rename: (convId: number, name: string) => http.patch<{ ok: true }>(`/conversations/${convId}`, { name }),
+  /** 群文件列表 / 记账 / 删除（文件本体走 upload(kind=file)） */
+  files: (convId: number) => http.get<ConversationFile[]>(`/conversations/${convId}/files`),
+  addFile: (convId: number, f: { name: string; url: string; size: number }) =>
+    http.post<ConversationFile>(`/conversations/${convId}/files`, f),
+  removeFile: (id: number) => http.delete<{ ok: true }>(`/files/${id}`),
+
+  /** 群公告（仅群主）；空串表示撤销 */
+  setAnnouncement: (convId: number, content: string) =>
+    http.put<{ ok: true }>(`/conversations/${convId}/announcement`, { content }),
+
   /** 会话个人设置（置顶 / 免打扰）：不传的字段表示不修改 */
   setPrefs: (convId: number, prefs: { pinned?: boolean; muted?: boolean }) =>
     http.patch<{ ok: true; pinned: boolean; muted: boolean }>(

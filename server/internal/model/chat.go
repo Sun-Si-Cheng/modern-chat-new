@@ -9,6 +9,10 @@ type Conversation struct {
 	Name      *string   `gorm:"size:30" json:"name,omitempty"`
 	OwnerID   *uint     `json:"ownerId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// 群公告：仅群主可改，空串表示没有公告
+	Announcement   *string    `gorm:"size:500" json:"announcement,omitempty"`
+	AnnouncementAt *time.Time `gorm:"type:datetime(3)" json:"announcementAt,omitempty"`
+	AnnouncementBy *uint      `json:"announcementBy,omitempty"`
 }
 
 // ConversationMember 会话成员；单聊双方均 member。
@@ -40,6 +44,8 @@ type Message struct {
 	ReplyToID *uint64 `gorm:"index" json:"replyToId,omitempty"`
 	// Mentions 被 @ 的用户 id（仅群聊使用）。JSON 序列化存 text，便于扩展。
 	Mentions []uint `gorm:"type:text;serializer:json" json:"mentions,omitempty"`
+	// Forwarded 是否是转发来的消息（前端在气泡上标注「转发」，转发不保留原作者）
+	Forwarded bool `gorm:"default:false" json:"forwarded,omitempty"`
 	// ReplyTo 引用消息的摘要，不落库：查询与广播时按需装配。
 	ReplyTo   *ReplyBrief `gorm:"-" json:"replyTo,omitempty"`
 	CreatedAt time.Time   `gorm:"type:datetime(3)" json:"createdAt"`
@@ -94,6 +100,32 @@ type Friend struct {
 	FriendID  uint      `gorm:"index:idx_uf,priority:2" json:"-"`
 	Status    int8      `json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// ConversationFile 群文件：文件本体在 Storage，这里只记归属与展示信息。
+//
+// 保留 Name 与 Size 快照：Storage 里的随机文件名对人没有意义，
+// 用户需要看到"我上传时叫这个名字、多大"。
+type ConversationFile struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	ConversationID uint      `gorm:"index;not null" json:"conversationId"`
+	UploaderID     uint      `gorm:"index;not null" json:"uploaderId"`
+	UploaderName   string    `gorm:"-" json:"uploaderName,omitempty"`
+	Name           string    `gorm:"size:120;not null" json:"name"`
+	URL            string    `gorm:"size:255;not null" json:"url"`
+	Size           int64     `json:"size"`
+	CreatedAt      time.Time `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
+// Sticker 用户自定义表情（个人表情库）。
+//
+// 只存 URL：文件已经在 Storage 里（本地或对象存储），这里只记归属关系。
+// 与消息解耦——删表情不影响已发出的消息（消息里存的是 URL 快照）。
+type Sticker struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"-"`
+	URL       string    `gorm:"size:255;not null" json:"url"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"createdAt"`
 }
 
 // PasswordReset 找回密码令牌：crypto/rand 32 字节 hex（64 字符），15 分钟有效，一次性。

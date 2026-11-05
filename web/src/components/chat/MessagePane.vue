@@ -18,7 +18,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useWsStore } from '@/stores/ws'
-import type { Message, ReplyBrief, UIDescNode } from '@/types/proto'
+import type { Conversation, Message, ReplyBrief, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
@@ -190,6 +190,43 @@ function recall(m: Message) {
   void MessagePlugin.success(t('message.recallOk'))
 }
 
+// ===== 群公告 =====
+const announceOpen = ref(false)
+
+/** 「谁 · 什么时候」：时间缺失时只显示发布者，避免 Invalid Date */
+const announceMeta = computed(() => {
+  const c = conv.value
+  if (!c) return ''
+  const who = c.announcementBy || ''
+  if (!c.announcementAt) return who
+  const d = new Date(c.announcementAt)
+  const day = `${d.getMonth() + 1}月${d.getDate()}日`
+  return `${who} · ${day} ${fmtTime(c.announcementAt)}`
+})
+
+// ===== 转发 =====
+
+/** 待选择目标会话的消息；非 null 时弹出会话选择框 */
+const forwardSource = ref<Message | null>(null)
+
+const forwardTargets = computed(() =>
+  // type=3 是系统公告会话，不能往里转发
+  convStore.conversations.filter((c) => c.type !== 3),
+)
+
+function convLabel(c: Conversation): string {
+  return c.name || c.peer?.nickname || t('message.forwardUnknownConv')
+}
+
+function doForward(convId: number) {
+  const m = forwardSource.value
+  if (!m) return
+  const ok = convStore.forwardMessage(convId, m)
+  forwardSource.value = null
+  if (ok) void MessagePlugin.success(t('message.forwardOk'))
+  else void MessagePlugin.error(t('message.forwardSameConv'))
+}
+
 // ===== @ 高亮 =====
 
 function escapeRe(s: string): string {
@@ -218,6 +255,7 @@ function quoteText(r: ReplyBrief): string {
   if (r.isRecalled) return t('message.quoteRecalled')
   if (r.msgType === 'image') return t('message.quoteImage')
   if (r.msgType === 'audio') return t('message.quoteAudio')
+  if (r.msgType === 'sticker') return t('message.quoteSticker')
   return r.content
 }
 
@@ -323,9 +361,10 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   if (m.msgType === 'text' && m.content) {
     items.push({ key: 'copy', label: t('message.copy') })
   }
-  // 撤回提示、未落库的乐观消息不参与引用
+  // 撤回提示、未落库的乐观消息不参与引用/转发
   if (!m.isRecalled && m.id > 0) {
     items.push({ key: 'quote', label: t('message.quote') })
+    items.push({ key: 'forward', label: t('message.forward') })
   }
   items.push({
     key: 'favorite',
@@ -372,6 +411,7 @@ function onMenuSelect(key: string) {
   if (!m) return
   if (key === 'copy') void copyMessage(m)
   if (key === 'quote') convStore.setReplyTarget(m)
+  if (key === 'forward') forwardSource.value = m
   if (key === 'recall') recall(m)
   if (key === 'favorite') void toggleFavorite(m)
   if (key === 'delete') confirmDelete(m)
@@ -543,6 +583,38 @@ const senderName = (m: Message) => {
       </div>
     </header>
 
+    <!-- 群公告：折叠时一行摘要，展开看全文与发布者 -->
+    <div
+      v-if="conv?.type === 2 && conv.announcement"
+      class="mc-announce"
+      :class="{ 'is-open': announceOpen }"
+    >
+      <button
+        type="button"
+        class="mc-announce__head"
+        :aria-expanded="announceOpen"
+        @click="announceOpen = !announceOpen"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M4 10v4a2 2 0 0 0 2 2h1l2.5 4 1.7-1-2-3H16l3 3V5l-3 3H7a3 3 0 0 0-3 2Z"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span class="mc-announce__label">{{ t('chat.announcement') }}</span>
+        <span v-if="!announceOpen" class="mc-announce__preview">{{ conv.announcement }}</span>
+        <span class="mc-announce__toggle">
+          {{ announceOpen ? t('chat.collapse') : t('chat.expand') }}
+        </span>
+      </button>
+      <div v-if="announceOpen" class="mc-announce__body">
+        <p class="mc-announce__text">{{ conv.announcement }}</p>
+        <p class="mc-announce__meta text-placeholder">{{ announceMeta }}</p>
+      </div>
+    </div>
+
     <DynamicScroller
       v-if="conv && (messages.length || convStore.loadingMessages)"
       ref="scrollerRef"
@@ -593,6 +665,20 @@ const senderName = (m: Message) => {
                   {{ memberName(item.msg.senderId) }}
                 </div>
 
+                <!-- 转发标注：转发不保留原作者，只标来源性质 -->
+                <div v-if="item.msg.forwarded && !item.msg.isRecalled" class="mc-msg__forward">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 8h11a5 5 0 0 1 0 10H8M4 8l4-4M4 8l4 4"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  {{ t('message.forwarded') }}
+                </div>
+
                 <!-- 引用：点一下跳到原消息 -->
                 <div
                   v-if="item.msg.replyTo && !item.msg.isRecalled"
@@ -631,6 +717,17 @@ const senderName = (m: Message) => {
                   :src="item.msg.content"
                   :mine="senderOf(item.msg)"
                 />
+
+                <!-- 表情：透明底、无气泡（和图片区分：表情是"贴"在对话里的） -->
+                <div v-else-if="item.msg.msgType === 'sticker'" class="mc-msg__sticker">
+                  <img
+                    :src="item.msg.content"
+                    alt=""
+                    decoding="async"
+                    @click="previewSrc = item.msg.content"
+                    @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
+                  />
+                </div>
 
                 <!-- 自定义类型：插件白名单渲染 -->
                 <div v-else-if="item.msg.msgType !== 'text'" class="mc-msg__bubble custom">
@@ -704,6 +801,43 @@ const senderName = (m: Message) => {
       :items="menuItems"
       @select="onMenuSelect"
     />
+
+    <!-- 转发：选择目标会话 -->
+    <Teleport to="body">
+      <div v-if="forwardSource" class="mc-forward" @click.self="forwardSource = null">
+        <div class="mc-forward__panel" role="dialog" aria-modal="true">
+          <div class="mc-forward__head">
+            <span>{{ t('message.forwardTitle') }}</span>
+            <button
+              type="button"
+              class="mc-forward__close"
+              :aria-label="t('common.cancel')"
+              @click="forwardSource = null"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div class="mc-forward__list">
+            <button
+              v-for="c in forwardTargets"
+              :key="c.id"
+              type="button"
+              class="mc-forward__item"
+              :class="{ 'is-disabled': c.id === forwardSource.conversationId }"
+              :disabled="c.id === forwardSource.conversationId"
+              @click="doForward(c.id)"
+            >
+              <span class="mc-forward__name">{{ convLabel(c) }}</span>
+              <span v-if="c.id === forwardSource.conversationId" class="mc-forward__hint">
+                {{ t('message.forwardSameConv') }}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -902,6 +1036,15 @@ const senderName = (m: Message) => {
   cursor: zoom-in;
 }
 
+/* 表情：不套气泡背景，透明贴图 */
+.mc-msg__sticker img {
+  display: block;
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
 .mc-msg__voice audio {
   height: 34px;
   max-width: 240px;
@@ -974,6 +1117,186 @@ const senderName = (m: Message) => {
   border-color: transparent;
   box-shadow: none;
   padding: 2px 0;
+}
+
+/* ===== 群公告 ===== */
+.mc-announce {
+  margin: 8px 12px 0;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: color-mix(in srgb, var(--td-brand-color) 8%, transparent);
+  overflow: hidden;
+}
+
+.mc-announce__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--mc-fs-sm);
+  color: var(--td-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mc-announce__head:hover {
+  background: color-mix(in srgb, var(--td-brand-color) 6%, transparent);
+}
+
+.mc-announce__head > svg {
+  flex-shrink: 0;
+  color: var(--td-brand-color);
+}
+
+.mc-announce__label {
+  flex-shrink: 0;
+  color: var(--td-brand-color);
+  font-weight: 500;
+}
+
+.mc-announce__preview {
+  flex: 1;
+  min-width: 0;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-announce__toggle {
+  flex-shrink: 0;
+  font-size: var(--mc-fs-caption);
+  color: var(--td-text-color-placeholder);
+}
+
+.mc-announce__body {
+  padding: 0 10px 9px;
+}
+
+.mc-announce__text {
+  margin: 0;
+  font-size: var(--mc-fs-body);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.mc-announce__meta {
+  margin: 6px 0 0;
+  font-size: var(--mc-fs-caption);
+}
+
+/* ===== 转发：气泡上的来源标注 ===== */
+.mc-msg__forward {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 2px;
+  font-size: var(--mc-fs-caption);
+  color: var(--td-text-color-placeholder);
+}
+
+/* ===== 转发：选择目标会话 ===== */
+.mc-forward {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mc-forward__panel {
+  width: 320px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-lg);
+  background: var(--td-bg-color-container);
+  box-shadow: var(--mc-elev-3);
+  overflow: hidden;
+}
+
+.mc-forward__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--mc-hairline);
+  font-size: var(--mc-fs-emphasis);
+  font-weight: 600;
+}
+
+.mc-forward__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+}
+
+.mc-forward__close:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-forward__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.mc-forward__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--mc-fs-body);
+  color: var(--td-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-forward__item:hover:not(.is-disabled) {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-forward__item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mc-forward__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-forward__hint {
+  flex-shrink: 0;
+  font-size: var(--mc-fs-caption);
+  color: var(--td-text-color-placeholder);
 }
 
 /* 必须盖过 .mc-msg.mine .mc-msg__bubble（3 类选择器）：

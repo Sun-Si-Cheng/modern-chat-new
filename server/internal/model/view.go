@@ -41,6 +41,10 @@ type ConversationView struct {
 	Muted  bool `json:"muted"`
 	// MentionUnread 有未读的 @我 消息：即使免打扰也要显示「有人@我」
 	MentionUnread bool `json:"mentionUnread"`
+	// 群公告（仅群聊）；没有公告时为空串
+	Announcement   string     `json:"announcement"`
+	AnnouncementAt *time.Time `json:"announcementAt"`
+	AnnouncementBy string     `json:"announcementBy"`
 }
 
 // FavoriteView 收藏列表行（GET /api/favorites）。

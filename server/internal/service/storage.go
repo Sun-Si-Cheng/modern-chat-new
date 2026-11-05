@@ -21,7 +21,27 @@ import (
 const (
 	MaxImageBytes = 8 << 20 // 8 MB：手机直出照片通常在 3-5 MB
 	MaxAudioBytes = 5 << 20 // 5 MB：1 分钟语音约 0.5-1 MB
+	// 表情图会被频繁加载，限制比普通图片更严：500KB 足够一张透明 PNG/GIF
+	MaxStickerBytes = 2 << 20
+	// 群文件：文档/压缩包较大，但仍要设上限避免被当网盘
+	MaxFileBytes = 20 << 20
 )
+
+// fileTypes 群文件允许的类型（白名单，MIME → 扩展名）。
+//
+// 刻意不含 text/html 与 image/svg+xml：这两类在浏览器里会被当页面渲染，
+// 用户点开就等于在同源下执行上传者写的脚本（存储型 XSS）。
+// docx/xlsx/pptx 是 zip 容器，DetectContentType 会判成 application/zip。
+var fileTypes = map[string]string{
+	"application/pdf":  ".pdf",
+	"application/zip":  ".zip",
+	"text/plain":       ".txt",
+	"application/json": ".json",
+	"image/jpeg":       ".jpg",
+	"image/png":        ".png",
+	"image/webp":       ".webp",
+	"image/gif":        ".gif",
+}
 
 // 允许的类型（MIME → 扩展名）。
 //
@@ -200,6 +220,11 @@ func detectType(kind string, data []byte) (string, error) {
 		allowed, maxBytes = imageTypes, MaxImageBytes
 	case "audio":
 		allowed, maxBytes = audioTypes, MaxAudioBytes
+	case "sticker":
+		// 表情走图片类型校验（同样按文件头判），只是体积上限更小
+		allowed, maxBytes = imageTypes, MaxStickerBytes
+	case "file":
+		allowed, maxBytes = fileTypes, MaxFileBytes
 	default:
 		return "", fmt.Errorf("不支持的文件类型")
 	}
@@ -215,6 +240,11 @@ func detectType(kind string, data []byte) (string, error) {
 		sniff = sniff[:512]
 	}
 	mime := http.DetectContentType(sniff)
+	// DetectContentType 对文本会返回 "text/plain; charset=utf-8"，
+	// 直接拿去查白名单永远匹配不上，必须先剥掉参数
+	if i := strings.IndexByte(mime, ';'); i > 0 {
+		mime = strings.TrimSpace(mime[:i])
+	}
 	if ext, ok := allowed[mime]; ok {
 		return ext, nil
 	}

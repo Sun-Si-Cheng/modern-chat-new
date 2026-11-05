@@ -22,6 +22,8 @@ type clientFrame struct {
 	// ReplyToID 引用消息 id；Mentions 被 @ 的用户 id（均为可选）
 	ReplyToID *uint64 `json:"replyToId"`
 	Mentions  []uint  `json:"mentions"`
+	// Forwarded 标记这是一条转发消息（只影响展示，不改变投递逻辑）
+	Forwarded bool `json:"forwarded"`
 }
 
 // Dispatch 上行帧路由：非成员一律 error 帧。
@@ -88,7 +90,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	// 图片/语音的 content 必须是本站上传目录下的相对地址。
 	// 不校验的话用户可以塞 https://evil.com/x.png，接收方客户端会去加载外部资源
 	// （泄露 IP、可被打点统计），而消息看起来完全正常。
-	if msgType == "image" || msgType == "audio" {
+	if msgType == "image" || msgType == "audio" || msgType == "sticker" {
 		// 由存储实现自己判断 URL 归属（本地是 /uploads/，S3 是配置的对外域名），
 		// 这样换存储不用改校验逻辑。测试里未注入 Storage 时退回本地前缀判断。
 		var ok bool
@@ -144,6 +146,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		Content:        string(content),
 		ReplyToID:      replyTo,
 		Mentions:       mentions,
+		Forwarded:      f.Forwarded,
 		CreatedAt:      time.Now(),
 	}
 	if err := h.deps.Messages.Create(msg); err != nil {
@@ -413,6 +416,9 @@ func messageFrame(m *model.Message, clientMsgID string) ginH {
 	}
 	if len(m.Mentions) > 0 {
 		frame["mentions"] = m.Mentions
+	}
+	if m.Forwarded {
+		frame["forwarded"] = true
 	}
 	return frame
 }

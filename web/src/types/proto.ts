@@ -49,6 +49,11 @@ export interface Conversation {
   muted: boolean
   /** 有未读的 @我 消息：免打扰时也要提示「有人@我」 */
   mentionUnread: boolean
+  /** 群公告（仅群聊），空串表示没有 */
+  announcement: string
+  announcementAt: string | null
+  /** 公告发布者昵称 */
+  announcementBy: string
 }
 
 export interface ConversationMember {
@@ -87,6 +92,8 @@ export interface Message {
   replyTo?: ReplyBrief | null
   /** 被 @ 的用户 id（仅群聊） */
   mentions?: number[]
+  /** 是否是转发来的消息（气泡上标注「转发」） */
+  forwarded?: boolean
   createdAt: string
   /** 前端本地状态：已发出未确认 */
   pending?: boolean
@@ -159,6 +166,7 @@ export type ClientFrame =
       replyToId?: number
       /** 被 @ 的用户 id（仅群聊） */
       mentions?: number[]
+      forwarded?: boolean
     }
   | { type: 'typing'; convId: number }
   | { type: 'read'; convId: number; upToId: number }
@@ -180,6 +188,7 @@ export type ServerFrame =
       replyTo?: ReplyBrief
       /** 被 @ 的用户 id */
       mentions?: number[]
+      forwarded?: boolean
       createdAt: string
     }
   | { type: 'recall'; messageId: number; convId: number; recalledAt?: string }

@@ -254,10 +254,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     pendingTimers.set(msg.clientMsgId, timer)
   }
 
-  /** 发送附加信息：引用与 @ 都是可选 */
+  /** 发送附加信息：引用、@、转发标记都是可选 */
   interface SendExtra {
     replyToId?: number
     mentions?: number[]
+    forwarded?: boolean
   }
 
   /** 乐观插入 + 发帧。文本与媒体共用同一条链路，只是 msgType/content 不同。 */
@@ -273,6 +274,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       isRecalled: false,
       replyToId: extra?.replyToId ?? null,
       mentions: extra?.mentions,
+      forwarded: extra?.forwarded,
       createdAt: new Date().toISOString(),
       pending: true,
     }
@@ -291,6 +293,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       content,
       replyToId: extra?.replyToId,
       mentions: extra?.mentions,
+      forwarded: extra?.forwarded,
     })
     if (!sent) {
       optimistic.pending = false
@@ -317,6 +320,18 @@ export const useConversationsStore = defineStore('conversations', () => {
     }
   }
 
+  /**
+   * 转发一条消息到另一个会话。
+   *
+   * 实现是「照搬 content + msgType，打上 forwarded 标记」，不是引用原消息：
+   * 转发出去的是一条独立消息，原消息被撤回/删除都不影响它。
+   */
+  function forwardMessage(targetConvId: number, m: Message) {
+    if (!m.content || targetConvId === m.conversationId) return false
+    pushAndSend(targetConvId, m.msgType, m.content, { forwarded: true })
+    return true
+  }
+
   function sendText(convId: number, content: string, extra?: SendExtra) {
     const trimmed = content.trim()
     if (!trimmed || trimmed.length > 1000) return
@@ -327,7 +342,12 @@ export const useConversationsStore = defineStore('conversations', () => {
    * 发送图片 / 语音。content 是上传接口返回的相对地址，
    * 后端会再校验它必须落在本站 /uploads/ 下。
    */
-  function sendMedia(convId: number, msgType: 'image' | 'audio', url: string, extra?: SendExtra) {
+  function sendMedia(
+    convId: number,
+    msgType: 'image' | 'audio' | 'sticker',
+    url: string,
+    extra?: SendExtra,
+  ) {
     if (!url) return
     pushAndSend(convId, msgType, url, extra)
   }
@@ -343,6 +363,8 @@ export const useConversationsStore = defineStore('conversations', () => {
       // 变成一条内容是 URL 的文本消息
       msgType: msg.msgType,
       content: msg.content,
+      // 转发标记同理，丢了就变成普通消息
+      forwarded: msg.forwarded,
     })
     if (!sent) {
       msg.pending = false
@@ -480,9 +502,10 @@ export const useConversationsStore = defineStore('conversations', () => {
         replyToId: frame.replyToId ?? null,
         replyTo: frame.replyTo ?? null,
         mentions: frame.mentions,
+        forwarded: frame.forwarded,
         createdAt: frame.createdAt,
-      }
-      if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
+        }
+        if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
       if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
       else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
       // 自己发出的消息本身就是已读位置：记住该会话的上报水位，避免重复上报
@@ -502,8 +525,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       replyToId: frame.replyToId ?? null,
       replyTo: frame.replyTo ?? null,
       mentions: frame.mentions,
+      forwarded: frame.forwarded,
       createdAt: frame.createdAt,
-    })
+      })
 
     const conv = conversations.value.find((c) => c.id === convId)
     if (conv) {
@@ -565,6 +589,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     markRead,
     sendText,
     sendMedia,
+    forwardMessage,
     resend,
     sendTyping,
     recallMessage,
