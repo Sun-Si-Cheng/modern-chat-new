@@ -27,6 +27,12 @@ const friendsStore = useFriendsStore()
 const layout = useLayoutStore()
 const siteStore = useSiteStore()
 const ws = useWsStore()
+
+// 本组件是**多根模板**（.mc-detail 与 ContextMenu / 若干 UiDialog 同级）。
+// Vue 不会把父组件传的 attrs 分配给多根组件的任何节点，于是 ChatLayout 传的
+// `mc-pane mc-pane--right is-drawer` 全部丢失：抽屉定位、宽度与 z-index 失效，
+// 只剩全屏遮罩盖住界面。这里关闭自动继承，手动绑到根容器上。
+defineOptions({ inheritAttrs: false })
 const { t, te } = useAppI18n()
 
 const conv = computed(() => convStore.currentConv)
@@ -758,7 +764,8 @@ async function leave() {
 </script>
 
 <template>
-  <div class="mc-detail">
+  <!-- v-bind="$attrs"：接收父级传下来的布局类（mc-pane / is-drawer），见 script 顶部说明 -->
+  <div class="mc-detail" v-bind="$attrs">
     <!-- 群信息 / 群管理 -->
     <template v-if="conv">
       <!-- 群头像：群主 / 管理员可点击更换 -->

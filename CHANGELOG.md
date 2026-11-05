@@ -90,6 +90,7 @@
 
 ### 修复
 
+- **打开会话详情后遮罩盖满屏幕**：`DetailPanel` 是多根模板（`.mc-detail` + `ContextMenu` + 若干 `UiDialog`），Vue 不会把父级传入的 `class` 分配给多根组件的任何节点——`ChatLayout` 传的 `mc-pane mc-pane--right is-drawer` 全部丢失，抽屉的定位、宽度与 `z-index` 失效，只剩全屏遮罩（平板上的「抽屉展开可见」也一并失效）。改为 `inheritAttrs: false` + 根容器 `v-bind="$attrs"`，多根结构保持不变
 - **换绑邮箱必须验证**：`POST /api/me/email-code` 向新邮箱发 6 位验证码，`PATCH /api/me` 核销通过才落库并标记已验证。此前只校验唯一性，任何人可把邮箱改成他人地址（抢占唯一索引、让重置链接寄给别人）。设置页在邮箱被修改时自动出现验证码行（带倒计时）
 - **可访问性批**：`UiSelect` 改为 `combobox/listbox` 语义并支持 ↑/↓/Home/End/Enter/Esc 与 `aria-activedescendant`（顺带修掉 button 套 button 的无效结构）；`UiDialog` / `UiDrawer` 打开时锁 body 滚动、把焦点移入并做 Tab 焦点环、关闭归还焦点
 - **后台密钥字段可辨识**：SMTP / Redis / 对象存储密码框下方提示「已设置（留空表示不修改）」，站长不必再猜是否配过
