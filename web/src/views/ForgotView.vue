@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { KeyIcon, LockOnIcon, MailIcon } from 'tdesign-icons-vue-next'
@@ -13,6 +13,7 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import { authApi } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const { t, te } = useAppI18n()
 
 /** 1 = 填写邮箱获取链接；2 = 用邮件中的令牌设置新密码 */
@@ -79,6 +80,22 @@ async function submitReset() {
 function backToStep1() {
   step.value = 1
 }
+
+/**
+ * 邮件里发的是链接 `{前端地址}/forgot?token=xxx`，点开必须直接可用：
+ * - 带 token 进来 → 直接进第二步并自动填入（否则用户会在第一步迷路，
+ *   而邮件正文里并没有可复制的令牌）
+ * - 填好后顺手 clean 掉地址栏里的 token（避免截图/分享时泄漏）
+ */
+onMounted(() => {
+  const raw = route.query.token
+  const token = Array.isArray(raw) ? raw[0] : raw
+  if (typeof token === 'string' && token.trim()) {
+    resetForm.token = token.trim()
+    step.value = 2
+    void router.replace({ path: '/forgot' })
+  }
+})
 </script>
 
 <template>

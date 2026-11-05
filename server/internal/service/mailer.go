@@ -50,7 +50,7 @@ func (m *Mailer) Config() config.SMTPConfig {
 // 兼容两种常见服务商形态：
 //   - 465：隐式 TLS（QQ / 163 等），连接即加密
 //   - 587 / 25：明文连接后 STARTTLS 升级，再认证
-func (m *Mailer) SendResetLink(to, link string) {
+func (m *Mailer) SendResetLink(to, link, token string) {
 	cfg := m.Config()
 	if !cfg.Enabled() {
 		// 日志里出现完整链接 = 把可用的重置令牌暴露给所有能读日志的人
@@ -64,7 +64,7 @@ func (m *Mailer) SendResetLink(to, link string) {
 		}
 		return
 	}
-	if err := sendMail(cfg, to, buildResetMessage(cfg, to, link)); err != nil {
+	if err := sendMail(cfg, to, buildResetMessage(cfg, to, link, token)); err != nil {
 		slog.Error("mail send failed", "to", to, "host", cfg.Host, "port", cfg.Port, "err", err.Error())
 		return
 	}
@@ -105,8 +105,12 @@ func (m *Mailer) SendTest(to string) error {
 }
 
 // buildResetMessage 组装 MIME 邮件：主题 RFC 2047 编码、正文 base64，避免中文乱码。
-func buildResetMessage(cfg config.SMTPConfig, to, link string) []byte {
+//
+// 正文同时给出「链接」与「令牌原文」：邮件客户端把链接转成不可点、或被安全网关
+// 改写时，用户仍能把令牌粘到找回密码页面，不至于整条流程断死。
+func buildResetMessage(cfg config.SMTPConfig, to, link, token string) []byte {
 	body := "请在 15 分钟内点击以下链接重置密码：\r\n\r\n" + link +
+		"\r\n\r\n若链接无法点击，可打开「忘记密码」页面并把下面的令牌粘贴进去：\r\n\r\n" + token +
 		"\r\n\r\n若非本人操作，请忽略本邮件。\r\n"
 	return buildPlainMessage(cfg, to, "ModernChat 密码重置", body)
 }

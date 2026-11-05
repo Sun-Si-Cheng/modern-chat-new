@@ -378,7 +378,7 @@ func (h *AuthHandler) Forgot(c *gin.Context) {
 			return
 		}
 		link := h.cfg.FrontendURLs[0] + "/forgot?token=" + token
-		h.mailer.SendResetLink(req.Email, link)
+		h.mailer.SendResetLink(req.Email, link, token)
 	} else {
 		// 均衡耗时：执行一次等价的 bcrypt 比对
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Email))

@@ -23,8 +23,9 @@ func TestNormalizeEmail(t *testing.T) {
 
 func TestBuildResetMessage(t *testing.T) {
 	m := NewMailer(config.SMTPConfig{Host: "smtp.qq.com", Port: "465", From: "no-reply@example.com"})
-	link := "https://chat.example.com/reset?token=abc123"
-	msg := string(buildResetMessage(m.Config(), "user@example.com", link))
+	link := "https://chat.example.com/forgot?token=abc123"
+	token := "abc123"
+	msg := string(buildResetMessage(m.Config(), "user@example.com", link, token))
 
 	// 必备头字段
 	for _, want := range []string{
@@ -64,12 +65,16 @@ func TestBuildResetMessage(t *testing.T) {
 	if !strings.Contains(string(dec), link) {
 		t.Fatalf("解码后的正文应包含重置链接，got %q", dec)
 	}
+	// 链接不可点时的兜底：正文必须同时给出令牌原文
+	if !strings.Contains(string(dec), token) {
+		t.Fatalf("解码后的正文应包含令牌原文，got %q", dec)
+	}
 }
 
 // TestSendResetLinkWithoutSMTP 未配置 SMTP 时只打日志：不得 panic、不得外发。
 func TestSendResetLinkWithoutSMTP(t *testing.T) {
 	m := NewMailer(config.SMTPConfig{})
-	m.SendResetLink("user@example.com", "https://chat.example.com/reset?token=t")
+	m.SendResetLink("user@example.com", "https://chat.example.com/forgot?token=t", "t")
 }
 
 // TestSendResetLinkDialFailure 服务端不可达时失败只记日志，不 panic、不影响调用方。
@@ -77,5 +82,5 @@ func TestSendResetLinkDialFailure(t *testing.T) {
 	m := NewMailer(config.SMTPConfig{
 		Host: "127.0.0.1", Port: "1", User: "u", Pass: "p", From: "no-reply@example.com",
 	})
-	m.SendResetLink("user@example.com", "https://chat.example.com/reset?token=t")
+	m.SendResetLink("user@example.com", "https://chat.example.com/forgot?token=t", "t")
 }
