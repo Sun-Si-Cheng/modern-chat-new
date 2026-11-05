@@ -1138,6 +1138,36 @@ func TestGroupAdminAndMute(t *testing.T) {
 	if row := memberRow(userB.ID); row["role"] != "admin" {
 		t.Fatalf("B 应为 admin，got %v", row["role"])
 	}
+	// 管理员可改群头像；外链头像必须拒绝
+	if code, _ := apiJSON(t, e, "PUT", fmt.Sprintf("/api/conversations/%d/avatar", groupID), tokenB,
+		`{"avatar":"/uploads/group-avatar.png"}`); code != http.StatusOK {
+		t.Fatalf("设置群头像 status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "PUT", fmt.Sprintf("/api/conversations/%d/avatar", groupID), tokenB,
+		`{"avatar":"https://evil.example.com/x.png"}`); code != http.StatusBadRequest {
+		t.Fatalf("外链头像应 400，got %d", code)
+	}
+	_, convAny := apiAny(t, e, "GET", "/api/conversations", tokenC, "")
+	avatarOK := false
+	for _, cv := range convAny.([]any) {
+		m := cv.(map[string]any)
+		if uint64(m["id"].(float64)) == groupID && m["avatar"] == "/uploads/group-avatar.png" {
+			avatarOK = true
+		}
+	}
+	if !avatarOK {
+		t.Fatalf("群头像未同步到会话列表: %v", convAny)
+	}
+	// 普通成员不能改群头像
+	if code, _ := apiJSON(t, e, "PUT", fmt.Sprintf("/api/conversations/%d/avatar", groupID), tokenC,
+		`{"avatar":"/uploads/group-avatar.png"}`); code != http.StatusForbidden {
+		t.Fatalf("普通成员改群头像应 403，got %d", code)
+	}
+	// 群主可恢复默认头像
+	if code, _ := apiJSON(t, e, "PUT", fmt.Sprintf("/api/conversations/%d/avatar", groupID), tokenA,
+		`{"avatar":""}`); code != http.StatusOK {
+		t.Fatalf("清空群头像 status = %d", code)
+	}
 	// 非群主不能设置管理员
 	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/admin", groupID), tokenB,
 		fmt.Sprintf(`{"userId":%d,"admin":true}`, userC.ID)); code != http.StatusForbidden {

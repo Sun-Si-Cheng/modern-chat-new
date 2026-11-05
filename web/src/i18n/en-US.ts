@@ -290,6 +290,13 @@ export default {
     inviteAction: 'Invite',
     inviteEmpty: 'No friends to invite (all of them are already in this group)',
     inviteOk: 'Invited {n} friend(s)',
+    // Group avatar
+    changeAvatar: 'Change avatar',
+    removeAvatar: 'Remove avatar',
+    avatarOk: 'Group avatar updated',
+    avatarRemoved: 'Default avatar restored',
+    avatarInvalid: 'Choose a png / jpeg / webp image',
+    avatarTooLarge: 'Avatar must be under {mb} MB',
     // Admins / mute
     admin: 'Admin',
     makeAdmin: 'Make admin',

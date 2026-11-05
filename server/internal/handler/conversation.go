@@ -13,6 +13,7 @@ import (
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
@@ -26,6 +27,8 @@ type ConversationHandler struct {
 	msgs    *store.MessageStore
 	// settings 用于读取群人数上限等可运营规则（可为 nil，回落到内置默认值）
 	settings *store.SettingStore
+	// storage 校验群头像 URL 归属（可为 nil，回落本地前缀判断）
+	storage service.Storage
 }
 
 // maxGroupMembers 当前生效的群人数上限。
@@ -42,9 +45,11 @@ func NewConversationHandler(
 	convs *store.ConversationStore,
 	msgs *store.MessageStore,
 	settings *store.SettingStore,
+	storage service.Storage,
 ) *ConversationHandler {
 	return &ConversationHandler{
-		users: users, friends: friends, convs: convs, msgs: msgs, settings: settings,
+		users: users, friends: friends, convs: convs, msgs: msgs,
+		settings: settings, storage: storage,
 	}
 }
 
@@ -601,6 +606,63 @@ func (h *ConversationHandler) Read(c *gin.Context) {
 			})
 		}
 	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SetAvatar 修改群头像：群主 / 管理员可操作，空串表示恢复默认头像。
+// 头像地址必须来自本站上传接口，防止把群头像换成任意外链（会泄露成员 IP）。
+func (h *ConversationHandler) SetAvatar(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Avatar string `json:"avatar"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	conv, err := h.convs.ByID(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil {
+		fail(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+	if conv.Type != 2 {
+		fail(c, http.StatusUnprocessableEntity, "只有群聊可以设置头像")
+		return
+	}
+	me := middleware.UserFrom(c)
+	if _, ok := h.requireManager(c, convID, me.ID); !ok {
+		return
+	}
+	avatar := strings.TrimSpace(req.Avatar)
+	if avatar != "" {
+		owned := false
+		if h.storage != nil {
+			owned = h.storage.Owns(avatar)
+		} else {
+			owned = strings.HasPrefix(avatar, "/uploads/") && !strings.Contains(avatar, "..")
+		}
+		if !owned {
+			fail(c, http.StatusBadRequest, "头像地址不合法")
+			return
+		}
+	}
+	if err := h.convs.SetAvatar(convID, avatar); err != nil {
+		internal(c, err)
+		return
+	}
+	ids, err := h.convs.MemberUserIDs(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("group avatar updated", "conv", convID, "by", me.ID, "empty", avatar == "")
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

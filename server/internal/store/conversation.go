@@ -139,6 +139,15 @@ func (s *ConversationStore) InviteMembers(convID uint, userIDs []uint, maxMember
 	return added, err
 }
 
+// SetAvatar 设置群头像（空串表示恢复默认头像）。
+func (s *ConversationStore) SetAvatar(convID uint, avatar string) error {
+	var value any
+	if avatar != "" {
+		value = avatar
+	}
+	return s.db.Model(&model.Conversation{}).Where("id = ?", convID).Update("avatar", value).Error
+}
+
 // SetMemberRole 设置成员角色（owner 转让走 SetOwner；这里用于 admin/member）。
 func (s *ConversationStore) SetMemberRole(convID, userID uint, role string) error {
 	return s.db.Model(&model.ConversationMember{}).
@@ -294,6 +303,7 @@ type convRow struct {
 	ID              uint
 	Type            int8
 	Name            *string
+	Avatar          string
 	OwnerID         *uint
 	LastMessageID   *uint64
 	LastMessageAt   *time.Time
@@ -311,7 +321,7 @@ type convRow struct {
 func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, error) {
 	var rows []convRow
 	err := s.db.Raw(`
-		SELECT c.id, c.type, c.name, c.owner_id,
+		SELECT c.id, c.type, c.name, COALESCE(c.avatar, '') AS avatar, c.owner_id,
 		       uc.last_message_id, uc.last_message_at, uc.unread_count,
 		       uc.pinned, uc.muted, uc.mention_unread,
 		       c.announcement, c.announcement_at, c.announcement_by,
@@ -379,6 +389,7 @@ func (s *ConversationStore) ListFor(userID uint) ([]model.ConversationView, erro
 			ID:            r.ID,
 			Type:          r.Type,
 			Name:          r.Name,
+			Avatar:        r.Avatar,
 			OwnerID:       r.OwnerID,
 			LastMessageID: r.LastMessageID,
 			LastMessageAt: r.LastMessageAt,
@@ -531,7 +542,11 @@ func (s *ConversationStore) SearchGroups(kw string, limit int) ([]model.Conversa
 			return nil, err
 		}
 		c := cs[i]
-		out = append(out, model.ConversationView{ID: c.ID, Type: c.Type, Name: c.Name, OwnerID: c.OwnerID, MemberCount: int(n)})
+		// 头像也一并下发：搜索结果里直接显示群头像
+		out = append(out, model.ConversationView{
+			ID: c.ID, Type: c.Type, Name: c.Name, Avatar: c.Avatar,
+			OwnerID: c.OwnerID, MemberCount: int(n),
+		})
 	}
 	return out, nil
 }

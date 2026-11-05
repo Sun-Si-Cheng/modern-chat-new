@@ -4,9 +4,11 @@ import "time"
 
 // Conversation 统一会话：type=1 单聊、type=2 群聊（同构）。
 type Conversation struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Type      int8      `gorm:"not null" json:"type"`
-	Name      *string   `gorm:"size:30" json:"name,omitempty"`
+	ID   uint    `gorm:"primaryKey" json:"id"`
+	Type int8    `gorm:"not null" json:"type"`
+	Name *string `gorm:"size:30" json:"name,omitempty"`
+	// Avatar 群头像地址（图片上传接口返回的 URL）；空表示使用默认头像
+	Avatar    string    `gorm:"size:255" json:"avatar,omitempty"`
 	OwnerID   *uint     `json:"ownerId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	// 群公告：仅群主可改，空串表示没有公告

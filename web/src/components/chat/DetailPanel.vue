@@ -15,12 +15,14 @@ import { convApi, mediaApi, type ConversationFile } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
+import { useSiteStore } from '@/stores/site'
 import { useWsStore } from '@/stores/ws'
 import type { ConversationMember } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
 const friendsStore = useFriendsStore()
+const siteStore = useSiteStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
@@ -158,6 +160,89 @@ async function removeFile(f: ConversationFile) {
     files.value = files.value.filter((x) => x.id !== f.id)
   } catch (err) {
     void MessagePlugin.error(te(err))
+  }
+}
+
+// ===== 群头像 =====
+
+const groupAvatarInput = ref<HTMLInputElement | null>(null)
+const avatarUploading = ref(false)
+
+function pickGroupAvatar() {
+  if (!canManage.value || avatarUploading.value) return
+  groupAvatarInput.value?.click()
+}
+
+/** 群头像最大边 512，足够列表/头部显示，避免原图直传 */
+async function compressGroupAvatar(file: File): Promise<Blob> {
+  if (file.size < 300 * 1024 || !file.type.startsWith('image/')) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height))
+    const w = Math.max(1, Math.round(bitmap.width * scale))
+    const h = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      bitmap.close?.()
+      return file
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    bitmap.close?.()
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/webp', 0.82),
+    )
+    return blob && blob.size < file.size ? blob : file
+  } catch {
+    return file
+  }
+}
+
+async function onGroupAvatarChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const c = conv.value
+  if (!file || !c) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    void MessagePlugin.warning(t('group.avatarInvalid'))
+    return
+  }
+  if (file.size > siteStore.config.maxImageMB << 20) {
+    void MessagePlugin.warning(t('group.avatarTooLarge', { mb: siteStore.config.maxImageMB }))
+    return
+  }
+  avatarUploading.value = true
+  try {
+    const blob = await compressGroupAvatar(file)
+    const name = blob === file ? file.name : file.name.replace(/\.\w+$/, '') + '.webp'
+    const up = await mediaApi.upload('image', blob, name)
+    await convApi.setAvatar(c.id, up.url)
+    c.avatar = up.url
+    await convStore.loadConversations()
+    void MessagePlugin.success(t('group.avatarOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+async function removeGroupAvatar() {
+  const c = conv.value
+  if (!c || avatarUploading.value) return
+  avatarUploading.value = true
+  try {
+    await convApi.setAvatar(c.id, '')
+    c.avatar = ''
+    await convStore.loadConversations()
+    void MessagePlugin.success(t('group.avatarRemoved'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    avatarUploading.value = false
   }
 }
 
@@ -471,6 +556,41 @@ async function leave() {
   <div class="mc-detail">
     <!-- 群信息 / 群管理 -->
     <template v-if="conv">
+      <!-- 群头像：群主 / 管理员可点击更换 -->
+      <div v-if="isGroup" class="mc-detail__group-head">
+        <button
+          v-if="canManage"
+          type="button"
+          class="mc-detail__group-avatar is-editable"
+          :disabled="avatarUploading"
+          :title="t('group.changeAvatar')"
+          @click="pickGroupAvatar"
+        >
+          <AvatarBadge :name="conv.name ?? '#'" :src="conv.avatar" color="#2ba471" :size="48" />
+          <span class="mc-detail__avatar-edit">
+            {{ avatarUploading ? t('message.uploading') : t('group.changeAvatar') }}
+          </span>
+        </button>
+        <AvatarBadge v-else :name="conv.name ?? '#'" :src="conv.avatar" color="#2ba471" :size="48" />
+        <div class="mc-detail__group-meta">
+          <span class="mc-detail__group-name">{{ conv.name }}</span>
+          <a
+            v-if="canManage && conv.avatar"
+            class="mc-detail__avatar-remove"
+            @click="removeGroupAvatar"
+          >
+            {{ t('group.removeAvatar') }}
+          </a>
+        </div>
+        <input
+          ref="groupAvatarInput"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          class="mc-detail__file-input"
+          @change="onGroupAvatarChange"
+        />
+      </div>
+
       <!-- 群公告：所有成员可见，仅群主可编辑 -->
       <div v-if="isGroup" class="mc-detail__section">
         <div class="mc-detail__title">
@@ -726,6 +846,74 @@ async function leave() {
   /* 面板是 flex column 且整体滚动：子项默认会被等比压缩，
      成员一多就把底部「退群」按钮挤成一条细线。固定住高度让它滚动而不是压缩。 */
   flex-shrink: 0;
+}
+
+/* 群头像 */
+.mc-detail__group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--td-component-border);
+  flex-shrink: 0;
+}
+
+.mc-detail__group-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: default;
+}
+
+.mc-detail__group-avatar.is-editable {
+  cursor: pointer;
+}
+
+.mc-detail__group-avatar.is-editable:hover :deep(.mc-avatar) {
+  box-shadow: 0 0 0 2px var(--mc-selection);
+}
+
+.mc-detail__group-avatar:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.mc-detail__avatar-edit {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--td-brand-color);
+  white-space: nowrap;
+}
+
+.mc-detail__group-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-detail__group-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-detail__avatar-remove {
+  font-size: 12px;
+  color: var(--td-error-color);
+  cursor: pointer;
+}
+
+.mc-detail__avatar-remove:hover {
+  text-decoration: underline;
 }
 
 /* 群文件 */

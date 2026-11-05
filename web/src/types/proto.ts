@@ -33,6 +33,8 @@ export interface Conversation {
   type: ConvType
   /** 群名；单聊为 null，展示时取 peer 昵称 */
   name: string | null
+  /** 群头像地址；单聊为空（用 peer 的资料） */
+  avatar?: string
   /** 单聊对方的公开信息（服务端拼装）；群聊为 null */
   peer: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'> | null
   ownerId: number | null

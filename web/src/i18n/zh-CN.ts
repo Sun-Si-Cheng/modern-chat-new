@@ -295,6 +295,13 @@ export default {
     inviteAction: '邀请',
     inviteEmpty: '没有可邀请的好友（好友都已在群中）',
     inviteOk: '已邀请 {n} 位好友入群',
+    // 群头像
+    changeAvatar: '更换群头像',
+    removeAvatar: '移除头像',
+    avatarOk: '群头像已更新',
+    avatarRemoved: '已恢复默认头像',
+    avatarInvalid: '请选择 png / jpeg / webp 图片',
+    avatarTooLarge: '头像不能超过 {mb} MB',
     // 管理员 / 禁言
     admin: '管理员',
     makeAdmin: '设为管理员',

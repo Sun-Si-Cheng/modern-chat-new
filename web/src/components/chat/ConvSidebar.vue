@@ -177,7 +177,7 @@ function convAvatar(c: Conversation): { name: string; color: string; avatar?: st
         color: c.peer?.avatarColor ?? '#0052d9',
         avatar: c.peer?.avatar,
       }
-    : { name: c.name ?? '#', color: '#2ba471' }
+    : { name: c.name ?? '#', color: '#2ba471', avatar: c.avatar }
 }
 
 function fmtTime(ts: string | null): string {
@@ -380,7 +380,7 @@ const sortedConvs = computed(() => {
           :class="{ 'is-busy': busyKey === `join-${g.id}` }"
           @click="joinGroup(g)"
         >
-          <AvatarBadge :name="g.name ?? '#'" color="#2ba471" :size="32" />
+          <AvatarBadge :name="g.name ?? '#'" :src="g.avatar" color="#2ba471" :size="32" />
           <span class="mc-sidebar__result-name">{{ g.name }}</span>
           <span class="text-placeholder num">{{ t('chat.membersCount', { n: g.memberCount }) }}</span>
         </TListItem>

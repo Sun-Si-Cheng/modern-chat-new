@@ -750,7 +750,7 @@ const senderName = (m: Message) => {
       <div v-if="conv" class="mc-msgpane__identity">
         <AvatarBadge
           :name="conv.type === 1 ? (conv.peer?.nickname ?? '?') : (conv.name ?? '#')"
-          :src="conv.type === 1 ? conv.peer?.avatar : undefined"
+          :src="conv.type === 1 ? conv.peer?.avatar : conv.avatar"
           :color="conv.type === 1 ? (conv.peer?.avatarColor ?? '#0052d9') : '#2ba471'"
           :online="conv.type === 1 && conv.peer ? ws.onlineUsers.has(conv.peer.id) : false"
           :size="32"

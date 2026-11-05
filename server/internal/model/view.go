@@ -24,9 +24,11 @@ func (u *User) Brief() UserBrief {
 
 // ConversationView 会话列表 / 创建会话的响应体（§3.1 Conversation）。
 type ConversationView struct {
-	ID                 uint       `json:"id"`
-	Type               int8       `json:"type"`
-	Name               *string    `json:"name"`
+	ID   uint    `json:"id"`
+	Type int8    `json:"type"`
+	Name *string `json:"name"`
+	// Avatar 群头像；单聊为空（用 peer 的资料）
+	Avatar             string     `json:"avatar"`
 	Peer               *UserBrief `json:"peer"`
 	OwnerID            *uint      `json:"ownerId"`
 	MemberCount        int        `json:"memberCount"`

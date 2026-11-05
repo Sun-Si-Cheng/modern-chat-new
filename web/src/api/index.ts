@@ -107,6 +107,9 @@ export const convApi = {
   leave: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/leave`),
   read: (convId: number, upToId: number) => http.post<{ ok: true }>(`/conversations/${convId}/read`, { upToId }),
   rename: (convId: number, name: string) => http.patch<{ ok: true }>(`/conversations/${convId}`, { name }),
+  /** 修改群头像；空串恢复默认头像 */
+  setAvatar: (convId: number, avatar: string) =>
+    http.put<{ ok: true }>(`/conversations/${convId}/avatar`, { avatar }),
   /** 群文件列表 / 记账 / 删除（文件本体走 upload(kind=file)） */
   files: (convId: number) => http.get<ConversationFile[]>(`/conversations/${convId}/files`),
   addFile: (convId: number, f: { name: string; url: string; size: number }) =>
