@@ -63,6 +63,7 @@
 ### 变更
 
 - **表情回应暂未开放**：消息气泡下的 emoji 表态入口已隐藏（功能开关 `web/src/config/features.ts` `FEATURES.reactions = false`，代码与逻辑保留，改回 `true` 即可重新启用）。该能力按设计文档划在二期，本期只做自定义表情发送
+- **空会话门面标记改用产品 favicon**：聊天主区空态卡片顶部的标记从 TDesign 双气泡图标换成 `/favicon.ico`，与浏览器标签页图标统一
 
 ### 修复
 

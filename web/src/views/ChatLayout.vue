@@ -3,7 +3,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { ChatDoubleFilledIcon, UsergroupIcon } from 'tdesign-icons-vue-next'
+import { UsergroupIcon } from 'tdesign-icons-vue-next'
 
 import AddFriendDialog from '@/components/chat/AddFriendDialog.vue'
 import AnnouncementDialog from '@/components/chat/AnnouncementDialog.vue'
@@ -237,8 +237,8 @@ onUnmounted(() => {
         <div v-else class="mc-layout__empty">
           <div class="mc-empty">
             <div class="mc-empty__mark" aria-hidden="true">
-              <!-- 用 TDesign 的实心双气泡图标（与产品 logo 造型一致），替代原先的手绘线条 -->
-              <ChatDoubleFilledIcon size="26px" />
+              <!-- 产品 favicon 作为空态门面标记 -->
+              <img src="/favicon.ico" alt="" class="mc-empty__mark-img" />
             </div>
             <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
             <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>
@@ -437,6 +437,12 @@ onUnmounted(() => {
   border-radius: var(--mc-radius-lg);
   background: var(--td-brand-color-1, rgba(0, 82, 217, 0.1));
   color: var(--td-brand-color);
+}
+
+.mc-empty__mark-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .mc-empty__title {
