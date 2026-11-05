@@ -762,6 +762,148 @@ func TestUnreadReadAndDeleteFlow(t *testing.T) {
 	}
 }
 
+// TestGroupInviteFlow 群聊「拉人」：任意成员可邀请自己的好友，已入群幂等，
+// 非好友 / 非群成员 / 单聊均拒绝，被邀请人立刻看到会话。
+func TestGroupInviteFlow(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "gi-admin")
+	tokenA, userA := register(t, e, "gi-alice")
+	tokenB, userB := register(t, e, "gi-bob")
+	tokenC, userC := register(t, e, "gi-carol")
+	tokenD, userD := register(t, e, "gi-dave")
+
+	makeFriends := func(fromToken, toUsername, toToken string) {
+		t.Helper()
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", fromToken,
+			fmt.Sprintf(`{"toUsername":%q}`, toUsername)); code != http.StatusOK {
+			t.Fatalf("apply %s status = %d", toUsername, code)
+		}
+		_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", toToken, "")
+		reqs, _ := reqsAny.([]any)
+		if len(reqs) == 0 {
+			t.Fatalf("%s 应收到好友申请", toUsername)
+		}
+		reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", toToken,
+			fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+			t.Fatalf("handle %s status = %d", toUsername, code)
+		}
+	}
+	makeFriends(tokenA, userB.Username, tokenB)
+	makeFriends(tokenA, userC.Username, tokenC)
+
+	code, group := apiJSON(t, e, "POST", "/api/conversations/group", tokenA, `{"name":"邀请测试群"}`)
+	if code != http.StatusOK {
+		t.Fatalf("建群 status = %d", code)
+	}
+	groupID := uint64(group["id"].(float64))
+
+	memberIDs := func() []uint64 {
+		t.Helper()
+		code, listAny := apiAny(t, e, "GET", fmt.Sprintf("/api/conversations/%d/members", groupID), tokenA, "")
+		if code != http.StatusOK {
+			t.Fatalf("members status = %d", code)
+		}
+		var ids []uint64
+		for _, it := range listAny.([]any) {
+			ids = append(ids, uint64(it.(map[string]any)["userId"].(float64)))
+		}
+		return ids
+	}
+	hasConv := func(token string) bool {
+		t.Helper()
+		_, listAny := apiAny(t, e, "GET", "/api/conversations", token, "")
+		for _, cv := range listAny.([]any) {
+			if uint64(cv.(map[string]any)["id"].(float64)) == groupID {
+				return true
+			}
+		}
+		return false
+	}
+
+	// B 连接要在邀请前建立：被邀请人需要实时收到 conv_change
+	connB := wsDial(t, e, tokenB)
+
+	// A 邀请好友 B、C：一次拉两人
+	code, out := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d,%d]}`, userB.ID, userC.ID))
+	if code != http.StatusOK || out["added"].(float64) != 2 {
+		t.Fatalf("批量邀请 status=%d out=%v", code, out)
+	}
+	if got := len(memberIDs()); got != 3 {
+		t.Fatalf("邀请后成员应为 3，got %d", got)
+	}
+	f := readFrame(t, connB, "conv_change")
+	if uint64(f["convId"].(float64)) != groupID || f["meta"] != true {
+		t.Fatalf("被邀请人应收到 meta conv_change，got %v", f)
+	}
+	if !hasConv(tokenB) || !hasConv(tokenC) {
+		t.Fatalf("被邀请人的会话列表应立即出现该群")
+	}
+
+	// 重复邀请已入群的人：幂等，added=0
+	code, out = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d]}`, userB.ID))
+	if code != http.StatusOK || out["added"].(float64) != 0 {
+		t.Fatalf("重复邀请应幂等，status=%d out=%v", code, out)
+	}
+	if got := len(memberIDs()); got != 3 {
+		t.Fatalf("重复邀请后成员仍应为 3，got %d", got)
+	}
+
+	// 非好友不能拉：A 和 D 不是好友
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d]}`, userD.ID))
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("邀请非好友应 422，got %d", code)
+	}
+
+	// 非群成员不能拉人：D 尚未入群
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenD,
+		fmt.Sprintf(`{"userIds":[%d]}`, userC.ID))
+	if code != http.StatusForbidden {
+		t.Fatalf("非群成员邀请应 403，got %d", code)
+	}
+
+	// 普通成员也能拉自己的好友：B 和 D 成为好友后，B 邀请 D
+	makeFriends(tokenB, userD.Username, tokenD)
+	code, out = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenB,
+		fmt.Sprintf(`{"userIds":[%d]}`, userD.ID))
+	if code != http.StatusOK || out["added"].(float64) != 1 {
+		t.Fatalf("普通成员邀请 status=%d out=%v", code, out)
+	}
+	if got := len(memberIDs()); got != 4 {
+		t.Fatalf("再次邀请后成员应为 4，got %d", got)
+	}
+	if !hasConv(tokenD) {
+		t.Fatalf("D 的会话列表应出现该群")
+	}
+
+	// 单聊不能拉人
+	code, single := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("发起单聊 status = %d", code)
+	}
+	singleID := uint64(single["id"].(float64))
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", singleID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d]}`, userC.ID))
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("单聊邀请应 422，got %d", code)
+	}
+
+	// 空列表 / 只包含自己：400
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA, `{"userIds":[]}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("空邀请列表应 400，got %d", code)
+	}
+	code, _ = apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d]}`, userA.ID))
+	if code != http.StatusBadRequest {
+		t.Fatalf("只邀请自己应 400，got %d", code)
+	}
+}
+
 func TestPluginInstallAndFetch(t *testing.T) {
 	e := setup(t)
 	// 首个注册者才是站长：必须先注册后台账号，再用它跑 /api/admin/* 断言。

@@ -270,6 +270,12 @@ export default {
     fileTooLarge: 'File must be under 20 MB',
     transfer: 'Transfer ownership',
     kick: 'Remove',
+    // Invite friends into the group
+    invite: 'Add members',
+    inviteTitle: 'Invite friends to this group',
+    inviteAction: 'Invite',
+    inviteEmpty: 'No friends to invite (all of them are already in this group)',
+    inviteOk: 'Invited {n} friend(s)',
     me: ' (you)',
     owner: 'Owner',
     leave: 'Leave group',

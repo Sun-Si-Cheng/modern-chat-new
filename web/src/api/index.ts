@@ -100,6 +100,9 @@ export const convApi = {
     http.get<MessagesPage>(`/conversations/${convId}/messages`, { beforeId, limit }),
   members: (convId: number) => http.get<ConversationMember[]>(`/conversations/${convId}/members`),
   join: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/join`),
+  /** 拉人入群：只能邀请自己的好友，已入群的人会被忽略 */
+  invite: (convId: number, userIds: number[]) =>
+    http.post<{ ok: true; added: number }>(`/conversations/${convId}/invite`, { userIds }),
   leave: (convId: number) => http.post<{ ok: true }>(`/conversations/${convId}/leave`),
   read: (convId: number, upToId: number) => http.post<{ ok: true }>(`/conversations/${convId}/read`, { upToId }),
   rename: (convId: number, name: string) => http.patch<{ ok: true }>(`/conversations/${convId}`, { name }),

@@ -366,6 +366,101 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// Invite 拉好友入群：任意群成员都可以邀请，但只能邀请自己的好友。
+// 已在群中的人会被忽略（幂等），整批超出人数上限则整体拒绝。
+func (h *ConversationHandler) Invite(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		UserIDs []uint `json:"userIds"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireMember(c, convID) {
+		return
+	}
+	conv, err := h.convs.ByID(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if conv == nil {
+		fail(c, http.StatusNotFound, "会话不存在")
+		return
+	}
+	if conv.Type != 2 {
+		fail(c, http.StatusUnprocessableEntity, "只有群聊可以拉人")
+		return
+	}
+
+	// 去重并排除自己
+	ids := make([]uint, 0, len(req.UserIDs))
+	seen := make(map[uint]bool, len(req.UserIDs))
+	for _, id := range req.UserIDs {
+		if id == 0 || id == me.ID || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		fail(c, http.StatusBadRequest, "请选择要邀请的好友")
+		return
+	}
+	if len(ids) > 50 {
+		fail(c, http.StatusBadRequest, "一次最多邀请 50 人")
+		return
+	}
+
+	// 只能拉自己的好友：避免任意用户被陌生人强行拉进群
+	friendIDs, err := h.friends.FriendIDs(me.ID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	isFriend := make(map[uint]bool, len(friendIDs))
+	for _, id := range friendIDs {
+		isFriend[id] = true
+	}
+	for _, id := range ids {
+		if !isFriend[id] {
+			fail(c, http.StatusUnprocessableEntity, "只能邀请自己的好友")
+			return
+		}
+	}
+
+	maxMembers := int64(h.maxGroupMembers())
+	added, err := h.convs.InviteMembers(convID, ids, maxMembers)
+	if err != nil {
+		if errors.Is(err, store.ErrGroupFull) {
+			fail(c, http.StatusUnprocessableEntity,
+				fmt.Sprintf("群成员已满（%d 人上限）", maxMembers))
+			return
+		}
+		internal(c, err)
+		return
+	}
+	if len(added) > 0 {
+		if err := h.initInboxes(convID, added...); err != nil {
+			internal(c, err)
+			return
+		}
+	}
+	allIDs, err := h.convs.MemberUserIDs(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("members invited", "conv", convID, "by", me.ID, "added", len(added))
+	// 新成员也要收到：他们的会话列表需要立刻出现这个群
+	notifyFor(c).ToUsers(allIDs, convMetaFrame(convID))
+	c.JSON(http.StatusOK, gin.H{"ok": true, "added": len(added)})
+}
+
 // Leave 退群（群主须先转让）。
 func (h *ConversationHandler) Leave(c *gin.Context) {
 	convID, ok := parseConvID(c)

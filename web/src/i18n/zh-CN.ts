@@ -275,6 +275,12 @@ export default {
     fileTooLarge: '文件不能超过 20 MB',
     transfer: '转让群主',
     kick: '移出',
+    // 拉人入群
+    invite: '拉人',
+    inviteTitle: '邀请好友加入群聊',
+    inviteAction: '邀请',
+    inviteEmpty: '没有可邀请的好友（好友都已在群中）',
+    inviteOk: '已邀请 {n} 位好友入群',
     me: '（我）',
     owner: '群主',
     leave: '退出群聊',

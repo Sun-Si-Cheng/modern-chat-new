@@ -84,6 +84,61 @@ func (s *ConversationStore) JoinGroup(convID, userID uint, maxMembers int64) err
 	})
 }
 
+// InviteMembers 批量拉人入群。与 JoinGroup 共用同一把会话行锁，
+// 保证「数成员 → 判容量 → 写成员」在并发邀请/入群下不会突破上限。
+// 已在群中的人会被忽略（幂等）；返回本次实际新增的用户 id。
+func (s *ConversationStore) InviteMembers(convID uint, userIDs []uint, maxMembers int64) ([]uint, error) {
+	var added []uint
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var conv model.Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conv, convID).Error; err != nil {
+			return err
+		}
+		var existing []uint
+		if err := tx.Model(&model.ConversationMember{}).
+			Where("conversation_id = ? AND user_id IN ?", convID, userIDs).
+			Pluck("user_id", &existing).Error; err != nil {
+			return err
+		}
+		seen := make(map[uint]bool, len(existing))
+		for _, id := range existing {
+			seen[id] = true
+		}
+		pending := make([]uint, 0, len(userIDs))
+		for _, id := range userIDs {
+			if !seen[id] {
+				pending = append(pending, id)
+			}
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+
+		var n int64
+		if err := tx.Model(&model.ConversationMember{}).
+			Where("conversation_id = ?", convID).Count(&n).Error; err != nil {
+			return err
+		}
+		// 整批放不下就整体拒绝，避免「邀请 5 人只进来 2 个」这种难以解释的部分成功
+		if n+int64(len(pending)) > maxMembers {
+			return ErrGroupFull
+		}
+
+		rows := make([]model.ConversationMember, 0, len(pending))
+		for _, id := range pending {
+			rows = append(rows, model.ConversationMember{
+				ConversationID: convID, UserID: id, Role: "member",
+			})
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+		added = pending
+		return nil
+	})
+	return added, err
+}
+
 // RemoveMember 踢人 / 退群时删除成员行。
 func (s *ConversationStore) RemoveMember(convID, userID uint) error {
 	return s.db.Where("conversation_id = ? AND user_id = ?", convID, userID).

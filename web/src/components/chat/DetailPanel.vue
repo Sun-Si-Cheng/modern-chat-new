@@ -2,6 +2,7 @@
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
@@ -13,11 +14,13 @@ import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi, mediaApi, type ConversationFile } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import { useFriendsStore } from '@/stores/friends'
 import { useWsStore } from '@/stores/ws'
 import type { ConversationMember } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
+const friendsStore = useFriendsStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
@@ -204,6 +207,49 @@ const memberOptions = computed(() =>
 // 弹窗的确认按钮可重复点击（改名/转让都是重操作），用 busy 挡住第二次提交并给出加载反馈
 const renaming = ref(false)
 const transferring = ref(false)
+
+// ===== 拉人入群 =====
+const inviteVisible = ref(false)
+const inviteSelected = ref<number[]>([])
+const inviting = ref(false)
+
+/** 可邀请的好友：排除已在群里的成员（含自己） */
+const inviteCandidates = computed(() => {
+  const memberIds = new Set(members.value.map((m) => m.userId))
+  return friendsStore.accepted.filter((f) => !memberIds.has(f.friend.id))
+})
+
+function openInvite() {
+  inviteSelected.value = []
+  inviteVisible.value = true
+}
+
+function toggleInvite(userId: number, checked: boolean) {
+  if (checked) {
+    if (!inviteSelected.value.includes(userId)) {
+      inviteSelected.value = [...inviteSelected.value, userId]
+    }
+  } else {
+    inviteSelected.value = inviteSelected.value.filter((id) => id !== userId)
+  }
+}
+
+async function doInvite() {
+  const c = conv.value
+  if (!c || !inviteSelected.value.length || inviting.value) return
+  inviting.value = true
+  try {
+    const r = await convApi.invite(c.id, inviteSelected.value)
+    inviteVisible.value = false
+    inviteSelected.value = []
+    await Promise.all([convStore.loadConversations(), refreshMembers()])
+    void MessagePlugin.success(t('group.inviteOk', { n: r.added }))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    inviting.value = false
+  }
+}
 
 async function doRename() {
   if (!conv.value || !newName.value.trim() || renaming.value) return
@@ -430,9 +476,12 @@ async function leave() {
               {{ t('chat.membersCount', { n: members.length || conv.memberCount }) }}
             </span>
           </span>
-          <span v-if="isOwner" class="mc-detail__actions">
-            <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
-            <a @click="transferVisible = true">{{ t('group.transfer') }}</a>
+          <span class="mc-detail__actions">
+            <a @click="openInvite">{{ t('group.invite') }}</a>
+            <template v-if="isOwner">
+              <a @click="newName = conv.name ?? ''; renameVisible = true">{{ t('group.rename') }}</a>
+              <a @click="transferVisible = true">{{ t('group.transfer') }}</a>
+            </template>
           </span>
         </div>
 
@@ -516,6 +565,36 @@ async function leave() {
     @confirm="doTransfer"
   >
     <UiSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
+  </UiDialog>
+
+  <!-- 拉人入群：多选自己的好友 -->
+  <UiDialog
+    v-model:visible="inviteVisible"
+    :header="t('group.inviteTitle')"
+    :confirm-btn="{ content: t('group.inviteAction'), theme: 'primary' }"
+    :confirm-btn-loading="inviting"
+    @confirm="doInvite"
+  >
+    <div class="mc-detail__invite">
+      <p v-if="!inviteCandidates.length" class="mc-detail__invite-empty text-placeholder">
+        {{ t('group.inviteEmpty') }}
+      </p>
+      <div v-for="f in inviteCandidates" :key="f.friend.id" class="mc-detail__invite-item">
+        <UiCheckbox
+          :model-value="inviteSelected.includes(f.friend.id)"
+          @update:model-value="toggleInvite(f.friend.id, $event)"
+        >
+          <AvatarBadge
+            :name="f.friend.nickname"
+            :src="f.friend.avatar"
+            :color="f.friend.avatarColor"
+            :size="28"
+          />
+          <span class="mc-detail__invite-name">{{ f.friend.nickname }}</span>
+          <span class="text-placeholder mc-detail__invite-username">@{{ f.friend.username }}</span>
+        </UiCheckbox>
+      </div>
+    </div>
   </UiDialog>
 </template>
 
@@ -741,6 +820,40 @@ async function leave() {
 .mc-detail__member-ops a {
   font-size: 12px;
   cursor: pointer;
+}
+
+/* 拉人弹窗：好友多选列表 */
+.mc-detail__invite {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.mc-detail__invite-item {
+  padding: 6px 8px;
+  border-radius: var(--mc-radius-sm);
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-detail__invite-item:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-detail__invite-name {
+  font-size: var(--mc-fs-body);
+}
+
+.mc-detail__invite-username {
+  font-size: var(--mc-fs-caption);
+}
+
+.mc-detail__invite-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
 }
 
 .mc-detail__footer {

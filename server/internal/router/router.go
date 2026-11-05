@@ -159,6 +159,7 @@ func New(d Deps) *gin.Engine {
 		authed.DELETE("/conversations/:id/messages/:messageId", convH.DeleteMessage)
 		authed.GET("/conversations/:id/members", convH.Members)
 		authed.POST("/conversations/:id/join", convH.Join)
+		authed.POST("/conversations/:id/invite", convH.Invite)
 		authed.POST("/conversations/:id/leave", convH.Leave)
 		authed.POST("/conversations/:id/read", convH.Read)
 		authed.PATCH("/conversations/:id", convH.Rename)
