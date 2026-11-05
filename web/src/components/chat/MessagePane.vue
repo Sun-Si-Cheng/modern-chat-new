@@ -133,9 +133,18 @@ function onScroll() {
 }
 
 function scrollToBottom() {
-  void nextTick(() => {
+  const pin = () => {
     const el = scrollerRef.value?.$el as HTMLElement | undefined
     if (el) el.scrollTop = el.scrollHeight
+  }
+  void nextTick(() => {
+    pin()
+    // DynamicScroller 先按 min-item-size 估算、之后才实测真实高度，
+    // 首帧的 scrollHeight 会偏小 —— 只滚一次常常停在历史中段，补两帧校正
+    requestAnimationFrame(() => {
+      pin()
+      requestAnimationFrame(pin)
+    })
   })
 }
 
@@ -144,6 +153,16 @@ watch(
   () => {
     if (stickToBottom.value) scrollToBottom()
   },
+)
+
+// 贴在底部 = 用户在读最新消息；上翻历史时暂停自动已读，回到末尾再补偿
+watch(
+  stickToBottom,
+  (atBottom) => {
+    convStore.setAutoReadPaused(!atBottom)
+    if (atBottom && conv.value) convStore.markRead(conv.value.id)
+  },
+  { immediate: true },
 )
 
 watch(
@@ -155,6 +174,12 @@ watch(
   },
   { immediate: true },
 )
+
+/** 从后台标签页切回：此时才把当前会话的新消息标为已读 */
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+  if (stickToBottom.value && conv.value) convStore.markRead(conv.value.id)
+}
 
 /** Ctrl/Cmd+F：打开详情面板并聚焦「搜索聊天记录」（搜索入口在 DetailPanel） */
 function onPaneKeydown(e: KeyboardEvent) {
@@ -169,6 +194,7 @@ function onPaneKeydown(e: KeyboardEvent) {
 onMounted(() => {
   scrollToBottom()
   window.addEventListener('keydown', onPaneKeydown)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 // ===== 群成员昵称缓存 =====
@@ -479,6 +505,9 @@ watch(previewSrc, (v) => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onPreviewKey)
   window.removeEventListener('keydown', onPaneKeydown)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  // 离开聊天页时恢复自动已读，避免这个开关一直挂在 store 上影响别的入口
+  convStore.setAutoReadPaused(false)
   clearTimeout(recallTimer)
 })
 

@@ -144,7 +144,7 @@ func New(d Deps) *gin.Engine {
 	api.GET("/metrics", metrics.Handler(d.Cfg.MetricsToken))
 	// 站点信息（免鉴权）：站点名、注册开关、消息长度/撤回时限/上传上限。
 	// 不含任何密钥类配置。
-	api.GET("/site", handler.NewSiteHandler(settings, d.Mailer).Get)
+	api.GET("/site", handler.NewSiteHandler(settings, d.Mailer, users).Get)
 	// 群邀请落地页信息（免登录可看；实际加入需要登录）
 	api.GET("/invite/:token", convH.InviteInfo)
 

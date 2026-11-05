@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { ApiError } from '@/api/client'
+
 import { authApi } from '@/api'
 import { getToken, setToken } from '@/api/client'
 import type { User } from '@/types/proto'
@@ -43,8 +45,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return
     try {
       user.value = await authApi.me()
-    } catch {
-      logout()
+    } catch (e) {
+      // 只有鉴权真的失效（401）才清登录态：超时、离线、502 时保留 token，
+      // 否则一次网络抖动就把用户踢下线（表现为「打开设置页突然显示未登录」）
+      if (e instanceof ApiError && e.status === 401) logout()
+      else throw e
     }
   }
 

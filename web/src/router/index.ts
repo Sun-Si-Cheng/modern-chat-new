@@ -6,7 +6,9 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
-    { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue'), meta: { guest: true } },
+    // 不加 guest：已登录用户点邮件里的 /forgot?token=xxx 必须能完成重置，
+    // 否则会被守卫直接送到 /chat、把令牌丢掉
+    { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue') },
     // 设置：公开（未登录时仅可改外观）
     {
       path: '/settings',

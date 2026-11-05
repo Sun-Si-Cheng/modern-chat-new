@@ -38,8 +38,10 @@ const registerForm = reactive({
   emailCode: '',
 })
 
-/** 站点开启「注册需邮箱验证」时才出现邮箱相关字段 */
-const needEmail = computed(() => site.config.requireEmailVerify)
+/** 站点要求填邮箱（首账号也必填）；配置没拉回来之前不渲染，避免白填 */
+const needEmail = computed(() => site.loaded && site.config.requireEmail)
+/** 是否还需要验证码（首账号豁免、未配 SMTP 也不需要） */
+const needCode = computed(() => site.loaded && site.config.requireEmailVerify)
 
 // ===== 邮箱验证码 =====
 
@@ -120,10 +122,12 @@ const rules = computed<FormProps['rules']>(() => ({
       trigger: 'blur',
     },
   ],
-  // 邮箱验证只在站点开启时校验（关闭时字段不渲染，规则也不该拦提交）
+  // 邮箱相关校验只在字段真的渲染时生效（否则会拦住不显示字段的提交）
   ...(needEmail.value
+    ? { email: [{ required: true, message: t('auth.validation.emailRequired'), trigger: 'blur' }] }
+    : {}),
+  ...(needCode.value
     ? {
-        email: [{ required: true, message: t('auth.validation.emailRequired'), trigger: 'blur' }],
         emailCode: [{ required: true, message: t('auth.validation.codeRequired'), trigger: 'blur' }],
       }
     : {}),
@@ -145,7 +149,7 @@ async function doSubmit() {
         registerForm.nickname,
         site.config.requireInviteCode ? registerForm.inviteCode.trim() : undefined,
         needEmail.value ? registerForm.email.trim() : undefined,
-        needEmail.value ? registerForm.emailCode.trim() : undefined,
+        needCode.value ? registerForm.emailCode.trim() : undefined,
       )
       void MessagePlugin.success(t('auth.registerOk'))
     }
@@ -197,13 +201,25 @@ function switchMode(m: 'login' | 'register') {
         @submit="onSubmit"
       >
         <TFormItem name="username">
-          <UiInput v-model="data.username" size="large" :placeholder="t('auth.username')" clearable>
+          <UiInput
+            v-model="data.username"
+            size="large"
+            :placeholder="t('auth.username')"
+            clearable
+            @enter="form?.submit()"
+          >
             <template #prefix-icon><UserIcon /></template>
           </UiInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="nickname">
-          <UiInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
+          <UiInput
+            v-model="registerForm.nickname"
+            size="large"
+            :placeholder="t('auth.nickname')"
+            clearable
+            @enter="form?.submit()"
+          >
             <template #prefix-icon><UserIcon /></template>
           </UiInput>
         </TFormItem>
@@ -216,18 +232,20 @@ function switchMode(m: 'login' | 'register') {
             type="email"
             :placeholder="t('auth.email')"
             clearable
+            @enter="needCode ? sendEmailCode() : form?.submit()"
           >
             <template #prefix-icon><MailIcon /></template>
           </UiInput>
         </TFormItem>
 
-        <TFormItem v-if="mode === 'register' && needEmail" name="emailCode">
+        <TFormItem v-if="mode === 'register' && needCode" name="emailCode">
           <div class="auth-card__code-row">
             <UiInput
               v-model="registerForm.emailCode"
               size="large"
               :maxlength="6"
               :placeholder="t('auth.emailCode')"
+              @enter="form?.submit()"
             />
             <UiButton
               variant="outline"
@@ -254,13 +272,25 @@ function switchMode(m: 'login' | 'register') {
         </TFormItem>
 
         <TFormItem name="password" :help="mode === 'register' ? t('auth.passwordHelp') : undefined">
-          <UiInput v-model="data.password" size="large" type="password" :placeholder="t('auth.password')">
+          <UiInput
+            v-model="data.password"
+            size="large"
+            type="password"
+            :placeholder="t('auth.password')"
+            @enter="form?.submit()"
+          >
             <template #prefix-icon><LockOnIcon /></template>
           </UiInput>
         </TFormItem>
 
         <TFormItem v-if="mode === 'register'" name="confirm">
-          <UiInput v-model="registerForm.confirm" size="large" type="password" :placeholder="t('auth.confirmPassword')">
+          <UiInput
+            v-model="registerForm.confirm"
+            size="large"
+            type="password"
+            :placeholder="t('auth.confirmPassword')"
+            @enter="form?.submit()"
+          >
             <template #prefix-icon><LockOnIcon /></template>
           </UiInput>
         </TFormItem>
@@ -286,9 +316,9 @@ function switchMode(m: 'login' | 'register') {
       <div class="auth-card__links">
         <template v-if="mode === 'login'">
           <RouterLink to="/forgot">{{ t('auth.forgot') }}</RouterLink>
-          <!-- 站点关闭注册时不再露出入口（服务端也会拒，这里只是不误导用户） -->
+          <!-- 站点关闭注册时不再露出入口；配置没拉回来之前也不露出（默认值已改为 false） -->
           <button
-            v-if="site.config.allowRegister"
+            v-if="site.loaded && site.config.allowRegister"
             type="button"
             class="auth-card__link-btn"
             @click="switchMode('register')"

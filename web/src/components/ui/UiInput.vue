@@ -18,6 +18,9 @@ const props = withDefaults(
     size?: 'small' | 'medium' | 'large'
     type?: 'text' | 'password' | 'email'
     maxlength?: number
+    /** 透传给内部 input：外层 <label for> 与读屏软件都靠它关联 */
+    id?: string
+    ariaLabel?: string
   }>(),
   { modelValue: '', clearable: false, disabled: false, size: 'medium', type: 'text' },
 )
@@ -79,8 +82,10 @@ function clear() {
     </span>
     <input
       ref="inputEl"
+      :id="id"
       :value="modelValue"
       :type="type"
+      :aria-label="ariaLabel"
       :placeholder="placeholder"
       :disabled="disabled"
       :maxlength="maxlength"

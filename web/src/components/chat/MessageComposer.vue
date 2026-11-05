@@ -82,9 +82,13 @@ watch(text, (v) => {
   if (convStore.currentConvId && !editing.value) convStore.setDraft(convStore.currentConvId, v)
 })
 
+/** 进入编辑态前的正文：取消编辑要还原它，而不是把用户的草稿清空 */
+const draftBackup = ref('')
+
 // 进入编辑态：把正文填进输入框并聚焦
 watch(editing, (m) => {
   if (!m) return
+  draftBackup.value = text.value
   text.value = m.content
   stickerOpen.value = false
   void nextTick(() => {
@@ -95,7 +99,8 @@ watch(editing, (m) => {
 
 function cancelEdit() {
   convStore.setEditingMessage(null)
-  text.value = ''
+  text.value = draftBackup.value
+  draftBackup.value = ''
 }
 
 onMounted(() => {
@@ -272,6 +277,8 @@ const recSeconds = ref(0)
 let recorder: MediaRecorder | null = null
 let chunks: Blob[] = []
 let recTimer: number | undefined
+/** 组件卸载（切会话会重建整个消息区）导致的停止：录音作废，不再发送 */
+let recordingCancelled = false
 
 const recLabel = computed(() => {
   const m = Math.floor(recSeconds.value / 60)
@@ -311,10 +318,18 @@ async function toggleRecord() {
   recorder.ondataavailable = (ev) => {
     if (ev.data.size > 0) chunks.push(ev.data)
   }
+  recordingCancelled = false
   recorder.onstop = async () => {
     stream.getTracks().forEach((tr) => tr.stop())
     clearRecTimer()
     recording.value = false
+
+    // 卸载时被动停止：直接丢弃，否则这段录音会被发到上一个会话
+    if (recordingCancelled) {
+      recordingCancelled = false
+      chunks = []
+      return
+    }
 
     const type = recorder?.mimeType || 'audio/webm'
     const blob = new Blob(chunks, { type })
@@ -346,6 +361,7 @@ async function toggleRecord() {
 onBeforeUnmount(() => {
   clearRecTimer()
   if (recording.value) {
+    recordingCancelled = true
     recorder?.stop()
     recording.value = false
   }

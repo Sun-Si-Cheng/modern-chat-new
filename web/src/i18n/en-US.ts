@@ -538,6 +538,9 @@ export default {
       '⚠ Admins keep full access. Everyone else sees the maintenance page; business APIs return 503 and WebSocket upgrades are rejected.',
     requireInviteCode: 'Invite-only registration',
     inviteHint: 'A valid invite code is required to sign up',
+    settingsNotLoaded: 'Settings are not loaded yet; please save again after loading',
+    settingsLoadFailed:
+      'Failed to load settings. Saving is disabled to avoid overwriting live config with defaults.',
     requireEmailVerify: 'Email verification',
     emailVerifyHint:
       'Sends a 6-digit code during sign-up (SMTP required). The first account is always exempt',
@@ -777,6 +780,7 @@ export default {
     emailHint: 'Used only for password recovery. Optional.',
     save: 'Save',
     savedOk: 'Saved',
+    nothingChanged: 'Nothing to save',
     nicknameRequired: 'Display name cannot be empty',
     logout: 'Sign out',
     logoutOthers: 'Sign out all devices',

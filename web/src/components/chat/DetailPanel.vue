@@ -4,7 +4,7 @@ import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { SearchIcon } from 'tdesign-icons-vue-next'
 
@@ -120,6 +120,10 @@ function searchParts(content: string): { t: string; hit: boolean }[] {
     .map((s) => ({ t: s, hit: s.toLowerCase() === kw.toLowerCase() }))
 }
 
+// 详情抽屉收起 / 切到设置页时组件会卸载：定时器不清就会在 250ms 后
+// 继续发一次搜索请求并写已卸载组件的 ref
+onBeforeUnmount(() => window.clearTimeout(searchTimer))
+
 function fmtSearchTime(ts: string): string {
   const d = new Date(ts)
   const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -199,16 +203,22 @@ async function toggleMuteAll() {
 }
 
 const members = ref<ConversationMember[]>([])
+/** 成员列表加载失败：给一次明确的重试入口，而不是让面板空着 */
+const membersError = ref('')
 
 watch(
   () => conv.value?.id,
   async (id) => {
     members.value = []
+    membersError.value = ''
     if (id === undefined || !isGroup.value) return
     try {
-      members.value = await convApi.members(id)
-    } catch {
-      /* 忽略 */
+      const rows = await convApi.members(id)
+      // 接口慢、用户已经切到别的会话：丢弃迟到的响应，否则会把 A 群成员画到 B 群
+      if (conv.value?.id !== id) return
+      members.value = rows
+    } catch (e) {
+      if (conv.value?.id === id) membersError.value = te(e)
     }
   },
   { immediate: true },
@@ -236,7 +246,9 @@ watch(
     files.value = []
     if (id === undefined || !isGroup.value) return
     try {
-      files.value = await convApi.files(id)
+      const rows = await convApi.files(id)
+      if (conv.value?.id !== id) return
+      files.value = rows
     } catch {
       /* 忽略：列表为空即可 */
     }
@@ -252,8 +264,10 @@ watch(
     const id = conv.value?.id
     if (!id || !isGroup.value) return
     try {
-      members.value = await convApi.members(id)
-      files.value = await convApi.files(id)
+      const [rows, list] = await Promise.all([convApi.members(id), convApi.files(id)])
+      if (conv.value?.id !== id) return
+      members.value = rows
+      files.value = list
     } catch {
       /* 忽略：保留旧列表 */
     }
@@ -698,8 +712,16 @@ function toggleAdmin(m: ConversationMember) {
 }
 
 async function refreshMembers() {
-  if (!conv.value) return
-  members.value = await convApi.members(conv.value.id)
+  const id = conv.value?.id
+  if (!id) return
+  try {
+    const rows = await convApi.members(id)
+    if (conv.value?.id !== id) return
+    members.value = rows
+    membersError.value = ''
+  } catch (e) {
+    if (conv.value?.id === id) membersError.value = te(e)
+  }
 }
 
 async function leave() {
@@ -719,7 +741,11 @@ async function leave() {
       try {
         await convApi.leave(conv.value!.id)
         await convStore.loadConversations()
-        convStore.currentConvId = convStore.conversations[0]?.id ?? null
+        // 必须走 openConversation：直接改 currentConvId 不会拉消息、不会上报已读，
+        // 界面会停在一空白会话上（上翻也拿不到历史）
+        const next = convStore.conversations[0]?.id
+        if (next) await convStore.openConversation(next)
+        else convStore.currentConvId = null
         void MessagePlugin.success(t('group.leaveOk'))
       } catch (e) {
         void MessagePlugin.error(te(e))
@@ -923,6 +949,14 @@ async function leave() {
           </span>
         </div>
 
+        <!-- 成员加载失败：给一次重试，而不是让面板空着 -->
+        <p v-if="membersError && !members.length" class="mc-detail__members-error text-placeholder">
+          {{ membersError }}
+          <a role="button" tabindex="0" @click="refreshMembers" @keydown.enter="refreshMembers">
+            {{ t('common.retry') }}
+          </a>
+        </p>
+
         <div
           class="mc-detail__member"
           v-for="m in members"
@@ -1088,6 +1122,23 @@ async function leave() {
   /* 面板是 flex column 且整体滚动：子项默认会被等比压缩，
      成员一多就把底部「退群」按钮挤成一条细线。固定住高度让它滚动而不是压缩。 */
   flex-shrink: 0;
+}
+
+/* 成员加载失败 + 重试 */
+.mc-detail__members-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mc-detail__members-error a {
+  color: var(--mc-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 /* 会话内搜索（从 MessagePane 迁入，样式口径保持一致） */

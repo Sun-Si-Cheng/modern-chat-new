@@ -136,15 +136,33 @@ watch(
   { immediate: true },
 )
 
+/** 资料是否有未保存的修改（用于禁用保存按钮，避免无意义的提交） */
+const profileDirty = computed(() => {
+  const u = auth.user
+  if (!u) return false
+  return profile.nickname.trim() !== u.nickname || profile.email.trim() !== (u.email ?? '')
+})
+
 async function saveProfile() {
   const nickname = profile.nickname.trim()
   if (!nickname) {
     void MessagePlugin.warning(t('settings.nicknameRequired'))
     return
   }
+  const u = auth.user
+  const email = profile.email.trim()
+  // 只提交真正变化的字段：服务端只要收到 email 就会把 emailVerified 重置为 false，
+  // 「只改昵称」不该顺手清掉邮箱验证状态
+  const patch: { nickname?: string; email?: string } = {}
+  if (!u || nickname !== u.nickname) patch.nickname = nickname
+  if (email !== (u?.email ?? '')) patch.email = email
+  if (!u || (!patch.nickname && patch.email === undefined)) {
+    void MessagePlugin.info(t('settings.nothingChanged'))
+    return
+  }
   saving.value = true
   try {
-    await auth.updateMe({ nickname, email: profile.email.trim() })
+    await auth.updateMe(patch)
     void MessagePlugin.success(t('settings.savedOk'))
   } catch (e) {
     void MessagePlugin.error(te(e) || t('common.saveFailed'))
@@ -317,7 +335,14 @@ function goBack() {
           </div>
 
           <div class="settings-actions">
-            <UiButton theme="primary" :loading="saving" @click="saveProfile">{{ t('settings.save') }}</UiButton>
+            <UiButton
+              theme="primary"
+              :loading="saving"
+              :disabled="!profileDirty"
+              @click="saveProfile"
+            >
+              {{ t('settings.save') }}
+            </UiButton>
           </div>
 
           <div class="settings-row">

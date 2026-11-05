@@ -112,6 +112,13 @@ export const usePrefsStore = defineStore('prefs', () => {
 
   function applyTheme() {
     document.documentElement.setAttribute('theme-mode', resolvedTheme.value)
+    // 移动端地址栏/状态栏配色：index.html 里的 theme-color 只按系统偏好取值，
+    // 应用内选了深色时也要跟着变，否则地址栏与界面割裂
+    const color = resolvedTheme.value === 'dark' ? '#17191c' : '#0052d9'
+    document.querySelectorAll('meta[name="theme-color"]').forEach((el) => {
+      el.removeAttribute('media')
+      el.setAttribute('content', color)
+    })
   }
 
   /** 背景基色写成全局 CSS 变量，AuthScene 直接消费 */
@@ -259,14 +266,15 @@ export const usePrefsStore = defineStore('prefs', () => {
     if (image && (!image.startsWith('data:image/') || image.length > MAX_APP_BG_IMAGE_LEN)) {
       return false
     }
+    // 记住当前值：配额不足时只回滚「这次的新图」，
+    // 之前把已保存的图一起清掉，等于用户换个图就丢了原背景
+    const prev = appBgImage.value
     appBgImage.value = image
     try {
       if (image) localStorage.setItem(APP_BG_IMAGE_KEY, image)
       else localStorage.removeItem(APP_BG_IMAGE_KEY)
     } catch {
-      // 超出浏览器配额：回退到未设置，避免界面显示一张下次刷新就丢失的图
-      appBgImage.value = ''
-      localStorage.removeItem(APP_BG_IMAGE_KEY)
+      appBgImage.value = prev
       applyAppBg()
       return false
     }

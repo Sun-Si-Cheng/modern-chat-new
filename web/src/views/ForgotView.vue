@@ -68,6 +68,8 @@ async function submitReset() {
   try {
     await authApi.reset({ token: resetForm.token.trim(), newPassword: resetForm.newPassword })
     void MessagePlugin.success(t('forgot.resetOk'))
+    // 令牌与新密码都是敏感值：成功后立刻从内存里清掉
+    Object.assign(resetForm, { token: '', newPassword: '', confirm: '' })
     await router.push('/login')
   } catch (e) {
     void MessagePlugin.error(te(e) || t('forgot.resetFailed'))
@@ -76,8 +78,9 @@ async function submitReset() {
   }
 }
 
-/** 返回第一步：保留已填邮箱，避免重输 */
+/** 返回第一步：保留已填邮箱，但清掉令牌与新密码（换账号时不能带着上一个账号的令牌） */
 function backToStep1() {
+  Object.assign(resetForm, { token: '', newPassword: '', confirm: '' })
   step.value = 1
 }
 

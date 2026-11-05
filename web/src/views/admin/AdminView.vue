@@ -43,7 +43,10 @@ const tab = ref<AdminTab>('users')
  * 点击切换时所有表格都会重渲染（隐藏面板还要做宽度测量），在低配机器 / 大数据量下
  * 会造成明显的卡顿甚至页面无响应。改用轻量页签 + v-if 只挂载当前面板。
  */
-let settingsLoaded = false
+const settingsLoaded = ref(false)
+const settingsLoading = ref(false)
+/** 设置加载失败：此时表单里全是默认值，保存会覆盖线上配置，必须锁住保存 */
+const settingsLoadFailed = ref(false)
 
 function switchTab(next: AdminTab) {
   if (tab.value === next) return
@@ -59,8 +62,7 @@ function switchTab(next: AdminTab) {
   if (next === 'audits') void fetchAudits()
   if (next === 'invites') void fetchInvites()
   // 设置只加载一次：反复拉取会把用户尚未保存的修改覆盖掉
-  if (next === 'settings' && !settingsLoaded) {
-    settingsLoaded = true
+  if (next === 'settings' && !settingsLoaded.value && !settingsLoading.value) {
     void fetchSettings()
   }
 }
@@ -184,6 +186,7 @@ const nginxBodyHint = computed(() => {
 })
 
 async function fetchSettings() {
+  settingsLoading.value = true
   try {
     const s = await adminApi.settings()
     settingsForm.value = {
@@ -216,8 +219,16 @@ async function fetchSettings() {
       redisEnabled: s.redisEnabled,
       storageApplied: s.storageApplied,
     }
+    settingsLoaded.value = true
+    settingsLoadFailed.value = false
   } catch (e) {
+    // 关键：加载失败时表单里全是硬编码默认值（站点名、注册开关、上传上限…），
+    // 若此时允许保存，会把线上真实配置整份覆盖掉
+    settingsLoaded.value = false
+    settingsLoadFailed.value = true
     void MessagePlugin.error(te(e))
+  } finally {
+    settingsLoading.value = false
   }
 }
 
@@ -303,6 +314,11 @@ async function doBackup() {
 }
 
 async function saveSettings() {
+  // 兜底：没成功加载过就不允许提交（表单内容不可信）
+  if (!settingsLoaded.value) {
+    void MessagePlugin.warning(t('admin.settingsNotLoaded'))
+    return
+  }
   savingSettings.value = true
   try {
     const r = await adminApi.saveSettings(settingsForm.value)
@@ -1064,6 +1080,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       <div v-if="tab === 'settings'" class="mc-admin__panel" role="tabpanel">
         <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
 
+        <!-- 加载失败：表单是默认值，保存会覆盖线上配置，所以先锁住并给重试 -->
+        <p v-if="settingsLoadFailed" class="mc-settings__warn">
+          {{ t('admin.settingsLoadFailed') }}
+          <a role="button" tabindex="0" @click="fetchSettings" @keydown.enter="fetchSettings">
+            {{ t('common.retry') }}
+          </a>
+        </p>
+
         <!-- 站点信息：改了即时生效，前端拉 /api/site -->
         <section class="mc-settings">
           <div class="mc-settings__head">
@@ -1444,7 +1468,12 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
         </section>
 
         <div class="mc-settings__save">
-          <UiButton theme="primary" :loading="savingSettings" @click="saveSettings">
+          <UiButton
+            theme="primary"
+            :loading="savingSettings"
+            :disabled="!settingsLoaded || settingsLoading"
+            @click="saveSettings"
+          >
             {{ t('admin.saveSettings') }}
           </UiButton>
         </div>

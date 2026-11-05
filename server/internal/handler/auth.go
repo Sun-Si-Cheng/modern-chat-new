@@ -152,25 +152,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// 邮箱验证：必须带邮箱与邮件里的 6 位验证码，核销通过才继续。
+	// 邮箱：开关开启时**必填并落库**——首个账号也要存，否则该账号永远无法走
+	// 「忘记密码」（只能改库或让站长重置）。验证码只在「非首账号 && SMTP 可用」
+	// 时才要求：首账号豁免，避免把刚部署完的部署者锁在注册页外。
 	// 放在邀请码之后：验证失败时上面的 defer 会把已核销的邀请码退还。
-	//
-	// 生效条件 = 后台开关 && SMTP 可用 && 不是首个账号：
-	//  - 没配 SMTP 却强制验证，等于把所有人都挡在注册页外面（含刚部署完的站长）
-	//  - 首个账号豁免，保证部署者永远能把站点引导起来
-	var emailVerified *string
-	requireEmail := ops.RequireEmailVerify && h.mailerReady() && count > 0
-	if ops.RequireEmailVerify && count == 0 {
-		slog.Info("first account skips email verification (bootstrap)")
-	}
-	if ops.RequireEmailVerify && !h.mailerReady() {
-		slog.Warn("email verification is on but SMTP is not configured; registration falls back to no verification")
-	}
-	if requireEmail {
-		if h.emailCodes == nil {
-			internal(c, fmt.Errorf("email code store not initialized"))
-			return
-		}
+	needCode := ops.RequireEmailVerify && h.mailerReady() && count > 0
+	var emailPtr *string
+	emailVerified := false
+	if ops.RequireEmailVerify {
 		email := service.NormalizeEmail(req.Email)
 		if email == "" {
 			fail(c, http.StatusBadRequest, "请填写邮箱")
@@ -187,21 +176,34 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			fail(c, http.StatusConflict, "邮箱已被绑定")
 			return
 		}
-		code := strings.TrimSpace(req.EmailCode)
-		if code == "" {
-			fail(c, http.StatusBadRequest, "请填写邮箱验证码")
-			return
+		if needCode {
+			if h.emailCodes == nil {
+				internal(c, fmt.Errorf("email code store not initialized"))
+				return
+			}
+			code := strings.TrimSpace(req.EmailCode)
+			if code == "" {
+				fail(c, http.StatusBadRequest, "请填写邮箱验证码")
+				return
+			}
+			ok, err := h.emailCodes.Verify(email, store.EmailVerifyPurposeRegister, code)
+			if err != nil {
+				internal(c, err)
+				return
+			}
+			if !ok {
+				fail(c, http.StatusUnprocessableEntity, "验证码错误或已过期，请重新获取")
+				return
+			}
+			emailVerified = true
 		}
-		ok, err := h.emailCodes.Verify(email, store.EmailVerifyPurposeRegister, code)
-		if err != nil {
-			internal(c, err)
-			return
-		}
-		if !ok {
-			fail(c, http.StatusUnprocessableEntity, "验证码错误或已过期，请重新获取")
-			return
-		}
-		emailVerified = &email
+		emailPtr = &email
+	}
+	if ops.RequireEmailVerify && count == 0 {
+		slog.Info("first account skips email verification (bootstrap)")
+	}
+	if ops.RequireEmailVerify && !h.mailerReady() {
+		slog.Warn("email verification is on but SMTP is not configured; registration falls back to no verification")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
@@ -210,33 +212,22 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	role := "user"
-	if count == 0 {
-		role = "admin"
-	}
-
 	u := &model.User{
 		Username:     req.Username,
 		PasswordHash: string(hash),
 		Nickname:     nickname,
-		Role:         role,
 	}
-	if emailVerified != nil {
-		u.Email = emailVerified
-		u.EmailVerified = true
+	if emailPtr != nil {
+		u.Email = emailPtr
+		u.EmailVerified = emailVerified
 	}
-	if err := h.users.Create(u); err != nil {
+	// 建号与「首任站长选举」在同一临界区/事务里完成：并发首注册不会各插一个 admin
+	if err := h.users.CreateWithAdminElection(u); err != nil {
 		// 并发同名注册落到唯一索引
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			fail(c, http.StatusConflict, "用户名已被占用")
 			return
 		}
-		internal(c, err)
-		return
-	}
-	// 头像取色依赖自增 id，创建后回填
-	u.AvatarColor = model.PickColor(u.ID)
-	if err := h.users.Save(u); err != nil {
 		internal(c, err)
 		return
 	}

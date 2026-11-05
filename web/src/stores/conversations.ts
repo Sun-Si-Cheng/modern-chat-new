@@ -295,6 +295,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     return max
   }
 
+  /**
+   * 主区滚到历史位置（不贴底）时置 true：此时新消息不自动已读，
+   * 否则用户明明在翻旧消息，红点却被清掉。由 MessagePane 维护。
+   */
+  const autoReadPaused = ref(false)
+  function setAutoReadPaused(v: boolean) {
+    autoReadPaused.value = v
+  }
+
   function markRead(convId: number) {
     const list = messagesByConv[convId]
     // 消息还没加载完（或加载失败）：此时算不出 upToId，先不清本地未读，
@@ -458,6 +467,10 @@ export const useConversationsStore = defineStore('conversations', () => {
       content: msg.content,
       // 转发标记同理，丢了就变成普通消息
       forwarded: msg.forwarded,
+      // 引用与 @ 同样要带上：否则重发后本地气泡仍挂引用块，
+      // 服务端落库的却是普通消息，别人和刷新后的自己都看不到
+      replyToId: msg.replyToId ?? undefined,
+      mentions: msg.mentions?.length ? msg.mentions : undefined,
     })
     if (!sent) {
       msg.pending = false
@@ -523,8 +536,17 @@ export const useConversationsStore = defineStore('conversations', () => {
     for (const m of incoming) {
       if (knownIds.has(m.id)) continue
       const local = m.clientMsgId ? byClientId.get(m.clientMsgId) : undefined
-      if (local) Object.assign(local, m) // 服务端已落库：就地确认，避免重复气泡
-      else list.push(m)
+      if (local) {
+        // 服务端已落库：就地确认，避免重复气泡。
+        // 注意服务端对象不含 pending/failed，必须显式清掉——否则 8 秒后
+        // PENDING_TIMEOUT 会把一条其实已送达的消息改成「发送失败」
+        Object.assign(local, m)
+        local.pending = false
+        local.failed = false
+        if (local.clientMsgId) clearPendingTimer(local.clientMsgId)
+      } else {
+        list.push(m)
+      }
     }
     if (hasMore !== undefined && list.length) hasMoreByConv[convId] = hasMore
   }
@@ -754,15 +776,19 @@ export const useConversationsStore = defineStore('conversations', () => {
       })
 
     const conv = conversations.value.find((c) => c.id === convId)
+    // 只有「当前会话 + 页面可见 + 用户贴着最新消息」才自动已读：
+    // 后台标签页或正在上翻历史时把红点清掉，等于把没看过的消息当已读
+    const autoRead =
+      convId === currentConvId.value && !autoReadPaused.value && document.visibilityState === 'visible'
     if (conv) {
       conv.lastMessageId = frame.id
       conv.lastMessageAt = frame.createdAt
       conv.lastMessagePreview = frame.content
-      if (convId !== currentConvId.value) conv.unreadCount += 1
+      if (!autoRead) conv.unreadCount += 1
       // 单聊：收到即回送达回执，发送方据此显示「已送达」
       if (conv.type === 1) sendFrame({ type: 'delivered', messageId: frame.id })
     }
-    if (convId === currentConvId.value) markRead(convId)
+    if (autoRead) markRead(convId)
   }
 
   // ===== 清空（登出/被踢） =====
@@ -823,6 +849,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     filter,
     setFilter,
     markRead,
+    setAutoReadPaused,
     sendText,
     sendMedia,
     forwardMessage,

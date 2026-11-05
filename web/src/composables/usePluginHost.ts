@@ -220,6 +220,8 @@ interface Runtime {
   /** window message 监听器与 iframe load 监听器：卸载运行时必须解绑，否则泄漏 */
   onMessage: (ev: MessageEvent) => void
   onLoad: () => void
+  /** 插件通过 theme.apply 改过的 --td-* 变量及其原值：停用时要还原 */
+  themeVars: Map<string, string>
 }
 
 interface PluginHostState {
@@ -359,6 +361,11 @@ function createHost() {
           for (const [k, v] of Object.entries(vars)) {
             // 仅放行 TDesign 设计令牌，杜绝任意 CSS 注入
             if (typeof k === 'string' && /^--td-[a-z0-9-]+$/i.test(k) && typeof v === 'string' && v.length <= 100 && !/url\(|;|\{/i.test(v)) {
+              // 第一次改某个变量时记下原值：插件停用/卸载后要还原，
+              // 否则主站会一直停留在「被这个插件换过肤」的状态，只有刷新才恢复
+              if (!runtime.themeVars.has(k)) {
+                runtime.themeVars.set(k, document.documentElement.style.getPropertyValue(k))
+              }
               document.documentElement.style.setProperty(k, v)
             }
           }
@@ -553,6 +560,7 @@ function createHost() {
       pendingRenders: new Map(),
       onMessage,
       onLoad,
+      themeVars: new Map(),
     }
     iframe.addEventListener('load', onLoad)
     window.addEventListener('message', onMessage)
@@ -569,6 +577,12 @@ function createHost() {
     for (const p of rt.pendingRenders.values()) p.reject(new Error('runtime unmounted'))
     rt.pendingRenders.clear()
     rt.iframe.remove()
+    // 还原这个插件改过的主题变量（原值为空串表示原本没设置过，直接移除）
+    for (const [key, original] of rt.themeVars) {
+      if (original) document.documentElement.style.setProperty(key, original)
+      else document.documentElement.style.removeProperty(key)
+    }
+    rt.themeVars.clear()
     runtimes.delete(pluginId)
     delete state.panels[pluginId]
     delete state.actions[pluginId]
@@ -581,14 +595,33 @@ function createHost() {
     if (state.started) return
     const pluginsStore = usePluginsStore()
     await pluginsStore.loadActive()
-    for (const p of pluginsStore.plugins) {
-      if (p.globalDisabled) continue
-      pluginCodeCache.set(p.id, await fetchPluginCode(p.id))
-      mountRuntime(p)
-    }
+    // 先订阅广播帧：单个插件代码拉取失败时，其余插件仍要能收到 message/recall/presence
     const ws = useWsStore()
     offFrame = ws.onFrame(handleBroadcastFrame)
     state.started = true
+
+    const failed: string[] = []
+    for (const p of pluginsStore.plugins) {
+      if (p.globalDisabled) continue
+      try {
+        const code = await fetchPluginCode(p.id)
+        // 非 200（被全局下架 / 已 purge / 网络抖动）会拿到空串：不要挂一个空 iframe
+        if (!code) throw new Error('empty plugin code')
+        pluginCodeCache.set(p.id, code)
+        mountRuntime(p)
+      } catch (e) {
+        // 一个插件坏掉不能连累其他插件
+        failed.push(p.name)
+        console.warn(`[plugin:${p.name}] load failed:`, e)
+      }
+    }
+    if (failed.length) {
+      void MessagePlugin.warning(
+        failed.length === 1
+          ? `插件「${failed[0]}」加载失败，可在插件管理中重新启用`
+          : `${failed.length} 个插件加载失败：${failed.join('、')}`,
+      )
+    }
   }
 
   async function fetchPluginCode(pluginId: number): Promise<string> {
@@ -611,8 +644,20 @@ function createHost() {
       unmountRuntime(plugin.id)
       return
     }
+    // 先取代码再卸载：拉取失败时保留旧运行时，
+    // 否则「服务端已启用、本地面板和菜单项却消失」，只能整页刷新才恢复
+    let code = ''
+    try {
+      code = await fetchPluginCode(plugin.id)
+    } catch (e) {
+      console.warn(`[plugin:${plugin.name}] reload failed:`, e)
+    }
+    if (!code) {
+      void MessagePlugin.error(`插件「${plugin.name}」加载失败，请稍后重试`)
+      return
+    }
     unmountRuntime(plugin.id)
-    pluginCodeCache.set(plugin.id, await fetchPluginCode(plugin.id))
+    pluginCodeCache.set(plugin.id, code)
     mountRuntime(plugin)
   }
 

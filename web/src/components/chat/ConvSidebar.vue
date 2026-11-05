@@ -263,7 +263,9 @@ const convMenuItems = computed<ContextMenuItem[]>(() => {
     { key: 'mute', label: convStore.isMuted(c.id) ? t('chat.unmute') : t('chat.mute') },
     { key: 'archive', label: convStore.isArchived(c.id) ? t('chat.unarchive') : t('chat.archive') },
   ]
-  if (c.unreadCount > 0) items.push({ key: 'read', label: t('chat.markRead') })
+  // 有未读或有 @ 我未读都该给出「标记已读」；只看 unreadCount 时，
+  // 免打扰会话（红点被压成小圆点）会没有任何入口
+  if (c.unreadCount > 0 || c.mentionUnread) items.push({ key: 'read', label: t('chat.markRead') })
   items.push({ key: 'copyName', label: t('chat.copyName'), dividerBefore: true })
   items.push({ key: 'clear', label: t('chat.clearHistory'), danger: true })
   items.push({ key: 'delete', label: t('chat.deleteConversation'), danger: true })
@@ -277,6 +279,10 @@ async function markConvRead(c: Conversation) {
   try {
     await convApi.read(c.id, upTo)
     c.unreadCount = 0
+    // 服务端 MarkRead 会一并清 mention_unread：本地也要清，
+    // 否则「有人@我」的红点要等刷新才消失
+    c.mentionUnread = false
+    c.lastReadMessageId = Math.max(c.lastReadMessageId ?? 0, upTo)
     void MessagePlugin.success(t('chat.markedRead'))
   } catch (e) {
     void MessagePlugin.error(te(e))

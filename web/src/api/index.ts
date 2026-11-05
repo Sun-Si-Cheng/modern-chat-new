@@ -393,7 +393,9 @@ export interface SiteConfig {
   maintenanceMessage: string
   /** 注册是否需要邀请码 */
   requireInviteCode: boolean
-  /** 注册是否需要邮箱验证（开启时注册页出现邮箱 + 验证码） */
+  /** 注册是否必填邮箱（开关开启即必填，首个账号也必填） */
+  requireEmail: boolean
+  /** 注册是否还需要邮箱验证码（开关 && SMTP 可用 && 已有账号；首个账号豁免） */
   requireEmailVerify: boolean
   maxMessageLength: number
   recallMinutes: number

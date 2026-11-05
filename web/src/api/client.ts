@@ -37,6 +37,18 @@ interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined>
 }
 
+/**
+ * 401 统一回登录页，并带上来源：
+ * 不带 redirect 的话，会话中途过期后用户只能落到 /chat，
+ * 正在看的 /join/:token、/settings 就回不去了。
+ */
+function redirectToLogin() {
+  const p = location.pathname
+  if (p.startsWith('/login')) return
+  const from = p + location.search
+  location.href = from === '/chat' ? '/login' : `/login?redirect=${encodeURIComponent(from)}`
+}
+
 function buildUrl(path: string, query?: RequestOptions['query']): string {
   if (!query) return BASE + path
   const params = new URLSearchParams()
@@ -75,22 +87,28 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const token = getToken()
   const ctrl = new AbortController()
   const run = async (): Promise<T> => {
-    const res = await fetch(buildUrl(path, opts.query), {
-      method: opts.method ?? 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-      signal: ctrl.signal,
-    })
+    let res: Response
+    try {
+      res = await fetch(buildUrl(path, opts.query), {
+        method: opts.method ?? 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        signal: ctrl.signal,
+      })
+    } catch (e) {
+      // fetch 只在网络层失败时抛 TypeError("Failed to fetch")：包装成可读中文，
+      // 否则 te() 会把英文原文直接弹给中文用户
+      const aborted = (e as Error)?.name === 'AbortError'
+      throw new ApiError(0, aborted ? '请求超时，请稍后重试' : '网络连接失败，请检查网络后重试')
+    }
 
     // token 失效/被封禁：清登录态回登录页
     if (res.status === 401) {
       setToken('')
-      if (!location.pathname.startsWith('/login')) {
-        location.href = '/login'
-      }
+      redirectToLogin()
       throw new ApiError(401, '登录已失效，请重新登录')
     }
 
@@ -114,16 +132,22 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   const token = getToken()
   const ctrl = new AbortController()
   const run = async (): Promise<T> => {
-    const res = await fetch(BASE + path, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-      signal: ctrl.signal,
-    })
+    let res: Response
+    try {
+      res = await fetch(BASE + path, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+        signal: ctrl.signal,
+      })
+    } catch (e) {
+      const aborted = (e as Error)?.name === 'AbortError'
+      throw new ApiError(0, aborted ? '上传超时，请稍后重试' : '网络连接失败，请检查网络后重试')
+    }
 
     if (res.status === 401) {
       setToken('')
-      if (!location.pathname.startsWith('/login')) location.href = '/login'
+      redirectToLogin()
       throw new ApiError(401, '登录已失效，请重新登录')
     }
 

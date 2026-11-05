@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 
@@ -20,15 +20,26 @@ const loading = ref(true)
 const joining = ref(false)
 const error = ref('')
 
-onMounted(async () => {
+async function loadInfo() {
+  const tk = token.value
+  loading.value = true
+  error.value = ''
+  info.value = null
   try {
-    info.value = await inviteApi.info(token.value)
+    const r = await inviteApi.info(tk)
+    // 同一路由复用（/join/A → /join/B）时旧请求可能后到：只接受与当前 token 匹配的结果
+    if (token.value !== tk) return
+    info.value = r
   } catch (e) {
-    error.value = te(e)
+    if (token.value === tk) error.value = te(e)
   } finally {
-    loading.value = false
+    if (token.value === tk) loading.value = false
   }
-})
+}
+
+// 路由参数变化时重新拉取：只在 onMounted 拉一次的话，
+// 从一条邀请链接跳到另一条会继续显示上一个群的名称与人数
+watch(token, () => void loadInfo(), { immediate: true })
 
 async function join() {
   if (joining.value) return

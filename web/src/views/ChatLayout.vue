@@ -273,6 +273,7 @@ onUnmounted(() => {
     <!-- 详情面板：可拖拽调宽；双击分隔条切换「常驻 / 抽屉」 -->
     <PaneResizer
       v-if="showDetail && !layout.panes.detail.drawer"
+      class="mc-resizer--detail"
       :model-value="layout.panes.detail.width"
       :min="PANE_LIMITS.detail.min"
       :max="PANE_LIMITS.detail.max"
@@ -495,20 +496,26 @@ onUnmounted(() => {
   text-decoration-color: currentcolor;
 }
 
-/* 平板：收起详情面板与分组栏 */
+/* 平板：收起详情面板与分组栏（抽屉形态被用户展开时仍然显示） */
 @media (max-width: 1024px) {
-  .mc-layout :deep(.mc-detail) {
+  .mc-layout :deep(.mc-detail:not(.is-drawer)) {
     display: none;
   }
 
-  .mc-layout :deep(.group-pane) {
+  .mc-layout :deep(.group-pane:not(.is-drawer)) {
+    display: none;
+  }
+
+  /* 面板已经隐藏了，分隔条也要一起消失，否则屏幕上留一根拖不动的空白条 */
+  .mc-layout > .mc-resizer--detail {
     display: none;
   }
 }
 
 /* 手机：第二栏与消息区互斥显示；图标栏保留 */
 @media (max-width: 768px) {
-  .mc-layout.has-conv :deep(.mc-sidebar) {
+  /* 抽屉形态不作互斥：用户主动展开时要能看到（否则点了入口像没反应） */
+  .mc-layout.has-conv :deep(.mc-sidebar:not(.is-drawer)) {
     display: none;
   }
 
