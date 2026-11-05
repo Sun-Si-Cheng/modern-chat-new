@@ -1,6 +1,8 @@
 package store
 
 import (
+	"strconv"
+	"strings"
 	"sync"
 
 	"gorm.io/gorm"
@@ -31,6 +33,20 @@ const (
 	KeyStorageSecretKey = "storage.secretKey" // 加密
 	// PublicBase 对象存储的对外访问前缀（CDN 域名）。留空则按 endpoint/bucket 拼。
 	KeyStoragePublicBase = "storage.publicBase"
+
+	// 站点
+	KeySiteName          = "site.name"
+	KeySiteAllowRegister = "site.allowRegister"
+
+	// 聊天规则
+	KeyChatMaxMessageLen   = "chat.maxMessageLength"
+	KeyChatRecallMinutes   = "chat.recallMinutes"
+	KeyChatMaxGroupMembers = "chat.maxGroupMembers"
+
+	// 上传体积上限（MB）
+	KeyUploadMaxImageMB = "upload.maxImageMB"
+	KeyUploadMaxAudioMB = "upload.maxAudioMB"
+	KeyUploadMaxFileMB  = "upload.maxFileMB"
 )
 
 var knownKeys = map[string]bool{
@@ -38,6 +54,10 @@ var knownKeys = map[string]bool{
 	KeyRedisAddr: true, KeyRedisPass: true, KeyRedisDB: true,
 	KeyStorageEndpoint: true, KeyStorageRegion: true, KeyStorageBucket: true,
 	KeyStorageAccessKey: true, KeyStorageSecretKey: true, KeyStoragePublicBase: true,
+
+	KeySiteName: true, KeySiteAllowRegister: true,
+	KeyChatMaxMessageLen: true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
+	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
 }
 
 // secretKeys 落库前加密、返回前端时脱敏。
@@ -165,6 +185,94 @@ func (s *SettingStore) Invalidate() {
 	s.mu.Lock()
 	s.cache = nil
 	s.mu.Unlock()
+}
+
+// Ops 可在后台调整的业务规则（站点 / 聊天 / 上传）。
+//
+// 与 SMTP/Redis/存储这类「改了要重启」的配置不同，这些是**即时生效**的：
+// 读的是 SettingStore 的缓存，Save 时缓存失效，下一次请求就是新值。
+type Ops struct {
+	SiteName         string
+	AllowRegister    bool
+	MaxMessageLength int
+	RecallMinutes    int
+	MaxGroupMembers  int
+	MaxImageMB       int
+	MaxAudioMB       int
+	MaxFileMB        int
+}
+
+// DefaultOps 缺省值。后台没配过任何一项时的行为，与改造前完全一致。
+func DefaultOps() Ops {
+	return Ops{
+		SiteName:         "ModernChat",
+		AllowRegister:    true,
+		MaxMessageLength: 1000,
+		RecallMinutes:    2,
+		MaxGroupMembers:  200,
+		MaxImageMB:       8,
+		MaxAudioMB:       5,
+		MaxFileMB:        20,
+	}
+}
+
+// Ops 读取业务规则。任何一项缺失或非法都回落到默认值，
+// 不会因为后台存了个错值就把功能卡死。
+func (s *SettingStore) Ops() Ops {
+	all, err := s.All()
+	if err != nil {
+		return DefaultOps()
+	}
+	return OpsFrom(all)
+}
+
+// OpsFrom 把原始 KV 解析成 Ops（纯函数，便于单测）。
+func OpsFrom(all map[string]string) Ops {
+	def := DefaultOps()
+	out := def
+
+	if v := strings.TrimSpace(all[KeySiteName]); v != "" {
+		// 站点名过长会撑坏标题栏与登录页，按 rune 截断
+		if r := []rune(v); len(r) > 40 {
+			v = string(r[:40])
+		}
+		out.SiteName = v
+	}
+	// 只有显式写 "false" 才算关闭注册：没配过 / 配了脏值都保持开放，
+	// 避免一个手误把所有人都挡在门外
+	switch strings.TrimSpace(all[KeySiteAllowRegister]) {
+	case "false":
+		out.AllowRegister = false
+	case "true":
+		out.AllowRegister = true
+	}
+
+	out.MaxMessageLength = clampInt(all[KeyChatMaxMessageLen], 100, 5000, def.MaxMessageLength)
+	out.RecallMinutes = clampInt(all[KeyChatRecallMinutes], 0, 60, def.RecallMinutes)
+	out.MaxGroupMembers = clampInt(all[KeyChatMaxGroupMembers], 2, 2000, def.MaxGroupMembers)
+	out.MaxImageMB = clampInt(all[KeyUploadMaxImageMB], 1, 32, def.MaxImageMB)
+	out.MaxAudioMB = clampInt(all[KeyUploadMaxAudioMB], 1, 32, def.MaxAudioMB)
+	out.MaxFileMB = clampInt(all[KeyUploadMaxFileMB], 1, 200, def.MaxFileMB)
+	return out
+}
+
+// clampInt 解析整数并收敛到 [min,max]；空串或非法值用 fallback。
+func clampInt(raw string, min, max, fallback int) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	if n < min {
+		return min
+	}
+	if n > max {
+		return max
+	}
+	return n
 }
 
 // SMTPConfig 用库里的配置构造 SMTPConfig。

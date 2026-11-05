@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,19 +12,30 @@ import (
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
-// UploadHandler 文件上传（图片 / 语音）。
+// UploadHandler 文件上传（图片 / 语音 / 表情 / 群文件）。
 type UploadHandler struct {
-	storage service.Storage
+	storage  service.Storage
+	settings *store.SettingStore
 }
 
-func NewUploadHandler(storage service.Storage) *UploadHandler {
-	return &UploadHandler{storage: storage}
+func NewUploadHandler(storage service.Storage, settings *store.SettingStore) *UploadHandler {
+	return &UploadHandler{storage: storage, settings: settings}
 }
 
-// 上传接口的请求体上限：取两类限额的较大者再留一点余量给 multipart 头。
-const uploadBodyLimit = service.MaxImageBytes + (1 << 20)
+// limits 各类型的体积上限（字节）。后台配了就用配的，否则用默认值。
+//
+// 注意：请求体上限必须跟着配置走——写死 9 MB 的话，站长把图片调到 16 MB
+// 后仍然会被 MaxBytesReader 卡在 9 MB，报错还是「缺少文件字段」。
+func (h *UploadHandler) limits() (image, audio, file int64) {
+	ops := store.DefaultOps()
+	if h.settings != nil {
+		ops = h.settings.Ops()
+	}
+	return int64(ops.MaxImageMB) << 20, int64(ops.MaxAudioMB) << 20, int64(ops.MaxFileMB) << 20
+}
 
 // Upload 接收 multipart 文件并保存，返回可直接放进消息 content 的 URL。
 //
@@ -43,25 +56,36 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 防止超大请求把内存打满：这里用 MaxBytesReader 卡住读取
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadBodyLimit)
-
-	file, err := c.FormFile("file")
-	if err != nil {
-		fail(c, http.StatusBadRequest, "缺少文件字段 file")
-		return
-	}
-	maxBytes := int64(service.MaxAudioBytes)
+	imageMax, audioMax, fileMax := h.limits()
+	maxBytes := audioMax
 	switch kind {
 	case "image":
-		maxBytes = service.MaxImageBytes
+		maxBytes = imageMax
 	case "sticker":
 		maxBytes = service.MaxStickerBytes
 	case "file":
-		maxBytes = service.MaxFileBytes
+		maxBytes = fileMax
+	}
+
+	// 防止超大请求把内存打满：在读取前按当前配置卡住
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+(1<<20))
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		// 超限时 FormFile 返回的是 MaxBytesError，直接说「文件过大」比
+		// 「缺少文件字段 file」有用得多
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			fail(c, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("文件过大（%s 上限 %d MB）", kind, maxBytes>>20))
+			return
+		}
+		fail(c, http.StatusBadRequest, "缺少文件字段 file")
+		return
 	}
 	if file.Size > maxBytes {
-		fail(c, http.StatusRequestEntityTooLarge, "文件过大")
+		fail(c, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("文件过大（%s 上限 %d MB）", kind, maxBytes>>20))
 		return
 	}
 
@@ -82,7 +106,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	url, err := h.storage.Save(kind, data)
+	url, err := h.storage.Save(kind, data, maxBytes)
 	if err != nil {
 		// Save 的错误是"类型不支持/超过限制"这类客户端问题
 		fail(c, http.StatusBadRequest, err.Error())

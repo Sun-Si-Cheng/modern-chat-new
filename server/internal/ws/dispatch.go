@@ -2,12 +2,14 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
 // 上行帧（§7）：宽松解析，按 type 路由。
@@ -70,9 +72,14 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	if !h.requireMember(c, f.ConvID) {
 		return
 	}
+	// 消息长度上限可在后台调整，默认 1000
+	maxLen := store.DefaultOps().MaxMessageLength
+	if h.deps.Settings != nil {
+		maxLen = h.deps.Settings.Ops().MaxMessageLength
+	}
 	content := []rune(f.Content)
-	if len(content) < 1 || len(content) > 1000 {
-		h.sendError(c, "消息需为 1-1000 个字符")
+	if len(content) < 1 || len(content) > maxLen {
+		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen))
 		return
 	}
 	if f.ClientMsgID == "" || len(f.ClientMsgID) > 36 {
@@ -266,8 +273,17 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 	if err != nil || msg == nil || msg.SenderID != c.UserID {
 		return
 	}
-	if time.Since(msg.CreatedAt) > 2*time.Minute {
-		h.sendError(c, "超过 2 分钟，无法撤回")
+	// 撤回时限可配（0 表示禁止撤回）
+	recallMinutes := store.DefaultOps().RecallMinutes
+	if h.deps.Settings != nil {
+		recallMinutes = h.deps.Settings.Ops().RecallMinutes
+	}
+	if recallMinutes <= 0 {
+		h.sendError(c, "本站已关闭消息撤回")
+		return
+	}
+	if time.Since(msg.CreatedAt) > time.Duration(recallMinutes)*time.Minute {
+		h.sendError(c, fmt.Sprintf("超过 %d 分钟，无法撤回", recallMinutes))
 		return
 	}
 	// 幂等：已经撤回过的直接返回，既不重复扣未读、也不重复广播

@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { convApi } from '@/api'
 import type { Conversation, ConversationMember, Message, ReplyBrief } from '@/types/proto'
 import { useAuthStore } from './auth'
+import { useSiteStore } from './site'
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 
 /** 会话列表 + 消息缓存 + 收发件状态机（§9.1 链路的前端侧） */
@@ -340,7 +341,9 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   function sendText(convId: number, content: string, extra?: SendExtra) {
     const trimmed = content.trim()
-    if (!trimmed || trimmed.length > 1000) return
+    // 长度上限跟随后台配置（服务端会再校验一次，这里只是提前拦）
+    const max = useSiteStore().config.maxMessageLength
+    if (!trimmed || trimmed.length > max) return
     pushAndSend(convId, 'text', trimmed, extra)
   }
 

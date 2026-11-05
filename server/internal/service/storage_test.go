@@ -18,7 +18,7 @@ func TestDetectTypeAcceptsBrowserAudioContainers(t *testing.T) {
 		{"mp4", []byte("\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00"), ".m4a"},
 	}
 	for _, c := range cases {
-		ext, err := detectType("audio", c.data)
+		ext, err := detectType("audio", c.data, 0)
 		if err != nil {
 			t.Fatalf("%s: unexpected error: %v", c.name, err)
 		}
@@ -31,7 +31,7 @@ func TestDetectTypeAcceptsBrowserAudioContainers(t *testing.T) {
 // http.DetectContentType 对文本会返回 "text/plain; charset=utf-8"，
 // 不剥掉参数就永远匹配不上白名单 —— 曾导致上传 txt/docx 一律被拒。
 func TestDetectTypeStripsMimeParameters(t *testing.T) {
-	ext, err := detectType("file", []byte("hello, plain text payload"))
+	ext, err := detectType("file", []byte("hello, plain text payload"), 0)
 	if err != nil {
 		t.Fatalf("text file rejected: %v", err)
 	}
@@ -44,10 +44,10 @@ func TestDetectTypeStripsMimeParameters(t *testing.T) {
 // HTML 直接拒；SVG 会被判成 text/plain → 存成 .txt → 服务时是 text/plain，
 // 浏览器不会当页面渲染，因此不构成存储型 XSS。
 func TestDetectTypeNeverYieldsExecutableMarkupExtension(t *testing.T) {
-	if _, err := detectType("file", []byte("<!doctype html><script>alert(1)</script>")); err == nil {
+	if _, err := detectType("file", []byte("<!doctype html><script>alert(1)</script>"), 0); err == nil {
 		t.Fatal("html should be rejected")
 	}
-	ext, err := detectType("file", []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`))
+	ext, err := detectType("file", []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`), 0)
 	if err != nil {
 		return // 拒绝也可以
 	}

@@ -12,11 +12,16 @@ import AuthScene from '@/components/common/AuthScene.vue'
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const site = useSiteStore()
 const { t, te } = useAppI18n()
+
+/** 站点名：后台改了这里跟着变；接口没回来时用语言包兜底 */
+const siteName = computed(() => (site.loaded ? site.config.name : t('app.name')))
 
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
@@ -107,7 +112,7 @@ function switchMode(m: 'login' | 'register') {
     <main class="auth-card">
       <div class="auth-card__brand">
         <img class="auth-card__mark" src="/favicon.ico" alt="" width="32" height="32" />
-        <span class="auth-card__product">{{ t('app.name') }}</span>
+        <span class="auth-card__product">{{ siteName }}</span>
       </div>
 
       <h1 class="auth-card__title">
@@ -168,7 +173,13 @@ function switchMode(m: 'login' | 'register') {
       <div class="auth-card__links">
         <template v-if="mode === 'login'">
           <RouterLink to="/forgot">{{ t('auth.forgot') }}</RouterLink>
-          <button type="button" class="auth-card__link-btn" @click="switchMode('register')">
+          <!-- 站点关闭注册时不再露出入口（服务端也会拒，这里只是不误导用户） -->
+          <button
+            v-if="site.config.allowRegister"
+            type="button"
+            class="auth-card__link-btn"
+            @click="switchMode('register')"
+          >
             {{ t('auth.signupLink') }}
           </button>
         </template>

@@ -8,11 +8,16 @@ import { mediaApi, stickerApi, type Sticker } from '@/api'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import { useSiteStore } from '@/stores/site'
 import type { ConversationMember } from '@/types/proto'
 
 const convStore = useConversationsStore()
 const auth = useAuthStore()
+const siteStore = useSiteStore()
 const { t } = useAppI18n()
+
+/** 消息长度上限跟随后台配置；达到 90% 时计数变警示色 */
+const maxMessageLength = computed(() => siteStore.config.maxMessageLength)
 
 // 从草稿恢复：切换会话回来时，之前打了一半的内容还在
 const text = ref(convStore.currentConvId ? convStore.draftOf(convStore.currentConvId) : '')
@@ -100,8 +105,10 @@ async function onImageChange(e: Event) {
   input.value = '' // 允许连续选同一个文件
   const convId = convStore.currentConvId
   if (!file || !convId) return
-  if (file.size > 8 << 20) {
-    void MessagePlugin.warning(t('message.imageTooLarge'))
+  // 图片上限跟随后台配置（提示文案里的数字也一起换）
+  const maxImage = siteStore.config.maxImageMB << 20
+  if (file.size > maxImage) {
+    void MessagePlugin.warning(t('message.imageTooLargeMB', { mb: siteStore.config.maxImageMB }))
     return
   }
   uploading.value = true
@@ -474,7 +481,7 @@ function onKeydown(e: KeyboardEvent) {
         v-model="text"
         class="mc-composer__input"
         :placeholder="t('message.composerPlaceholder')"
-        maxlength="1000"
+        :maxlength="maxMessageLength"
         rows="1"
         @keydown="onKeydown"
         @input="onInput"
@@ -591,8 +598,12 @@ function onKeydown(e: KeyboardEvent) {
         />
 
         <div class="mc-composer__right">
-          <span v-if="text.length" class="mc-composer__count text-placeholder num" :class="{ 'is-near-limit': text.length >= 900 }">
-            {{ text.length }}/1000
+          <span
+            v-if="text.length"
+            class="mc-composer__count text-placeholder num"
+            :class="{ 'is-near-limit': text.length >= maxMessageLength * 0.9 }"
+          >
+            {{ text.length }}/{{ maxMessageLength }}
           </span>
           <UiButton theme="primary" size="small" :disabled="!text.trim()" @click="send">
             {{ t('message.send') }}

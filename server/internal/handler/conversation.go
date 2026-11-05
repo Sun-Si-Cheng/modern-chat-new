@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -22,10 +23,28 @@ type ConversationHandler struct {
 	friends *store.FriendStore
 	convs   *store.ConversationStore
 	msgs    *store.MessageStore
+	// settings 用于读取群人数上限等可运营规则（可为 nil，回落到内置默认值）
+	settings *store.SettingStore
 }
 
-func NewConversationHandler(users *store.UserStore, friends *store.FriendStore, convs *store.ConversationStore, msgs *store.MessageStore) *ConversationHandler {
-	return &ConversationHandler{users: users, friends: friends, convs: convs, msgs: msgs}
+// maxGroupMembers 当前生效的群人数上限。
+func (h *ConversationHandler) maxGroupMembers() int {
+	if h.settings == nil {
+		return store.DefaultOps().MaxGroupMembers
+	}
+	return h.settings.Ops().MaxGroupMembers
+}
+
+func NewConversationHandler(
+	users *store.UserStore,
+	friends *store.FriendStore,
+	convs *store.ConversationStore,
+	msgs *store.MessageStore,
+	settings *store.SettingStore,
+) *ConversationHandler {
+	return &ConversationHandler{
+		users: users, friends: friends, convs: convs, msgs: msgs, settings: settings,
+	}
 }
 
 // List 会话列表。
@@ -323,9 +342,11 @@ func (h *ConversationHandler) Join(c *gin.Context) {
 	}
 	// 原子入群：容量判断与插入在同一事务内（SELECT ... FOR UPDATE 锁会话行），
 	// 修复并发入群可突破 200 人上限的缺陷。
-	if err := h.convs.JoinGroup(convID, me.ID, store.MaxGroupMembers); err != nil {
+	maxMembers := int64(h.maxGroupMembers())
+	if err := h.convs.JoinGroup(convID, me.ID, maxMembers); err != nil {
 		if errors.Is(err, store.ErrGroupFull) {
-			fail(c, http.StatusUnprocessableEntity, "群成员已满（200 人上限）")
+			fail(c, http.StatusUnprocessableEntity,
+				fmt.Sprintf("群成员已满（%d 人上限）", maxMembers))
 			return
 		}
 		internal(c, err)

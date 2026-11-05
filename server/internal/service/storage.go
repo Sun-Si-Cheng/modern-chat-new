@@ -25,6 +25,10 @@ const (
 	MaxStickerBytes = 2 << 20
 	// 群文件：文档/压缩包较大，但仍要设上限避免被当网盘
 	MaxFileBytes = 20 << 20
+
+	// MaxAllowedUploadBytes 后台可配置的上限天花板（200 MB）。
+	// 请求体中间件按它放宽，真正的逐类型限额由 handler 在读之前卡住。
+	MaxAllowedUploadBytes = 200 << 20
 )
 
 // fileTypes 群文件允许的类型（白名单，MIME → 扩展名）。
@@ -68,7 +72,7 @@ var audioTypes = map[string]string{
 // 之所以要接口：消息里存的就是一个 URL，换存储实现时数据不用动。
 type Storage interface {
 	// Save 校验并保存，返回可访问的 URL
-	Save(kind string, data []byte) (string, error)
+	Save(kind string, data []byte, maxBytes int64) (string, error)
 	// Owns 判断 URL 是否属于本存储（消息内容校验用，防外链）
 	Owns(url string) bool
 	// Kind 实现名，用于日志与后台展示
@@ -133,8 +137,8 @@ func (s *LocalStorage) Owns(url string) bool {
 	return strings.HasPrefix(url, s.baseURL+"/") && !strings.Contains(url, "..")
 }
 
-func (s *LocalStorage) Save(kind string, data []byte) (string, error) {
-	ext, err := detectType(kind, data)
+func (s *LocalStorage) Save(kind string, data []byte, maxBytes int64) (string, error) {
+	ext, err := detectType(kind, data, maxBytes)
 	if err != nil {
 		return "", err
 	}
@@ -201,8 +205,8 @@ func (s *S3Storage) Owns(url string) bool {
 	return strings.HasPrefix(url, s.publicBase+"/") || strings.HasPrefix(url, "/uploads/")
 }
 
-func (s *S3Storage) Save(kind string, data []byte) (string, error) {
-	ext, err := detectType(kind, data)
+func (s *S3Storage) Save(kind string, data []byte, maxBytes int64) (string, error) {
+	ext, err := detectType(kind, data, maxBytes)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +227,7 @@ func (s *S3Storage) Save(kind string, data []byte) (string, error) {
 // ---------- 共用 ----------
 
 // detectType 按文件头判断真实类型并返回扩展名。
-func detectType(kind string, data []byte) (string, error) {
+func detectType(kind string, data []byte, maxOverride int64) (string, error) {
 	var allowed map[string]string
 	var maxBytes int
 	switch kind {
@@ -238,6 +242,11 @@ func detectType(kind string, data []byte) (string, error) {
 		allowed, maxBytes = fileTypes, MaxFileBytes
 	default:
 		return "", fmt.Errorf("不支持的文件类型")
+	}
+	// 调用方（上传接口）按后台配置传上限；0 表示用内置默认值。
+	// 这样「体积上限」是业务策略，不必写死在存储层。
+	if maxOverride > 0 {
+		maxBytes = int(maxOverride)
 	}
 	if len(data) == 0 {
 		return "", fmt.Errorf("文件为空")

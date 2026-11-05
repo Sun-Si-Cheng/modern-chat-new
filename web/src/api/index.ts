@@ -244,12 +244,42 @@ export interface AdminSettings {
     /** 对外访问前缀（CDN），留空按 endpoint/bucket 拼 */
     publicBase: string
   }
+  /** 站点信息（改了即时生效） */
+  site: SiteConfig
+  /** 聊天规则（即时生效） */
+  chat: ChatRules
+  /** 上传体积上限（MB，即时生效） */
+  upload: UploadLimits
   smtpEnabled: boolean
   redisEnabled: boolean
-  /** 对象存储当前没有消费方，保存也不生效 */
+  /** 对象存储是否已配置（配了 Endpoint + Bucket 即为 true） */
   storageApplied: boolean
   /** Redis 限流器在启动时构造，改动需重启 */
   redisNeedsRestart: boolean
+}
+
+/** 站点公开配置（GET /api/site，无需登录） */
+export interface SiteConfig {
+  name: string
+  allowRegister: boolean
+  maxMessageLength: number
+  recallMinutes: number
+  maxGroupMembers: number
+  maxImageMB: number
+  maxAudioMB: number
+  maxFileMB: number
+}
+
+export interface ChatRules {
+  maxMessageLength: number
+  recallMinutes: number
+  maxGroupMembers: number
+}
+
+export interface UploadLimits {
+  maxImageMB: number
+  maxAudioMB: number
+  maxFileMB: number
 }
 
 /** 系统设置（写）：敏感字段留空表示不修改 */
@@ -264,6 +294,14 @@ export interface AdminSettingsPayload {
     secretKey?: string
     publicBase?: string
   }
+  site: { name: string; allowRegister: boolean }
+  chat: ChatRules
+  upload: UploadLimits
+}
+
+/** 站点公开信息（登录页也用，不需要 token） */
+export const siteApi = {
+  get: () => http.get<SiteConfig>('/site'),
 }
 
 /** 站长操作审计记录 */

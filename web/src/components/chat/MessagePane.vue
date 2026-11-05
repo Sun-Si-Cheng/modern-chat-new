@@ -15,6 +15,7 @@ import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { convApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useWsStore } from '@/stores/ws'
@@ -24,6 +25,7 @@ const auth = useAuthStore()
 const convStore = useConversationsStore()
 const favorites = useFavoritesStore()
 const ws = useWsStore()
+const siteStore = useSiteStore()
 const host = usePluginHost()
 const { t, te } = useAppI18n()
 
@@ -182,7 +184,11 @@ async function loadMemberNames() {
 
 function canRecall(m: Message): boolean {
   if (m.isRecalled || m.senderId !== auth.user?.id || m.id <= 0) return false
-  return Date.now() - new Date(m.createdAt).getTime() < 2 * 60 * 1000
+  // 撤回时限跟随后台配置（0 = 关闭撤回）；本地判断只做提示，
+  // 服务端仍会再校验一次，两端不一致时以服务端为准
+  const minutes = siteStore.config.recallMinutes
+  if (minutes <= 0) return false
+  return Date.now() - new Date(m.createdAt).getTime() < minutes * 60 * 1000
 }
 
 function recall(m: Message) {

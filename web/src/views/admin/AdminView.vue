@@ -4,6 +4,7 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiSwitch from '@/components/ui/UiSwitch.vue'
 import UiTag from '@/components/ui/UiTag.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -90,6 +91,23 @@ const settingsForm = ref<AdminSettingsPayload>({
     secretKey: '',
     publicBase: '',
   },
+  site: { name: 'ModernChat', allowRegister: true },
+  chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200 },
+  upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20 },
+})
+
+/**
+ * 建议的 nginx client_max_body_size。
+ * 上传上限可以在后台调，但 nginx 那一层不归我们管——超了会直接 413，
+ * 而 413 是 nginx 返回的，用户在应用里只会看到「上传失败」，很难联想到配置。
+ */
+const nginxBodyHint = computed(() => {
+  const max = Math.max(
+    settingsForm.value.upload.maxImageMB,
+    settingsForm.value.upload.maxAudioMB,
+    settingsForm.value.upload.maxFileMB,
+  )
+  return max + 2
 })
 
 async function fetchSettings() {
@@ -113,6 +131,9 @@ async function fetchSettings() {
         secretKey: '',
         publicBase: s.storage.publicBase,
       },
+      site: { name: s.site.name, allowRegister: s.site.allowRegister },
+      chat: { ...s.chat },
+      upload: { ...s.upload },
     }
     settingsMeta.value = {
       smtpEnabled: s.smtpEnabled,
@@ -830,6 +851,107 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
       <div v-if="tab === 'settings'" class="mc-admin__panel" role="tabpanel">
         <p class="mc-admin__hint text-placeholder">{{ t('admin.settingsHint') }}</p>
 
+        <!-- 站点信息：改了即时生效，前端拉 /api/site -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.siteTitle') }}</h3>
+            <UiTag theme="success" variant="light">{{ t('admin.cfgLive') }}</UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.siteDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field">
+              <span>{{ t('admin.siteName') }}</span>
+              <UiInput
+                v-model="settingsForm.site.name"
+                :maxlength="40"
+                :placeholder="t('admin.siteNameHint')"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.siteAllowRegister') }}</span>
+              <div class="mc-settings__switch-row">
+                <UiSwitch
+                  :value="settingsForm.site.allowRegister"
+                  @change="(v) => (settingsForm.site.allowRegister = v)"
+                />
+                <span class="text-placeholder">
+                  {{
+                    settingsForm.site.allowRegister
+                      ? t('admin.allowRegisterOn')
+                      : t('admin.allowRegisterOff')
+                  }}
+                </span>
+              </div>
+            </label>
+          </div>
+          <p v-if="!settingsForm.site.allowRegister" class="mc-settings__warn">
+            {{ t('admin.registerOffHint') }}
+          </p>
+        </section>
+
+        <!-- 聊天规则：服务端每次请求现读，无需重启 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.chatTitle') }}</h3>
+            <UiTag theme="success" variant="light">{{ t('admin.cfgLive') }}</UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.chatDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxMessageLength') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.chat.maxMessageLength"
+                :min="100"
+                :max="5000"
+                :step="100"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.recallMinutes') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.chat.recallMinutes"
+                :min="0"
+                :max="60"
+                :step="1"
+              />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxGroupMembers') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.chat.maxGroupMembers"
+                :min="2"
+                :max="2000"
+                :step="10"
+              />
+            </label>
+          </div>
+          <p class="mc-settings__warn">{{ t('admin.recallZeroHint') }}</p>
+        </section>
+
+        <!-- 上传上限 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.uploadTitle') }}</h3>
+            <UiTag theme="success" variant="light">{{ t('admin.cfgLive') }}</UiTag>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.uploadDesc') }}</p>
+          <div class="mc-settings__grid">
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxImageMB') }}</span>
+              <UiInputNumber v-model="settingsForm.upload.maxImageMB" :min="1" :max="32" :step="1" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxAudioMB') }}</span>
+              <UiInputNumber v-model="settingsForm.upload.maxAudioMB" :min="1" :max="32" :step="1" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxFileMB') }}</span>
+              <UiInputNumber v-model="settingsForm.upload.maxFileMB" :min="1" :max="200" :step="1" />
+            </label>
+          </div>
+          <p class="mc-settings__warn">{{ t('admin.uploadNginxHint', { mb: nginxBodyHint }) }}</p>
+        </section>
+
         <!-- 邮件（SMTP）：找回密码依赖它 -->
         <section class="mc-settings">
           <div class="mc-settings__head">
@@ -1331,6 +1453,15 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   margin: 10px 0 0;
   font-size: var(--mc-fs-sm);
   color: var(--td-warning-color);
+}
+
+/* 开关 + 说明文字同行 */
+.mc-settings__switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: var(--mc-fs-sm);
 }
 
 .mc-settings__save {

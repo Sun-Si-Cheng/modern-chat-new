@@ -28,6 +28,8 @@ type AuthHandler struct {
 	mailer *service.Mailer
 	convs  *store.ConversationStore
 	msgs   *store.MessageStore
+	// settings 用于读取「是否开放注册」这类可运营开关（可为 nil）
+	settings *store.SettingStore
 }
 
 func NewAuthHandler(
@@ -37,8 +39,12 @@ func NewAuthHandler(
 	mailer *service.Mailer,
 	convs *store.ConversationStore,
 	msgs *store.MessageStore,
+	settings *store.SettingStore,
 ) *AuthHandler {
-	return &AuthHandler{cfg: cfg, users: users, resets: resets, mailer: mailer, convs: convs, msgs: msgs}
+	return &AuthHandler{
+		cfg: cfg, users: users, resets: resets, mailer: mailer,
+		convs: convs, msgs: msgs, settings: settings,
+	}
 }
 
 type credentials struct {
@@ -48,6 +54,12 @@ type credentials struct {
 
 // Register 注册。首个注册者 role=admin；avatar_color 按 id 取色板。
 func (h *AuthHandler) Register(c *gin.Context) {
+	// 站点开关：关闭后仍保留已有账号登录，只是不再接受新注册
+	if h.settings != nil && !h.settings.Ops().AllowRegister {
+		fail(c, http.StatusForbidden, "站点已关闭注册，请联系管理员")
+		return
+	}
+
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`

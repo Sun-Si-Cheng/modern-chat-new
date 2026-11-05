@@ -128,6 +128,7 @@ func main() {
 		Users:      store.NewUserStore(db), // 连接级封禁 / tv 复核（task-4 修复点）
 		MsgLimiter: msgLimiter,
 		Storage:    uploadStorage,
+		Settings:   settings,
 	})
 	go hub.Run()
 

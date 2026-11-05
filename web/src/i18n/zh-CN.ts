@@ -179,6 +179,7 @@ export default {
     stopRecord: '点击结束',
     uploading: '上传中…',
     imageTooLarge: '图片超过 8 MB',
+    imageTooLargeMB: '图片不能超过 {mb} MB',
     recordTooShort: '录音太短（至少 1 秒）',
     micDenied: '无法访问麦克风，请检查浏览器权限',
     recordUnsupported: '当前浏览器不支持录音',
@@ -387,6 +388,32 @@ export default {
     settingsHint:
       '这里的配置会保存到数据库并覆盖环境变量。密钥类字段保存后无法回显，留空表示不修改。',
     cfgActive: '已生效',
+    cfgLive: '即时生效',
+    // 站点
+    siteTitle: '站点信息',
+    siteDesc:
+      '站点名称显示在浏览器标题与登录页；关闭注册后不再接受新用户，已有账号仍可正常登录。',
+    siteName: '站点名称',
+    siteNameHint: '例如 ModernChat',
+    siteAllowRegister: '开放注册',
+    allowRegisterOn: '允许新用户注册',
+    allowRegisterOff: '已关闭注册',
+    registerOffHint: '⚠ 关闭后注册接口直接返回 403，只有已有账号能登录。',
+    // 聊天规则
+    chatTitle: '聊天规则',
+    chatDesc: '这些规则由服务端每次请求现读，保存后立即生效，无需重启服务。',
+    maxMessageLength: '单条消息长度（字符）',
+    recallMinutes: '撤回时限（分钟）',
+    maxGroupMembers: '群成员上限',
+    recallZeroHint: 'ⓘ 撤回时限填 0 表示关闭撤回；超过时限的消息无法撤回。',
+    // 上传上限
+    uploadTitle: '上传上限',
+    uploadDesc: '按类型限制单个文件的体积，超过会被服务端拒绝并提示具体上限。',
+    maxImageMB: '图片（MB）',
+    maxAudioMB: '语音（MB）',
+    maxFileMB: '群文件（MB）',
+    uploadNginxHint:
+      'ⓘ 若前面有 nginx，请把 client_max_body_size 调到不少于 {mb} MB，否则请求会先被 nginx 以 413 拦下。',
     cfgInactive: '未配置',
     cfgNotWired: '暂未接入',
     secretPlaceholder: '留空则不修改',

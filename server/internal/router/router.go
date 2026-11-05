@@ -50,8 +50,10 @@ func New(d Deps) *gin.Engine {
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.BodyLimit(1<<20, map[string]int64{
 		"/api/plugins/upload": d.Cfg.PluginMaxSize + 64*1024,
-		// 图片/语音上传走 multipart，单独放宽（上限由 handler 再按 kind 细分）
-		"/api/upload": service.MaxFileBytes + (1 << 20),
+		// 上传走 multipart，单独放宽。这里用「配置允许的最大值」而不是当前值：
+		// 站长随时可能在后台调大上限，中间件在启动时构造，用当前值会立刻卡住。
+		// 真正的逐类型限额由 UploadHandler 用 MaxBytesReader 在读之前卡住。
+		"/api/upload": service.MaxAllowedUploadBytes + (1 << 20),
 	}))
 	// REST 响应压缩（设计文档 §9.2）。
 	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
@@ -87,10 +89,10 @@ func New(d Deps) *gin.Engine {
 		slog.Info("smtp config loaded from database", "host", cfg.Host, "port", cfg.Port)
 	}
 
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs)
-	convH := handler.NewConversationHandler(users, friends, convs, msgs)
+	convH := handler.NewConversationHandler(users, friends, convs, msgs, settings)
 	stickerH := handler.NewStickerHandler(stickers, d.Storage)
 	fileH := handler.NewFileHandler(files, convs, d.Storage)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
@@ -100,7 +102,7 @@ func New(d Deps) *gin.Engine {
 	storage := d.Storage
 	var uploadH *handler.UploadHandler
 	if storage != nil {
-		uploadH = handler.NewUploadHandler(storage)
+		uploadH = handler.NewUploadHandler(storage, settings)
 		// 静态服务**始终**挂载：改用对象存储后，历史消息里的 /uploads/... 仍要能打开
 		// （否则老图片/语音全部 404，而数据库里还留着这些 URL）。
 		// 新文件走当前存储，本地目录只服务历史文件，留空也只是 404，无副作用。
@@ -115,6 +117,9 @@ func New(d Deps) *gin.Engine {
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
 	api.GET("/version", handler.Version)
+	// 站点信息（免鉴权）：站点名、注册开关、消息长度/撤回时限/上传上限。
+	// 不含任何密钥类配置。
+	api.GET("/site", handler.NewSiteHandler(settings).Get)
 
 	// 认证（免鉴权，按 IP 限流 10/min）
 	authLimit := middleware.RateLimit(d.AuthLimiter, middleware.KeyByIP)

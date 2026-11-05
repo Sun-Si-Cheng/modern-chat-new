@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -50,16 +52,42 @@ type storageSetting struct {
 	PublicBase string `json:"publicBase"`
 }
 
+// siteSetting 站点信息：改了即时生效（前端拉 /api/site 拿）。
+type siteSetting struct {
+	Name          string `json:"name"`
+	AllowRegister bool   `json:"allowRegister"`
+}
+
+// chatSetting 聊天规则：服务端每次请求现读，无需重启。
+type chatSetting struct {
+	MaxMessageLength int `json:"maxMessageLength"`
+	RecallMinutes    int `json:"recallMinutes"`
+	MaxGroupMembers  int `json:"maxGroupMembers"`
+}
+
+// uploadSetting 上传体积上限（MB）。
+type uploadSetting struct {
+	MaxImageMB int `json:"maxImageMB"`
+	MaxAudioMB int `json:"maxAudioMB"`
+	MaxFileMB  int `json:"maxFileMB"`
+}
+
 type settingsPayload struct {
 	SMTP    smtpSetting    `json:"smtp"`
 	Redis   redisSetting   `json:"redis"`
 	Storage storageSetting `json:"storage"`
+	Site    siteSetting    `json:"site"`
+	Chat    chatSetting    `json:"chat"`
+	Upload  uploadSetting  `json:"upload"`
 }
 
 type settingsView struct {
 	SMTP    smtpSetting    `json:"smtp"`
 	Redis   redisSetting   `json:"redis"`
 	Storage storageSetting `json:"storage"`
+	Site    siteSetting    `json:"site"`
+	Chat    chatSetting    `json:"chat"`
+	Upload  uploadSetting  `json:"upload"`
 	// 生效状态
 	SMTPEnabled    bool `json:"smtpEnabled"`
 	RedisEnabled   bool `json:"redisEnabled"`
@@ -101,6 +129,21 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 		StorageApplied:    all[store.KeyStorageEndpoint] != "" && all[store.KeyStorageBucket] != "",
 		RedisNeedsRestart: true,
 	}
+
+	// 站点 / 聊天 / 上传：走 Ops() 拿到的是「填过就是填的值，没填就是默认值」，
+	// 所以表单永远显示当前真实生效的数值，而不是空。
+	ops := h.settings.Ops()
+	view.Site = siteSetting{Name: ops.SiteName, AllowRegister: ops.AllowRegister}
+	view.Chat = chatSetting{
+		MaxMessageLength: ops.MaxMessageLength,
+		RecallMinutes:    ops.RecallMinutes,
+		MaxGroupMembers:  ops.MaxGroupMembers,
+	}
+	view.Upload = uploadSetting{
+		MaxImageMB: ops.MaxImageMB,
+		MaxAudioMB: ops.MaxAudioMB,
+		MaxFileMB:  ops.MaxFileMB,
+	}
 	c.JSON(http.StatusOK, view)
 }
 
@@ -125,6 +168,34 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
+	// 站点 / 聊天 / 上传：越界直接拒，而不是静默收敛——
+	// 站长填了 50000 却被悄悄改成 5000，会以为没保存成功。
+	siteName := strings.TrimSpace(req.Site.Name)
+	if n := len([]rune(siteName)); n > 40 {
+		fail(c, http.StatusBadRequest, "站点名称最多 40 个字符")
+		return
+	}
+	checks := []struct {
+		label string
+		v     int
+		min   int
+		max   int
+	}{
+		{"单条消息长度", req.Chat.MaxMessageLength, 100, 5000},
+		{"撤回时限（分钟）", req.Chat.RecallMinutes, 0, 60},
+		{"群成员上限", req.Chat.MaxGroupMembers, 2, 2000},
+		{"图片大小上限（MB）", req.Upload.MaxImageMB, 1, 32},
+		{"语音大小上限（MB）", req.Upload.MaxAudioMB, 1, 32},
+		{"群文件大小上限（MB）", req.Upload.MaxFileMB, 1, 200},
+	}
+	for _, ck := range checks {
+		if ck.v < ck.min || ck.v > ck.max {
+			fail(c, http.StatusBadRequest,
+				fmt.Sprintf("%s需为 %d-%d", ck.label, ck.min, ck.max))
+			return
+		}
+	}
+
 	updates := map[string]string{
 		store.KeySMTPHost: strings.TrimSpace(req.SMTP.Host),
 		store.KeySMTPPort: strings.TrimSpace(req.SMTP.Port),
@@ -142,6 +213,17 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyStorageAccessKey:  strings.TrimSpace(req.Storage.AccessKey),
 		store.KeyStorageSecretKey:  req.Storage.SecretKey,
 		store.KeyStoragePublicBase: strings.TrimSpace(req.Storage.PublicBase),
+
+		store.KeySiteName:          siteName,
+		store.KeySiteAllowRegister: strconv.FormatBool(req.Site.AllowRegister),
+
+		store.KeyChatMaxMessageLen:   strconv.Itoa(req.Chat.MaxMessageLength),
+		store.KeyChatRecallMinutes:   strconv.Itoa(req.Chat.RecallMinutes),
+		store.KeyChatMaxGroupMembers: strconv.Itoa(req.Chat.MaxGroupMembers),
+
+		store.KeyUploadMaxImageMB: strconv.Itoa(req.Upload.MaxImageMB),
+		store.KeyUploadMaxAudioMB: strconv.Itoa(req.Upload.MaxAudioMB),
+		store.KeyUploadMaxFileMB:  strconv.Itoa(req.Upload.MaxFileMB),
 	}
 
 	if err := h.settings.Save(updates, middleware.UserFrom(c).ID); err != nil {
@@ -158,7 +240,9 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"ok":                true,
 		"redisNeedsRestart": strings.TrimSpace(req.Redis.Addr) != "",
-		"storageApplied":    false,
+		// 之前这里写死 false，与 GET 的 storageApplied 自相矛盾（保存后前端会把标签改回「未生效」）
+		"storageApplied": strings.TrimSpace(req.Storage.Endpoint) != "" &&
+			strings.TrimSpace(req.Storage.Bucket) != "",
 	})
 }
 
