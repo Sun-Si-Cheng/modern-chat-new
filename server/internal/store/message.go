@@ -1,6 +1,7 @@
 package store
 
 import (
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -340,6 +341,154 @@ func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, 
 		}
 	}
 	return rows, nil
+}
+
+// Search 消息搜索：只搜索调用者已加入的会话，排除已撤回与本人「仅自己删除」的消息。
+// convID=0 表示全局搜索。中文场景下使用 LIKE 即可（不需要额外全文索引），
+// 数据量大时可替换为 FULLTEXT ngram 索引而不改变调用方。
+func (s *MessageStore) Search(userID, convID uint, kw string, limit int) ([]model.SearchHitView, error) {
+	pat := "%" + likeEscape(kw) + "%"
+	q := s.db.Table("messages m").
+		Select(`m.id AS message_id, m.conversation_id, c.type AS conv_type,
+			COALESCE(c.name, '') AS conv_name, m.sender_id, u.nickname AS sender_nickname,
+			m.msg_type, m.content, m.created_at`).
+		Joins("JOIN conversations c ON c.id = m.conversation_id").
+		Joins("JOIN users u ON u.id = m.sender_id").
+		Where("m.is_recalled = ? AND m.content LIKE ?", false, pat).
+		Where("EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = m.conversation_id AND cm.user_id = ?)", userID).
+		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID)
+	if convID > 0 {
+		q = q.Where("m.conversation_id = ?", convID)
+	}
+	var rows []model.SearchHitView
+	if err := q.Order("m.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	// 单聊没有群名：用对方昵称补全会话名
+	singleIDs := make([]uint, 0, len(rows))
+	for _, r := range rows {
+		if r.ConvType == 1 && r.ConversationID > 0 {
+			singleIDs = append(singleIDs, r.ConversationID)
+		}
+	}
+	if len(singleIDs) > 0 {
+		var peers []struct {
+			ConversationID uint   `gorm:"column:conversation_id"`
+			Nickname       string `gorm:"column:nickname"`
+		}
+		if err := s.db.Table("conversation_members cm").
+			Select("cm.conversation_id, u.nickname").
+			Joins("JOIN users u ON u.id = cm.user_id").
+			Where("cm.conversation_id IN ? AND cm.user_id <> ?", singleIDs, userID).
+			Scan(&peers).Error; err != nil {
+			return nil, err
+		}
+		names := make(map[uint]string, len(peers))
+		for _, p := range peers {
+			if names[p.ConversationID] == "" {
+				names[p.ConversationID] = p.Nickname
+			}
+		}
+		for i := range rows {
+			if rows[i].ConvType == 1 {
+				rows[i].ConvName = names[rows[i].ConversationID]
+			}
+		}
+	}
+	return rows, nil
+}
+
+// UpdateContent 编辑消息正文并记录编辑时间。调用方先校验发送者、类型与时限。
+func (s *MessageStore) UpdateContent(id uint, content string) (time.Time, error) {
+	now := time.Now()
+	res := s.db.Model(&model.Message{}).
+		Where("id = ? AND is_recalled = ?", id, false).
+		Updates(map[string]any{"content": content, "edited_at": now})
+	return now, res.Error
+}
+
+// SetReaction 设置某人对某条消息的表情（同一人只保留一个）。
+// 返回设置前该用户的表情（可能为空），供前端精确扣减旧表情的计数。
+func (s *MessageStore) SetReaction(messageID, userID uint, emoji string) (string, error) {
+	var prev model.MessageReaction
+	err := s.db.Where("message_id = ? AND user_id = ?", messageID, userID).First(&prev).Error
+	notFound := err == gorm.ErrRecordNotFound
+	if err != nil && !notFound {
+		return "", err
+	}
+	if !notFound && prev.Emoji == emoji {
+		return prev.Emoji, nil
+	}
+	if err := s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "message_id"}, {Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{"emoji": emoji, "created_at": time.Now()}),
+	}).Create(&model.MessageReaction{
+		MessageID: messageID, UserID: userID, Emoji: emoji,
+	}).Error; err != nil {
+		return "", err
+	}
+	if notFound {
+		return "", nil
+	}
+	return prev.Emoji, nil
+}
+
+// RemoveReaction 取消表情回应（幂等）。
+func (s *MessageStore) RemoveReaction(messageID, userID uint) error {
+	return s.db.Where("message_id = ? AND user_id = ?", messageID, userID).
+		Delete(&model.MessageReaction{}).Error
+}
+
+// AttachReactions 为一批消息装配表情聚合（计数 + 我是否回应过）。
+// 历史分页与断线重连都走这里；WS 回显的新消息没有表情，无需装配。
+func (s *MessageStore) AttachReactions(msgs []model.Message, viewerID uint) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(msgs))
+	for _, m := range msgs {
+		if m.ID > 0 {
+			ids = append(ids, m.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var rows []model.MessageReaction
+	if err := s.db.Where("message_id IN ?", ids).Find(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[uint]map[string]int, len(ids))
+	mine := make(map[uint]string, len(ids))
+	for _, r := range rows {
+		if counts[r.MessageID] == nil {
+			counts[r.MessageID] = map[string]int{}
+		}
+		counts[r.MessageID][r.Emoji]++
+		if r.UserID == viewerID {
+			mine[r.MessageID] = r.Emoji
+		}
+	}
+	for i := range msgs {
+		set := counts[msgs[i].ID]
+		if len(set) == 0 {
+			continue
+		}
+		views := make([]model.ReactionView, 0, len(set))
+		for emoji, n := range set {
+			views = append(views, model.ReactionView{
+				Emoji: emoji, Count: n, Mine: mine[msgs[i].ID] == emoji,
+			})
+		}
+		sort.Slice(views, func(a, b int) bool {
+			if views[a].Count != views[b].Count {
+				return views[a].Count > views[b].Count
+			}
+			return views[a].Emoji < views[b].Emoji
+		})
+		msgs[i].Reactions = views
+	}
+	return nil
 }
 
 // Count 消息总数（含已撤回）。

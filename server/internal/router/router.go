@@ -164,6 +164,8 @@ func New(d Deps) *gin.Engine {
 		authed.POST("/conversations/:id/read", convH.Read)
 		authed.PATCH("/conversations/:id", convH.Rename)
 		authed.POST("/conversations/:id/kick", convH.Kick)
+		authed.POST("/conversations/:id/admin", convH.SetAdmin)
+		authed.POST("/conversations/:id/mute", convH.Mute)
 		authed.POST("/conversations/:id/transfer", convH.Transfer)
 
 		// 收藏夹（消息收藏）
@@ -176,6 +178,7 @@ func New(d Deps) *gin.Engine {
 		authed.POST("/conversations/:id/files", fileH.Add)
 		authed.DELETE("/files/:id", fileH.Delete)
 		authed.GET("/favorites", convH.Favorites)
+		authed.GET("/search/messages", convH.SearchMessages)
 
 		// 个人表情库（表情文件走 /api/upload?kind=sticker）
 		authed.GET("/stickers", stickerH.List)

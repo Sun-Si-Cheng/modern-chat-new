@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
-import { ArrowLeftIcon, ChatIcon } from 'tdesign-icons-vue-next'
+import { ArrowLeftIcon, ChatIcon, SearchIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import MessageComposer from './MessageComposer.vue'
@@ -13,13 +13,13 @@ import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMe
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi } from '@/api'
+import { convApi, searchApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useWsStore } from '@/stores/ws'
-import type { Conversation, Message, ReplyBrief, UIDescNode } from '@/types/proto'
+import type { Conversation, Message, ReplyBrief, SearchHit, UIDescNode } from '@/types/proto'
 
 const auth = useAuthStore()
 const convStore = useConversationsStore()
@@ -153,7 +153,20 @@ watch(
   { immediate: true },
 )
 
-onMounted(scrollToBottom)
+/** Ctrl/Cmd+F 打开会话内搜索；Esc 关闭 */
+function onPaneKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && conv.value) {
+    e.preventDefault()
+    if (!searchOpen.value) searchOpen.value = true
+    void nextTick(() => searchInputRef.value?.focus())
+  }
+  if (e.key === 'Escape' && searchOpen.value) closeSearch()
+}
+
+onMounted(() => {
+  scrollToBottom()
+  window.addEventListener('keydown', onPaneKeydown)
+})
 
 // ===== 群成员昵称缓存 =====
 
@@ -195,6 +208,47 @@ function recall(m: Message) {
   convStore.recallMessage(m.id)
   void MessagePlugin.success(t('message.recallOk'))
 }
+
+// ===== 编辑 =====
+
+const EDIT_WINDOW = 5 * 60 * 1000
+
+function canEdit(m: Message): boolean {
+  if (m.isRecalled || m.senderId !== auth.user?.id || m.msgType !== 'text' || m.id <= 0) return false
+  if (m.pending || m.failed) return false
+  return Date.now() - new Date(m.createdAt).getTime() < EDIT_WINDOW
+}
+
+function startEdit(m: Message) {
+  convStore.setReplyTarget(null)
+  convStore.setEditingMessage(m)
+}
+
+// ===== 表情回应 =====
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉']
+const reactionPicker = ref(0)
+
+function toggleReactionPicker(messageId: number) {
+  reactionPicker.value = reactionPicker.value === messageId ? 0 : messageId
+}
+
+function hasMine(m: Message, emoji: string): boolean {
+  return (m.reactions ?? []).some((r) => r.emoji === emoji && r.mine)
+}
+
+function react(m: Message, emoji: string) {
+  reactionPicker.value = 0
+  convStore.toggleReaction(m.id, emoji, hasMine(m, emoji))
+}
+
+// 切换会话时收起表情选择器
+watch(
+  () => conv.value?.id,
+  () => {
+    reactionPicker.value = 0
+  },
+)
 
 // ===== 群公告 =====
 const announceOpen = ref(false)
@@ -279,6 +333,99 @@ function jumpToMessage(id: number) {
   }, 1200)
 }
 
+// 搜索结果跨会话跳转：消息页加载到位后滚动并高亮
+watch(
+  [() => convStore.pendingJumpId, () => displayItems.value.length],
+  () => {
+    const id = convStore.pendingJumpId
+    if (!id) return
+    if (displayItems.value.some((it) => it.kind === 'msg' && it.msg?.id === id)) {
+      void nextTick(() => {
+        jumpToMessage(id)
+        convStore.pendingJumpId = null
+      })
+    }
+  },
+)
+
+// ===== 会话内搜索 =====
+
+const searchOpen = ref(false)
+const searchKw = ref('')
+const searching = ref(false)
+const searchResults = ref<SearchHit[]>([])
+const searchInputRef = ref<HTMLInputElement | null>(null)
+let searchTimer: number | undefined
+
+function closeSearch() {
+  searchOpen.value = false
+  searchKw.value = ''
+  searchResults.value = []
+}
+
+function toggleSearch() {
+  if (searchOpen.value) {
+    closeSearch()
+    return
+  }
+  searchOpen.value = true
+  void nextTick(() => searchInputRef.value?.focus())
+}
+
+function onSearchInput() {
+  window.clearTimeout(searchTimer)
+  const kw = searchKw.value.trim()
+  const c = conv.value
+  if (!kw || !c) {
+    searchResults.value = []
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    searching.value = true
+    try {
+      const rows = await searchApi.messages(kw, c.id, 30)
+      // 输入可能已经变了：只接受与当前关键词/会话匹配的结果
+      if (conv.value?.id === c.id && searchKw.value.trim() === kw) {
+        searchResults.value = rows ?? []
+      }
+    } catch (e) {
+      void MessagePlugin.error(te(e))
+    } finally {
+      searching.value = false
+    }
+  }, 250)
+}
+
+async function openSearchHit(hit: SearchHit) {
+  closeSearch()
+  const ok = await convStore.openConversationAtMessage(hit.conversationId, hit.messageId)
+  if (!ok) void MessagePlugin.warning(t('message.searchJumpOld'))
+}
+
+function searchPreview(hit: SearchHit): string {
+  if (hit.msgType === 'image') return t('message.quoteImage')
+  if (hit.msgType === 'audio') return t('message.quoteAudio')
+  if (hit.msgType === 'sticker') return t('message.quoteSticker')
+  if (hit.msgType !== 'text') return t('message.unknownType', { type: hit.msgType })
+  return hit.content
+}
+
+/** 把内容按关键词切成普通段/命中段，渲染时用 <mark> 高亮 */
+function searchParts(content: string): { t: string; hit: boolean }[] {
+  const kw = searchKw.value.trim()
+  if (!kw) return [{ t: content, hit: false }]
+  const re = new RegExp(`(${escapeRe(kw)})`, 'gi')
+  return content
+    .split(re)
+    .filter((s) => s !== '')
+    .map((s) => ({ t: s, hit: s.toLowerCase() === kw.toLowerCase() }))
+}
+
+function fmtSearchTime(ts: string): string {
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}/${d.getDate()} ${fmtTime(ts)}`
+}
+
 // ===== 图片预览（灯箱）=====
 
 const previewSrc = ref('')
@@ -294,6 +441,8 @@ watch(previewSrc, (v) => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onPreviewKey)
+  window.removeEventListener('keydown', onPaneKeydown)
+  window.clearTimeout(searchTimer)
   clearTimeout(recallTimer)
 })
 
@@ -367,6 +516,7 @@ function commonActions(m: Message, dividerFirst: boolean): ContextMenuItem[] {
   if (actionable) {
     items.push({ key: 'quote', label: t('message.quote'), dividerBefore: markDivider() })
     items.push({ key: 'forward', label: t('message.forward') })
+    if (canEdit(m)) items.push({ key: 'edit', label: t('message.edit') })
   }
   items.push({
     key: 'favorite',
@@ -450,6 +600,7 @@ function onMenuSelect(key: string) {
   if (key === 'copy') void copyMessage(m)
   if (key === 'quote') convStore.setReplyTarget(m)
   if (key === 'forward') forwardSource.value = m
+  if (key === 'edit') startEdit(m)
   if (key === 'recall') recall(m)
   if (key === 'favorite') void toggleFavorite(m)
   if (key === 'delete') confirmDelete(m)
@@ -619,7 +770,68 @@ const senderName = (m: Message) => {
           </span>
         </div>
       </div>
+      <button
+        v-if="conv"
+        type="button"
+        class="mc-msgpane__search-btn"
+        :class="{ 'is-active': searchOpen }"
+        :aria-label="t('message.search')"
+        :title="t('message.search')"
+        @click="toggleSearch"
+      >
+        <SearchIcon size="18px" />
+      </button>
     </header>
+
+    <!-- 会话内搜索：Ctrl/Cmd+F 也可打开 -->
+    <div v-if="searchOpen && conv" class="mc-msgpane__search-panel">
+      <div class="mc-msgpane__search-row">
+        <SearchIcon class="mc-msgpane__search-icon" size="15px" />
+        <input
+          ref="searchInputRef"
+          v-model="searchKw"
+          class="mc-msgpane__search-input"
+          :placeholder="t('message.searchPlaceholder')"
+          @input="onSearchInput"
+          @keydown.esc.prevent="closeSearch"
+        />
+        <button
+          type="button"
+          class="mc-msgpane__search-close"
+          :aria-label="t('common.close')"
+          @click="closeSearch"
+        >
+          ×
+        </button>
+      </div>
+
+      <div v-if="searching" class="text-placeholder mc-msgpane__search-state">
+        {{ t('common.loading') }}
+      </div>
+      <div v-else-if="searchResults.length" class="mc-msgpane__search-list">
+        <button
+          v-for="hit in searchResults"
+          :key="hit.messageId"
+          type="button"
+          class="mc-msgpane__search-hit"
+          @click="openSearchHit(hit)"
+        >
+          <span class="mc-msgpane__search-meta text-placeholder">
+            <span class="mc-msgpane__search-sender">{{ hit.senderNickname }}</span>
+            <span class="num">{{ fmtSearchTime(hit.createdAt) }}</span>
+          </span>
+          <span class="mc-msgpane__search-text">
+            <template v-for="(p, i) in searchParts(searchPreview(hit))" :key="i">
+              <mark v-if="p.hit">{{ p.t }}</mark>
+              <template v-else>{{ p.t }}</template>
+            </template>
+          </span>
+        </button>
+      </div>
+      <p v-else-if="searchKw.trim()" class="text-placeholder mc-msgpane__search-state">
+        {{ t('message.searchEmpty') }}
+      </p>
+    </div>
 
     <!-- 群公告：折叠时一行摘要，展开看全文与发布者 -->
     <div
@@ -797,11 +1009,48 @@ const senderName = (m: Message) => {
                   </span>
                 </div>
 
+                <!-- 表情回应：已有点击切换，+ 展开预设表情 -->
+                <div
+                  v-if="!item.msg.isRecalled && item.msg.id > 0"
+                  class="mc-msg__reactions"
+                >
+                  <button
+                    v-for="r in item.msg.reactions ?? []"
+                    :key="r.emoji"
+                    type="button"
+                    class="mc-msg__reaction"
+                    :class="{ 'is-mine': r.mine }"
+                    @click="react(item.msg, r.emoji)"
+                  >
+                    {{ r.emoji }}<span class="num">{{ r.count }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="mc-msg__reaction-add"
+                    :aria-label="t('message.addReaction')"
+                    :title="t('message.addReaction')"
+                    @click="toggleReactionPicker(item.msg.id)"
+                  >
+                    +
+                  </button>
+                  <div v-if="reactionPicker === item.msg.id" class="mc-msg__reaction-picker">
+                    <button
+                      v-for="e in REACTION_EMOJIS"
+                      :key="e"
+                      type="button"
+                      @click="react(item.msg, e)"
+                    >
+                      {{ e }}
+                    </button>
+                  </div>
+                </div>
+
                 <div class="mc-msg__meta text-placeholder num">
                   <template v-if="senderOf(item.msg) && conv?.type === 1">
                     {{ peerReadUpTo >= item.msg.id ? t('message.read') : t('message.unread') }} ·
                   </template>
                   {{ fmtTime(item.msg.createdAt) }}
+                  <span v-if="item.msg.editedAt"> · {{ t('message.edited') }}</span>
                 </div>
               </div>
             </div>
@@ -881,6 +1130,7 @@ const senderName = (m: Message) => {
 
 <style scoped>
 .mc-msgpane {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -890,6 +1140,7 @@ const senderName = (m: Message) => {
 }
 
 .mc-msgpane__header {
+  position: relative;
   height: 56px;
   flex-shrink: 0;
   display: flex;
@@ -897,6 +1148,156 @@ const senderName = (m: Message) => {
   padding: 0 20px;
   border-bottom: 1px solid var(--td-component-border);
   background: var(--td-bg-color-container);
+}
+
+/* ===== 会话内搜索 ===== */
+.mc-msgpane__search-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--mc-dur-fast) var(--mc-ease-out),
+    color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-msgpane__search-btn:hover,
+.mc-msgpane__search-btn.is-active {
+  background: var(--td-bg-color-container-hover);
+  color: var(--td-brand-color);
+}
+
+.mc-msgpane__search-panel {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  z-index: 24;
+  width: 380px;
+  max-width: calc(100% - 24px);
+  max-height: min(420px, 60vh);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  box-shadow: var(--mc-elev-2);
+}
+
+.mc-msgpane__search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-container);
+}
+
+.mc-msgpane__search-icon {
+  flex-shrink: 0;
+  color: var(--td-text-color-placeholder);
+}
+
+.mc-msgpane__search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.mc-msgpane__search-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mc-msgpane__search-close:hover {
+  background: var(--td-bg-color-container-hover);
+  color: var(--td-text-color-primary);
+}
+
+.mc-msgpane__search-state {
+  padding: 16px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.mc-msgpane__search-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 6px;
+  max-height: 340px;
+}
+
+.mc-msgpane__search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-msgpane__search-hit:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.mc-msgpane__search-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.mc-msgpane__search-sender {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-msgpane__search-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-msgpane__search-text mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.16));
+  color: var(--td-brand-color);
 }
 
 .mc-msgpane__identity {
@@ -1421,6 +1822,111 @@ const senderName = (m: Message) => {
   right: -52px;
   color: var(--td-error-color);
   opacity: 1;
+}
+
+/* ===== 表情回应 ===== */
+.mc-msg__reactions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.mc-msg__reaction,
+.mc-msg__reaction-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  transition:
+    border-color var(--mc-dur-fast) var(--mc-ease-out),
+    background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-msg__reaction:hover,
+.mc-msg__reaction.is-mine {
+  border-color: var(--td-brand-color);
+}
+
+.mc-msg__reaction.is-mine {
+  background: var(--td-brand-color-1, rgba(0, 82, 217, 0.08));
+  color: var(--td-brand-color);
+}
+
+.mc-msg__reaction .num {
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+}
+
+.mc-msg__reaction.is-mine .num {
+  color: var(--td-brand-color);
+}
+
+.mc-msg__reaction-add {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--td-text-color-placeholder);
+  opacity: 0;
+}
+
+.mc-msg:hover .mc-msg__reaction-add,
+.mc-msg:focus-within .mc-msg__reaction-add,
+.mc-msg__reaction-add:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .mc-msg__reaction-add {
+    opacity: 1;
+  }
+}
+
+.mc-msg__reaction-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+  background: var(--td-bg-color-container);
+  box-shadow: var(--mc-shadow-2);
+}
+
+.mc-msg.mine .mc-msg__reaction-picker {
+  left: auto;
+  right: 0;
+}
+
+.mc-msg__reaction-picker button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mc-msg__reaction-picker button:hover {
+  background: var(--td-bg-color-container-hover);
 }
 
 .mc-msg__meta {

@@ -11,12 +11,12 @@ import { AddIcon, ChatIcon, SearchIcon, UserCircleIcon } from 'tdesign-icons-vue
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, userApi } from '@/api'
+import { convApi, searchApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
 import { useWsStore } from '@/stores/ws'
-import type { Conversation, User } from '@/types/proto'
+import type { Conversation, SearchHit, User } from '@/types/proto'
 
 /** 会话 / 联系人列表栏（第二栏，视图由图标栏驱动） */
 const props = defineProps<{ view: 'chats' | 'contacts' }>()
@@ -34,24 +34,50 @@ const kw = ref('')
 const searching = ref(false)
 const userResults = ref<User[]>([])
 const groupResults = ref<Conversation[]>([])
+const messageResults = ref<SearchHit[]>([])
 
 async function onSearch() {
   const k = kw.value.trim()
   if (!k) {
     userResults.value = []
     groupResults.value = []
+    messageResults.value = []
     return
   }
   searching.value = true
   try {
-    const [users, groups] = await Promise.all([userApi.search(k), convApi.searchGroups(k)])
+    const [users, groups, messages] = await Promise.all([
+      userApi.search(k),
+      convApi.searchGroups(k),
+      searchApi.messages(k, undefined, 20),
+    ])
     userResults.value = users.filter((u) => u.id !== auth.user?.id)
     groupResults.value = groups
+    messageResults.value = Array.isArray(messages) ? messages : []
   } catch (e) {
     void MessagePlugin.error(te(e))
   } finally {
     searching.value = false
   }
+}
+
+/** 点搜索结果：打开对应会话并尽量定位到原消息（太旧时只定位到会话） */
+async function openMessageHit(hit: SearchHit) {
+  const ok = await convStore.openConversationAtMessage(hit.conversationId, hit.messageId)
+  kw.value = ''
+  messageResults.value = []
+  userResults.value = []
+  groupResults.value = []
+  if (!ok) void MessagePlugin.warning(t('chat.searchJumpOld'))
+}
+
+/** 搜索结果里的消息正文：媒体消息不能直接展示 URL */
+function searchPreview(hit: SearchHit): string {
+  if (hit.msgType === 'image') return t('chat.previewImage')
+  if (hit.msgType === 'audio') return t('chat.previewVoice')
+  if (hit.msgType === 'sticker') return t('message.quoteSticker')
+  if (hit.msgType !== 'text') return t('message.unknownType', { type: hit.msgType })
+  return hit.content
 }
 
 /**
@@ -70,6 +96,7 @@ async function startSingle(u: User) {
     await convStore.openConversation(conv.id)
     kw.value = ''
     userResults.value = []
+    messageResults.value = []
   } catch (e) {
     void MessagePlugin.error(te(e))
   } finally {
@@ -86,6 +113,7 @@ async function joinGroup(g: Conversation) {
     await convStore.openConversation(g.id)
     kw.value = ''
     groupResults.value = []
+    messageResults.value = []
     void MessagePlugin.success(t('chat.joinedGroup', { name: g.name ?? '' }))
   } catch (e) {
     void MessagePlugin.error(te(e))
@@ -357,7 +385,24 @@ const sortedConvs = computed(() => {
           <span class="text-placeholder num">{{ t('chat.membersCount', { n: g.memberCount }) }}</span>
         </TListItem>
       </TList>
-      <div v-if="!userResults.length && !groupResults.length && !searching" class="text-placeholder mc-sidebar__empty">
+      <div v-if="messageResults.length" class="mc-sidebar__group-label">{{ t('chat.groupMessages') }}</div>
+      <button
+        v-for="hit in messageResults"
+        :key="hit.messageId"
+        type="button"
+        class="mc-sidebar__msg-hit"
+        @click="openMessageHit(hit)"
+      >
+        <span class="mc-sidebar__msg-hit-top">
+          <span class="mc-sidebar__msg-hit-conv">{{ hit.convName }}</span>
+          <span class="text-placeholder mc-sidebar__msg-hit-meta num">{{ hit.senderNickname }}</span>
+        </span>
+        <span class="mc-sidebar__msg-hit-text text-secondary">{{ searchPreview(hit) }}</span>
+      </button>
+      <div
+        v-if="!userResults.length && !groupResults.length && !messageResults.length && !searching"
+        class="text-placeholder mc-sidebar__empty"
+      >
         {{ t('chat.noResults') }}
       </div>
     </div>
@@ -625,6 +670,54 @@ const sortedConvs = computed(() => {
 
 .mc-sidebar__result-name {
   font-weight: 500;
+}
+
+/* 聊天记录搜索结果：两行（会话名 + 发送者 / 内容） */
+.mc-sidebar__msg-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--mc-radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+.mc-sidebar__msg-hit:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-sidebar__msg-hit-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mc-sidebar__msg-hit-conv {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--mc-fs-body);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-sidebar__msg-hit-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.mc-sidebar__msg-hit-text {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mc-conv-item {

@@ -18,6 +18,36 @@ const { t } = useAppI18n()
 
 /** 消息长度上限跟随后台配置；达到 90% 时计数变警示色 */
 const maxMessageLength = computed(() => siteStore.config.maxMessageLength)
+/** 正在编辑的消息：非 null 时输入区进入编辑模式 */
+const editing = computed(() => convStore.editingMessage)
+
+/** 我在当前会话的成员行：用于判断是否被禁言 */
+const myMember = computed(() => {
+  const id = convStore.currentConvId
+  if (!id) return null
+  return (convStore.membersByConv[id] ?? []).find((m) => m.userId === auth.user?.id) ?? null
+})
+
+const mutedUntil = computed(() => {
+  const v = myMember.value?.mutedUntil
+  if (!v) return null
+  return new Date(v).getTime() > Date.now() ? v : null
+})
+
+function fmtMuted(ts: string): string {
+  const d = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// 群成员变更（被禁言/解禁）后刷新成员缓存
+watch(
+  () => convStore.convChangeTick,
+  () => {
+    const id = convStore.currentConvId
+    if (id) void convStore.loadMembers(id, true)
+  },
+)
 
 // 从草稿恢复：切换会话回来时，之前打了一半的内容还在
 const text = ref(convStore.currentConvId ? convStore.draftOf(convStore.currentConvId) : '')
@@ -37,9 +67,25 @@ function resize() {
 
 watch(text, (v) => {
   void nextTick(resize)
-  // 输入即写草稿；发送后 text 被清空，草稿随之删除
-  if (convStore.currentConvId) convStore.setDraft(convStore.currentConvId, v)
+  // 编辑态不回写草稿，否则会把原本打了一半的内容覆盖成被编辑消息的正文
+  if (convStore.currentConvId && !editing.value) convStore.setDraft(convStore.currentConvId, v)
 })
+
+// 进入编辑态：把正文填进输入框并聚焦
+watch(editing, (m) => {
+  if (!m) return
+  text.value = m.content
+  stickerOpen.value = false
+  void nextTick(() => {
+    resize()
+    inputRef.value?.focus()
+  })
+})
+
+function cancelEdit() {
+  convStore.setEditingMessage(null)
+  text.value = ''
+}
 
 onMounted(() => {
   resize()
@@ -307,7 +353,18 @@ function onInput() {
 function send() {
   const content = text.value.trim()
   const convId = convStore.currentConvId
-  if (!content || !convId) return
+  if (!content || !convId || mutedUntil.value) return
+  // 编辑模式：只提交正文，引用 / @ / 转发语义保持不变
+  if (editing.value) {
+    const ok = convStore.editMessage(editing.value.id, content)
+    if (!ok) {
+      void MessagePlugin.error(t('message.editFailed'))
+      return
+    }
+    convStore.setEditingMessage(null)
+    text.value = ''
+    return
+  }
   // 只保留文本里仍然存在的 @：选了人之后又把「@昵称」删掉的，不该还提醒对方
   const activeMentions = mentionIds.value.filter((id) => {
     const name = convStore.memberNickname(convId, id)
@@ -407,6 +464,26 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <footer class="mc-composer">
     <div class="mc-composer__box">
+      <!-- 禁言提示：到期自动恢复，无需手动操作 -->
+      <div v-if="mutedUntil" class="mc-composer__mute">
+        {{ t('group.mutedHint', { time: fmtMuted(mutedUntil) }) }}
+      </div>
+
+      <!-- 编辑态：提示当前正在改哪条消息，取消后清空输入 -->
+      <div v-if="editing" class="mc-composer__edit">
+        <span class="mc-composer__edit-label">{{ t('message.editing') }}</span>
+        <button
+          type="button"
+          class="mc-composer__quote-close"
+          :aria-label="t('common.cancel')"
+          @click="cancelEdit"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
       <!-- 引用条：右键「引用」后出现，发送/取消即消失 -->
       <div v-if="convStore.replyTarget" class="mc-composer__quote">
         <span class="mc-composer__quote-name">{{ replyName }}：</span>
@@ -480,8 +557,9 @@ function onKeydown(e: KeyboardEvent) {
         ref="inputRef"
         v-model="text"
         class="mc-composer__input"
-        :placeholder="t('message.composerPlaceholder')"
+        :placeholder="editing ? t('message.editPlaceholder') : t('message.composerPlaceholder')"
         :maxlength="maxMessageLength"
+        :disabled="!!mutedUntil"
         rows="1"
         @keydown="onKeydown"
         @input="onInput"
@@ -494,7 +572,7 @@ function onKeydown(e: KeyboardEvent) {
           <button
             type="button"
             class="mc-tool"
-            :disabled="uploading || recording"
+            :disabled="uploading || recording || !!editing || !!mutedUntil"
             :title="t('message.sendImage')"
             :aria-label="t('message.sendImage')"
             @click="pickImage"
@@ -523,7 +601,7 @@ function onKeydown(e: KeyboardEvent) {
             type="button"
             class="mc-tool"
             :class="{ 'is-active': stickerOpen }"
-            :disabled="uploading || recording"
+            :disabled="uploading || recording || !!editing || !!mutedUntil"
             :title="t('message.stickers')"
             :aria-label="t('message.stickers')"
             :aria-expanded="stickerOpen"
@@ -546,7 +624,7 @@ function onKeydown(e: KeyboardEvent) {
             type="button"
             class="mc-tool"
             :class="{ 'is-recording': recording }"
-            :disabled="uploading"
+            :disabled="uploading || !!editing || !!mutedUntil"
             :title="recording ? t('message.stopRecord') : t('message.sendVoice')"
             :aria-label="recording ? t('message.stopRecord') : t('message.sendVoice')"
             @click="toggleRecord"
@@ -605,8 +683,8 @@ function onKeydown(e: KeyboardEvent) {
           >
             {{ text.length }}/{{ maxMessageLength }}
           </span>
-          <UiButton theme="primary" size="small" :disabled="!text.trim()" @click="send">
-            {{ t('message.send') }}
+          <UiButton theme="primary" size="small" :disabled="!text.trim() || !!mutedUntil" @click="send">
+            {{ editing ? t('common.save') : t('message.send') }}
           </UiButton>
         </div>
       </div>
@@ -633,6 +711,41 @@ function onKeydown(e: KeyboardEvent) {
   transition:
     border-color var(--mc-dur-fast) var(--mc-ease-out),
     box-shadow var(--mc-dur-fast) var(--mc-ease-out);
+}
+
+/* ===== 禁言提示 ===== */
+.mc-composer__mute {
+  margin-bottom: 8px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--td-error-color, #d54941);
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: var(--mc-fs-sm);
+  line-height: 1.4;
+  color: var(--td-error-color, #d54941);
+}
+
+/* ===== 编辑态 ===== */
+.mc-composer__edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--td-warning-color, #ed7b2f);
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+  font-size: var(--mc-fs-sm);
+  line-height: 1.4;
+}
+
+.mc-composer__edit-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ===== 引用条 ===== */

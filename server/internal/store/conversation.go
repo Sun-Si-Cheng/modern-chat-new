@@ -139,6 +139,20 @@ func (s *ConversationStore) InviteMembers(convID uint, userIDs []uint, maxMember
 	return added, err
 }
 
+// SetMemberRole 设置成员角色（owner 转让走 SetOwner；这里用于 admin/member）。
+func (s *ConversationStore) SetMemberRole(convID, userID uint, role string) error {
+	return s.db.Model(&model.ConversationMember{}).
+		Where("conversation_id = ? AND user_id = ?", convID, userID).
+		Update("role", role).Error
+}
+
+// SetMute 设置/解除禁言。until=nil 表示解除。
+func (s *ConversationStore) SetMute(convID, userID uint, until *time.Time) error {
+	return s.db.Model(&model.ConversationMember{}).
+		Where("conversation_id = ? AND user_id = ?", convID, userID).
+		Update("mute_until", until).Error
+}
+
 // RemoveMember 踢人 / 退群时删除成员行。
 func (s *ConversationStore) RemoveMember(convID, userID uint) error {
 	return s.db.Where("conversation_id = ? AND user_id = ?", convID, userID).
@@ -525,17 +539,18 @@ func (s *ConversationStore) SearchGroups(kw string, limit int) ([]model.Conversa
 // MembersView 成员列表（含用户摘要）。
 func (s *ConversationStore) MembersView(convID uint) ([]model.MemberView, error) {
 	var rows []struct {
-		UserID      uint      `gorm:"column:user_id"`
-		Role        string    `gorm:"column:role"`
-		JoinedAt    time.Time `gorm:"column:joined_at"`
-		ID          uint      `gorm:"column:id"`
-		Username    string    `gorm:"column:username"`
-		Nickname    string    `gorm:"column:nickname"`
-		AvatarColor string    `gorm:"column:avatar_color"`
-		Avatar      string    `gorm:"column:avatar"`
+		UserID      uint       `gorm:"column:user_id"`
+		Role        string     `gorm:"column:role"`
+		MutedUntil  *time.Time `gorm:"column:mute_until"`
+		JoinedAt    time.Time  `gorm:"column:joined_at"`
+		ID          uint       `gorm:"column:id"`
+		Username    string     `gorm:"column:username"`
+		Nickname    string     `gorm:"column:nickname"`
+		AvatarColor string     `gorm:"column:avatar_color"`
+		Avatar      string     `gorm:"column:avatar"`
 	}
 	err := s.db.Table("conversation_members cm").
-		Select("cm.user_id, cm.role, cm.joined_at, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
+		Select("cm.user_id, cm.role, cm.mute_until, cm.joined_at, u.id, u.username, u.nickname, u.avatar_color, u.avatar").
 		Joins("JOIN users u ON u.id = cm.user_id").
 		Where("cm.conversation_id = ?", convID).
 		Order("cm.id ASC").
@@ -546,9 +561,10 @@ func (s *ConversationStore) MembersView(convID uint) ([]model.MemberView, error)
 	out := make([]model.MemberView, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, model.MemberView{
-			UserID:   r.UserID,
-			Role:     r.Role,
-			JoinedAt: r.JoinedAt,
+			UserID:     r.UserID,
+			Role:       r.Role,
+			JoinedAt:   r.JoinedAt,
+			MutedUntil: r.MutedUntil,
 			User: model.UserBrief{
 				ID:          r.ID,
 				Username:    r.Username,

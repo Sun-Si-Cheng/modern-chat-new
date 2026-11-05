@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -195,6 +196,11 @@ func (h *ConversationHandler) Messages(c *gin.Context) {
 	if rows == nil {
 		rows = []model.Message{}
 	}
+	// 表情回应是聚合数据，随历史分页一并下发，避免前端逐条请求
+	if err := h.msgs.AttachReactions(rows, middleware.UserFrom(c).ID); err != nil {
+		internal(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"messages": rows, "hasMore": hasMore})
 }
 
@@ -255,6 +261,29 @@ func (h *ConversationHandler) Unfavorite(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SearchMessages 消息搜索。convId 可选：传了就是会话内搜索，不传是全局搜索。
+func (h *ConversationHandler) SearchMessages(c *gin.Context) {
+	kw := strings.TrimSpace(c.Query("kw"))
+	if n := len([]rune(kw)); n < 1 || n > 50 {
+		fail(c, http.StatusBadRequest, "关键词需为 1-50 个字符")
+		return
+	}
+	convID := uint(parseUint64(c.Query("convId")))
+	if convID > 0 && !h.requireMember(c, convID) {
+		return
+	}
+	limit := parseUint64Default(c.Query("limit"), 30)
+	if limit < 1 || limit > 100 {
+		limit = 30
+	}
+	rows, err := h.msgs.Search(middleware.UserFrom(c).ID, convID, kw, limit)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, rows)
 }
 
 // Favorites 收藏列表（按收藏时间倒序）。
@@ -659,7 +688,7 @@ func (h *ConversationHandler) SetAnnouncement(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// Kick 群主移出成员。
+// Kick 群主 / 管理员移出成员。
 func (h *ConversationHandler) Kick(c *gin.Context) {
 	convID, ok := parseConvID(c)
 	if !ok {
@@ -672,7 +701,8 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 		return
 	}
 	me := middleware.UserFrom(c)
-	if !h.requireOwner(c, convID, me.ID) {
+	caller, ok := h.requireManager(c, convID, me.ID)
+	if !ok {
 		return
 	}
 	if req.UserID == me.ID {
@@ -684,25 +714,144 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 		return
 	} else if m == nil {
 		fail(c, http.StatusUnprocessableEntity, "该用户不在群中")
-		return
 	} else if m.Role == "owner" {
 		// 修复缺陷：规格 §3.2 要求群主不可被移除；原实现只挡了「移除自己」，
 		// 若数据里出现第二个 owner 角色行（转让竞态等），群主仍可能被踢掉。
 		fail(c, http.StatusUnprocessableEntity, "不能移除群主")
+	} else if caller.Role == "admin" && m.Role == "admin" {
+		fail(c, http.StatusForbidden, "管理员不能移除其他管理员")
+	} else {
+		if err := h.leaveCleanup(convID, req.UserID); err != nil {
+			internal(c, err)
+			return
+		}
+		ids, err := h.convs.MemberUserIDs(convID)
+		if err != nil {
+			internal(c, err)
+			return
+		}
+		slog.Info("member kicked", "conv", convID, "target", req.UserID, "by", me.ID)
+		notifyFor(c).ToUsers(append(ids, req.UserID), convMetaFrame(convID))
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}
+
+// SetAdmin 群主设置 / 取消管理员。
+func (h *ConversationHandler) SetAdmin(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
 		return
 	}
-	if err := h.leaveCleanup(convID, req.UserID); err != nil {
+	var req struct {
+		UserID uint `json:"userId"`
+		Admin  bool `json:"admin"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	me := middleware.UserFrom(c)
+	if !h.requireOwner(c, convID, me.ID) {
+		return
+	}
+	if req.UserID == me.ID {
+		fail(c, http.StatusUnprocessableEntity, "不能调整自己的角色")
+		return
+	}
+	m, err := h.convs.MemberOf(convID, req.UserID)
+	if err != nil {
 		internal(c, err)
 		return
 	}
+	if m == nil {
+		fail(c, http.StatusUnprocessableEntity, "该用户不在群中")
+		return
+	}
+	if m.Role == "owner" {
+		fail(c, http.StatusUnprocessableEntity, "不能调整群主")
+		return
+	}
+	role := "member"
+	if req.Admin {
+		role = "admin"
+	}
+	if err := h.convs.SetMemberRole(convID, req.UserID, role); err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("group admin changed", "conv", convID, "target", req.UserID, "role", role, "by", me.ID)
 	ids, err := h.convs.MemberUserIDs(convID)
 	if err != nil {
 		internal(c, err)
 		return
 	}
-	slog.Info("member kicked", "conv", convID, "target", req.UserID, "by", me.ID)
-	notifyFor(c).ToUsers(append(ids, req.UserID), convMetaFrame(convID))
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Mute 群主 / 管理员禁言成员。minutes=0 表示解除禁言。
+func (h *ConversationHandler) Mute(c *gin.Context) {
+	convID, ok := parseConvID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		UserID  uint `json:"userId"`
+		Minutes int  `json:"minutes"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	me := middleware.UserFrom(c)
+	caller, ok := h.requireManager(c, convID, me.ID)
+	if !ok {
+		return
+	}
+	if req.UserID == me.ID {
+		fail(c, http.StatusUnprocessableEntity, "不能禁言自己")
+		return
+	}
+	if req.Minutes < 0 || req.Minutes > 43200 {
+		fail(c, http.StatusBadRequest, "禁言时长需为 0-43200 分钟")
+		return
+	}
+	m, err := h.convs.MemberOf(convID, req.UserID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	if m == nil {
+		fail(c, http.StatusUnprocessableEntity, "该用户不在群中")
+		return
+	}
+	if m.Role == "owner" {
+		fail(c, http.StatusUnprocessableEntity, "不能禁言群主")
+		return
+	}
+	if caller.Role == "admin" && m.Role == "admin" {
+		fail(c, http.StatusForbidden, "管理员不能禁言其他管理员")
+		return
+	}
+	var until *time.Time
+	if req.Minutes > 0 {
+		t := time.Now().Add(time.Duration(req.Minutes) * time.Minute)
+		until = &t
+	}
+	if err := h.convs.SetMute(convID, req.UserID, until); err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("group member mute changed", "conv", convID, "target", req.UserID, "minutes", req.Minutes, "by", me.ID)
+	ids, err := h.convs.MemberUserIDs(convID)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	notifyFor(c).ToUsers(ids, convMetaFrame(convID))
+	resp := gin.H{"ok": true}
+	if until != nil {
+		resp["mutedUntil"] = until.UTC().Format(time.RFC3339Nano)
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Transfer 转让群主。
@@ -787,6 +936,23 @@ func (h *ConversationHandler) requireOwner(c *gin.Context, convID, userID uint) 
 		return false
 	}
 	return true
+}
+
+// requireManager 群主或管理员；返回调用者的成员行（用于进一步判断权限边界）。
+func (h *ConversationHandler) requireManager(c *gin.Context, convID, userID uint) (*model.ConversationMember, bool) {
+	if !h.requireMember(c, convID) {
+		return nil, false
+	}
+	m, err := h.convs.MemberOf(convID, userID)
+	if err != nil {
+		internal(c, err)
+		return nil, false
+	}
+	if m == nil || (m.Role != "owner" && m.Role != "admin") {
+		fail(c, http.StatusForbidden, "无权执行此操作")
+		return nil, false
+	}
+	return m, true
 }
 
 // initInboxes 初始化收件箱行（无历史未读）。

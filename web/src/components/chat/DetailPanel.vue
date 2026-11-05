@@ -27,6 +27,10 @@ const { t, te } = useAppI18n()
 const conv = computed(() => convStore.currentConv)
 const isGroup = computed(() => conv.value?.type === 2)
 const isOwner = computed(() => conv.value?.ownerId === auth.user?.id)
+const myMember = computed(() => members.value.find((m) => m.userId === auth.user?.id))
+const isAdmin = computed(() => myMember.value?.role === 'admin')
+/** 群主与管理员都能踢人 / 禁言；具体边界在操作处再判断 */
+const canManage = computed(() => isOwner.value || isAdmin.value)
 
 const members = ref<ConversationMember[]>([])
 
@@ -308,6 +312,10 @@ const memberMenuX = ref(0)
 const memberMenuY = ref(0)
 const memberMenuTarget = ref<ConversationMember | null>(null)
 
+function isMuted(m: ConversationMember): boolean {
+  return !!m.mutedUntil && new Date(m.mutedUntil).getTime() > Date.now()
+}
+
 function openMemberMenu(e: MouseEvent, m: ConversationMember) {
   memberMenuTarget.value = m
   memberMenuX.value = e.clientX
@@ -320,10 +328,24 @@ const memberMenuItems = computed<ContextMenuItem[]>(() => {
   if (!m) return []
   const mine = m.userId === auth.user?.id
   const items: ContextMenuItem[] = [{ key: 'copyName', label: t('chat.memberCopyName') }]
-  // 群主可以管理其他成员；自己的行不给踢出/转让入口
-  if (isOwner.value && !mine) {
-    items.push({ key: 'transfer', label: t('group.transfer'), dividerBefore: true })
+  if (mine || !canManage.value || m.role === 'owner') return items
+
+  // 管理员不能管理其他管理员，只有群主可以
+  const blockedByRole = isAdmin.value && m.role === 'admin'
+  if (!blockedByRole) {
+    items.push({
+      key: 'mute',
+      label: isMuted(m) ? t('group.unmute') : t('group.mute'),
+      dividerBefore: true,
+    })
     items.push({ key: 'kick', label: t('group.kick'), danger: true })
+  }
+  if (isOwner.value) {
+    items.push({
+      key: 'toggleAdmin',
+      label: m.role === 'admin' ? t('group.removeAdmin') : t('group.makeAdmin'),
+      dividerBefore: items.length > 0,
+    })
   }
   return items
 })
@@ -338,11 +360,78 @@ function onMemberMenuSelect(key: string) {
       .catch(() => MessagePlugin.error(t('chat.memberCopyFailed')))
   }
   if (key === 'kick') kick(m.userId, m.user.nickname)
+  if (key === 'mute') openMute(m)
+  if (key === 'toggleAdmin') void toggleAdmin(m)
   if (key === 'transfer') {
     // 复用现有的转让确认弹窗，把目标成员预选好
     transferTarget.value = m.userId
     transferVisible.value = true
   }
+}
+
+// ===== 管理员 / 禁言 =====
+
+const muteVisible = ref(false)
+const muteTarget = ref<ConversationMember | null>(null)
+const muteMinutes = ref(60)
+const muting = ref(false)
+
+const muteOptions = computed(() => [
+  { label: t('group.mute10m'), value: 10 },
+  { label: t('group.mute1h'), value: 60 },
+  { label: t('group.mute1d'), value: 1440 },
+  { label: t('group.mute30d'), value: 43200 },
+])
+
+async function setMute(m: ConversationMember, minutes: number) {
+  if (!conv.value || muting.value) return
+  muting.value = true
+  try {
+    await convApi.mute(conv.value.id, m.userId, minutes)
+    muteVisible.value = false
+    await Promise.all([convStore.loadConversations(), refreshMembers()])
+    void MessagePlugin.success(minutes > 0 ? t('group.muteOk', { name: m.user.nickname }) : t('group.unmuteOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    muting.value = false
+  }
+}
+
+function doMute() {
+  if (muteTarget.value) void setMute(muteTarget.value, muteMinutes.value)
+}
+
+/** 已禁言则直接解除，否则打开时长选择弹窗 */
+function openMute(m: ConversationMember) {
+  if (isMuted(m)) {
+    void setMute(m, 0)
+    return
+  }
+  muteTarget.value = m
+  muteMinutes.value = 60
+  muteVisible.value = true
+}
+
+function toggleAdmin(m: ConversationMember) {
+  const makeAdmin = m.role !== 'admin'
+  const dialog = DialogPlugin.confirm({
+    header: t('group.adminTitle'),
+    body: makeAdmin
+      ? t('group.adminBody', { name: m.user.nickname })
+      : t('group.removeAdminBody', { name: m.user.nickname }),
+    onConfirm: async () => {
+      if (!conv.value) return dialog.destroy()
+      try {
+        await convApi.setAdmin(conv.value.id, m.userId, makeAdmin)
+        await Promise.all([convStore.loadConversations(), refreshMembers()])
+        void MessagePlugin.success(t('group.adminOk'))
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
 }
 
 async function refreshMembers() {
@@ -501,9 +590,20 @@ async function leave() {
           <span class="mc-detail__member-name">
             <span class="mc-detail__member-nick">{{ m.user.nickname }}</span>
             <span v-if="m.role === 'owner'" class="mc-detail__badge is-owner">{{ t('group.owner') }}</span>
+            <span v-if="m.role === 'admin'" class="mc-detail__badge is-admin">{{ t('group.admin') }}</span>
+            <span v-if="isMuted(m)" class="mc-detail__badge is-muted">{{ t('group.muted') }}</span>
             <span v-if="m.userId === auth.user?.id" class="mc-detail__badge">{{ t('group.me') }}</span>
           </span>
-          <span v-if="isOwner && m.userId !== auth.user?.id" class="mc-detail__member-ops">
+          <span
+            v-if="
+              canManage &&
+              m.userId !== auth.user?.id &&
+              m.role !== 'owner' &&
+              !(isAdmin && m.role === 'admin')
+            "
+            class="mc-detail__member-ops"
+          >
+            <a @click="openMute(m)">{{ isMuted(m) ? t('group.unmute') : t('group.mute') }}</a>
             <a @click="kick(m.userId, m.user.nickname)">{{ t('group.kick') }}</a>
           </span>
         </div>
@@ -565,6 +665,16 @@ async function leave() {
     @confirm="doTransfer"
   >
     <UiSelect v-model="transferTarget" :options="memberOptions" :placeholder="t('group.transferPlaceholder')" clearable />
+  </UiDialog>
+
+  <!-- 禁言时长 -->
+  <UiDialog
+    v-model:visible="muteVisible"
+    :header="t('group.muteTitle')"
+    :confirm-btn-loading="muting"
+    @confirm="doMute"
+  >
+    <UiSelect v-model="muteMinutes" :options="muteOptions" />
   </UiDialog>
 
   <!-- 拉人入群：多选自己的好友 -->
@@ -815,6 +925,22 @@ async function leave() {
 .mc-detail__badge.is-owner {
   background: var(--td-brand-color-1, rgba(0, 82, 217, 0.08));
   color: var(--td-brand-color);
+}
+
+.mc-detail__badge.is-admin {
+  background: color-mix(in srgb, var(--td-success-color, #2ba471) 12%, transparent);
+  color: var(--td-success-color, #2ba471);
+}
+
+.mc-detail__badge.is-muted {
+  background: color-mix(in srgb, var(--td-error-color, #d54941) 12%, transparent);
+  color: var(--td-error-color, #d54941);
+}
+
+.mc-detail__member-ops {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
 }
 
 .mc-detail__member-ops a {

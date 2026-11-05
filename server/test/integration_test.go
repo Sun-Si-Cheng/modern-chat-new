@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func setup(t *testing.T) *env {
 	if err := store.AutoMigrate(db); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	for _, table := range []string{"system_settings", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
+	for _, table := range []string{"system_settings", "message_reactions", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("清理表 %s: %v", table, err)
 		}
@@ -901,6 +902,319 @@ func TestGroupInviteFlow(t *testing.T) {
 		fmt.Sprintf(`{"userIds":[%d]}`, userA.ID))
 	if code != http.StatusBadRequest {
 		t.Fatalf("只邀请自己应 400，got %d", code)
+	}
+}
+
+// TestMessageEditReactionSearch 编辑、表情回应与消息搜索的交互验证。
+func TestMessageEditReactionSearch(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "es-admin")
+	tokenA, userA := register(t, e, "es-alice")
+	tokenB, userB := register(t, e, "es-bob")
+
+	makeFriends := func(fromToken, toUsername, toToken string) {
+		t.Helper()
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", fromToken,
+			fmt.Sprintf(`{"toUsername":%q}`, toUsername)); code != http.StatusOK {
+			t.Fatalf("apply status = %d", code)
+		}
+		_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", toToken, "")
+		reqs, _ := reqsAny.([]any)
+		if len(reqs) == 0 {
+			t.Fatalf("应收到好友申请")
+		}
+		reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", toToken,
+			fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+			t.Fatalf("handle status = %d", code)
+		}
+	}
+	makeFriends(tokenA, userB.Username, tokenB)
+
+	code, conv := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("createSingle status = %d", code)
+	}
+	convID := uint64(conv["id"].(float64))
+
+	connA := wsDial(t, e, tokenA)
+	connB := wsDial(t, e, tokenB)
+
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"es-1","content":"hello world"}`, convID))); err != nil {
+		t.Fatalf("ws send: %v", err)
+	}
+	echo := readFrame(t, connA, "message")
+	readFrame(t, connB, "message")
+	msgID := uint64(echo["id"].(float64))
+
+	// 发送者编辑 → 双方都收到 message_update
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"edit","messageId":%d,"content":"hello edited"}`, msgID))); err != nil {
+		t.Fatalf("ws edit: %v", err)
+	}
+	updA := readFrame(t, connA, "message_update")
+	updB := readFrame(t, connB, "message_update")
+	if updA["content"] != "hello edited" || updB["content"] != "hello edited" {
+		t.Fatalf("编辑广播异常: %v / %v", updA, updB)
+	}
+	// 非发送者不能编辑
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"edit","messageId":%d,"content":"hack"}`, msgID))); err != nil {
+		t.Fatalf("ws edit by non-sender: %v", err)
+	}
+	if f := readFrame(t, connB, "error"); f["reason"] == nil {
+		t.Fatalf("非发送者编辑应收到 error 帧")
+	}
+
+	// 表情回应：B 先 👍，再切换 ❤️（服务端会带 before）
+	readReaction := func(conn *websocket.Conn, emoji string) map[string]any {
+		t.Helper()
+		for {
+			f := readFrame(t, conn, "reaction")
+			if f["emoji"] == emoji {
+				return f
+			}
+		}
+	}
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"reaction","messageId":%d,"emoji":"👍","action":"set"}`, msgID))); err != nil {
+		t.Fatalf("ws reaction: %v", err)
+	}
+	if f := readReaction(connB, "👍"); f["action"] != "set" {
+		t.Fatalf("表情设置帧异常: %v", f)
+	}
+	readReaction(connA, "👍")
+	if err := connB.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"reaction","messageId":%d,"emoji":"❤️","action":"set"}`, msgID))); err != nil {
+		t.Fatalf("ws reaction switch: %v", err)
+	}
+	if f := readReaction(connA, "❤️"); f["before"] != "👍" {
+		t.Fatalf("表情切换帧异常: %v", f)
+	}
+	readReaction(connB, "❤️")
+	// A 也回应 👍
+	if err := connA.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"reaction","messageId":%d,"emoji":"👍","action":"set"}`, msgID))); err != nil {
+		t.Fatalf("ws reaction by A: %v", err)
+	}
+	// B 收到 A 的 👍 帧时，说明 set 已落库
+	if f := readReaction(connB, "👍"); f["userId"].(float64) != float64(userA.ID) {
+		t.Fatalf("A 的表情广播异常: %v", f)
+	}
+
+	getMessages := func(token string) []any {
+		t.Helper()
+		code, page := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=10", convID), token, "")
+		if code != http.StatusOK {
+			t.Fatalf("messages status = %d", code)
+		}
+		list, _ := page["messages"].([]any)
+		return list
+	}
+	reactionsOf := func(token string) map[string]map[string]any {
+		t.Helper()
+		out := map[string]map[string]any{}
+		for _, it := range getMessages(token) {
+			m := it.(map[string]any)
+			if uint64(m["id"].(float64)) != msgID {
+				continue
+			}
+			for _, r := range m["reactions"].([]any) {
+				rw := r.(map[string]any)
+				out[rw["emoji"].(string)] = rw
+			}
+			if m["editedAt"] == nil {
+				t.Fatalf("编辑后 editedAt 不应为空")
+			}
+			if m["content"] != "hello edited" {
+				t.Fatalf("编辑后内容异常: %v", m["content"])
+			}
+		}
+		return out
+	}
+	rb := reactionsOf(tokenB)
+	if rb["❤️"]["count"].(float64) != 1 || rb["❤️"]["mine"] != true {
+		t.Fatalf("B 视角表情异常: %v", rb)
+	}
+	if rb["👍"]["count"].(float64) != 1 || rb["👍"]["mine"] != false {
+		t.Fatalf("B 视角 👍 异常: %v", rb)
+	}
+	ra := reactionsOf(tokenA)
+	if ra["❤️"]["mine"] != false || ra["👍"]["mine"] != true {
+		t.Fatalf("A 视角 mine 异常: %v", ra)
+	}
+
+	// 搜索：全局与会话内都能命中；个人删除后只对自己隐藏
+	_, hitsAny := apiAny(t, e, "GET", fmt.Sprintf("/api/search/messages?kw=%s", url.QueryEscape("hello")), tokenB, "")
+	hits, _ := hitsAny.([]any)
+	if len(hits) != 1 {
+		t.Fatalf("B 搜索应命中 1 条，got %d", len(hits))
+	}
+	hit := hits[0].(map[string]any)
+	if uint64(hit["messageId"].(float64)) != msgID || hit["convName"] != userA.Nickname {
+		t.Fatalf("搜索结果异常: %v", hit)
+	}
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/conversations/%d/messages/%d", convID, msgID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("delete for me status = %d", code)
+	}
+	_, hitsAAny := apiAny(t, e, "GET", fmt.Sprintf("/api/search/messages?kw=%s", url.QueryEscape("hello")), tokenA, "")
+	if list, _ := hitsAAny.([]any); len(list) != 0 {
+		t.Fatalf("个人删除后 A 不应搜到该消息，got %v", hitsAAny)
+	}
+	_, hitsBAny := apiAny(t, e, "GET", fmt.Sprintf("/api/search/messages?kw=%s", url.QueryEscape("hello")), tokenB, "")
+	if list, _ := hitsBAny.([]any); len(list) != 1 {
+		t.Fatalf("B 仍应搜到该消息")
+	}
+	// 会话内搜索参数
+	_, scopedAny := apiAny(t, e, "GET",
+		fmt.Sprintf("/api/search/messages?kw=%s&convId=%d", url.QueryEscape("hello"), convID), tokenB, "")
+	if list, _ := scopedAny.([]any); len(list) != 1 {
+		t.Fatalf("会话内搜索应命中 1 条")
+	}
+}
+
+// TestGroupAdminAndMute 群管理员与禁言：权限边界、禁言拦截与解除。
+func TestGroupAdminAndMute(t *testing.T) {
+	e := setup(t)
+	_, _ = register(t, e, "gm-admin")
+	tokenA, userA := register(t, e, "gm-owner")
+	tokenB, userB := register(t, e, "gm-bob")
+	tokenC, userC := register(t, e, "gm-carol")
+
+	makeFriends := func(fromToken, toUsername, toToken string) {
+		t.Helper()
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", fromToken,
+			fmt.Sprintf(`{"toUsername":%q}`, toUsername)); code != http.StatusOK {
+			t.Fatalf("apply status = %d", code)
+		}
+		_, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", toToken, "")
+		reqs, _ := reqsAny.([]any)
+		reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+		if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", toToken,
+			fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+			t.Fatalf("handle status = %d", code)
+		}
+	}
+	makeFriends(tokenA, userB.Username, tokenB)
+	makeFriends(tokenA, userC.Username, tokenC)
+
+	code, group := apiJSON(t, e, "POST", "/api/conversations/group", tokenA, `{"name":"管理测试群"}`)
+	if code != http.StatusOK {
+		t.Fatalf("build group status = %d", code)
+	}
+	groupID := uint64(group["id"].(float64))
+	if code, out := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/invite", groupID), tokenA,
+		fmt.Sprintf(`{"userIds":[%d,%d]}`, userB.ID, userC.ID)); code != http.StatusOK || out["added"].(float64) != 2 {
+		t.Fatalf("invite status=%d out=%v", code, out)
+	}
+
+	membersOf := func() []any {
+		t.Helper()
+		code, listAny := apiAny(t, e, "GET", fmt.Sprintf("/api/conversations/%d/members", groupID), tokenA, "")
+		if code != http.StatusOK {
+			t.Fatalf("members status = %d", code)
+		}
+		return listAny.([]any)
+	}
+	memberRow := func(uid uint) map[string]any {
+		t.Helper()
+		for _, it := range membersOf() {
+			m := it.(map[string]any)
+			if uint64(m["userId"].(float64)) == uint64(uid) {
+				return m
+			}
+		}
+		t.Fatalf("成员 %d 不在列表中", uid)
+		return nil
+	}
+
+	// 群主设置管理员
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/admin", groupID), tokenA,
+		fmt.Sprintf(`{"userId":%d,"admin":true}`, userB.ID)); code != http.StatusOK {
+		t.Fatalf("set admin status = %d", code)
+	}
+	if row := memberRow(userB.ID); row["role"] != "admin" {
+		t.Fatalf("B 应为 admin，got %v", row["role"])
+	}
+	// 非群主不能设置管理员
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/admin", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d,"admin":true}`, userC.ID)); code != http.StatusForbidden {
+		t.Fatalf("非群主设管理员应 403，got %d", code)
+	}
+
+	// 管理员禁言普通成员
+	if code, out := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d,"minutes":10}`, userC.ID)); code != http.StatusOK || out["mutedUntil"] == nil {
+		t.Fatalf("禁言 status=%d out=%v", code, out)
+	}
+	if row := memberRow(userC.ID); row["mutedUntil"] == nil {
+		t.Fatalf("C 应有 mutedUntil")
+	}
+	// 不能禁言群主 / 自己
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d,"minutes":10}`, userA.ID)); code != http.StatusUnprocessableEntity {
+		t.Fatalf("禁言群主应 422，got %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d,"minutes":10}`, userB.ID)); code != http.StatusUnprocessableEntity {
+		t.Fatalf("禁言自己应 422，got %d", code)
+	}
+	// 管理员不能禁言其他管理员
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/admin", groupID), tokenA,
+		fmt.Sprintf(`{"userId":%d,"admin":true}`, userC.ID)); code != http.StatusOK {
+		t.Fatalf("设 C 为管理员 status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d,"minutes":10}`, userC.ID)); code != http.StatusForbidden {
+		t.Fatalf("管理员禁言管理员应 403，got %d", code)
+	}
+	// 取消 C 的管理员身份并解除禁言，测发送拦截
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/admin", groupID), tokenA,
+		fmt.Sprintf(`{"userId":%d,"admin":false}`, userC.ID)); code != http.StatusOK {
+		t.Fatalf("取消管理员 status = %d", code)
+	}
+
+	// C 被禁言后发消息：error 帧，且消息未落库
+	connC := wsDial(t, e, tokenC)
+	if err := connC.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"gm-muted","content":"muted hi"}`, groupID))); err != nil {
+		t.Fatalf("ws send by muted: %v", err)
+	}
+	errFrame := readFrame(t, connC, "error")
+	if errFrame["reason"] == nil {
+		t.Fatalf("被禁言用户应收到 error 帧")
+	}
+	code, page := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=10", groupID), tokenA, "")
+	if code != http.StatusOK || len(page["messages"].([]any)) != 0 {
+		t.Fatalf("被禁言消息不应落库，got %v", page)
+	}
+
+	// 群主解除禁言 → 可正常发送
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/mute", groupID), tokenA,
+		fmt.Sprintf(`{"userId":%d,"minutes":0}`, userC.ID)); code != http.StatusOK {
+		t.Fatalf("解除禁言 status = %d", code)
+	}
+	if err := connC.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":"gm-unmuted","content":"free"}`, groupID))); err != nil {
+		t.Fatalf("ws send after unmute: %v", err)
+	}
+	if f := readFrame(t, connC, "message"); f["content"] != "free" {
+		t.Fatalf("解除禁言后消息帧异常: %v", f)
+	}
+
+	// 管理员可踢普通成员，但不能踢群主 / 其他管理员
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/kick", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d}`, userC.ID)); code != http.StatusOK {
+		t.Fatalf("管理员踢成员应 200，got %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/conversations/%d/kick", groupID), tokenB,
+		fmt.Sprintf(`{"userId":%d}`, userA.ID)); code != http.StatusUnprocessableEntity {
+		t.Fatalf("踢群主应 422，got %d", code)
+	}
+	if got := len(membersOf()); got != 2 {
+		t.Fatalf("踢人后成员应为 2，got %d", got)
 	}
 }
 

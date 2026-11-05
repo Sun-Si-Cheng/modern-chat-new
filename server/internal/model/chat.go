@@ -18,12 +18,14 @@ type Conversation struct {
 // ConversationMember 会话成员；单聊双方均 member。
 // (conversation_id, user_id) 唯一。
 type ConversationMember struct {
-	ID                uint      `gorm:"primaryKey" json:"-"`
-	ConversationID    uint      `gorm:"uniqueIndex:idx_conv_user,priority:1" json:"-"`
-	UserID            uint      `gorm:"uniqueIndex:idx_conv_user,priority:2;index" json:"userId"`
-	Role              string    `gorm:"size:10;default:member" json:"role"` // owner | member
-	LastReadMessageID uint64    `gorm:"default:0" json:"-"`
-	JoinedAt          time.Time `gorm:"autoCreateTime" json:"joinedAt"`
+	ID             uint   `gorm:"primaryKey" json:"-"`
+	ConversationID uint   `gorm:"uniqueIndex:idx_conv_user,priority:1" json:"-"`
+	UserID         uint   `gorm:"uniqueIndex:idx_conv_user,priority:2;index" json:"userId"`
+	Role           string `gorm:"size:10;default:member" json:"role"` // owner | admin | member
+	// MuteUntil 禁言截止时间（NULL=未禁言）；到期自动失效。
+	MuteUntil         *time.Time `gorm:"type:datetime(3)" json:"mutedUntil"`
+	LastReadMessageID uint64     `gorm:"default:0" json:"-"`
+	JoinedAt          time.Time  `gorm:"autoCreateTime" json:"joinedAt"`
 }
 
 // Message 消息。InnoDB 二级索引叶子天然含主键，
@@ -46,9 +48,28 @@ type Message struct {
 	Mentions []uint `gorm:"type:text;serializer:json" json:"mentions,omitempty"`
 	// Forwarded 是否是转发来的消息（前端在气泡上标注「转发」，转发不保留原作者）
 	Forwarded bool `gorm:"default:false" json:"forwarded,omitempty"`
+	// EditedAt 编辑时间：NULL 表示从未编辑；前端据此显示「已编辑」
+	EditedAt *time.Time `gorm:"type:datetime(3)" json:"editedAt"`
 	// ReplyTo 引用消息的摘要，不落库：查询与广播时按需装配。
-	ReplyTo   *ReplyBrief `gorm:"-" json:"replyTo,omitempty"`
-	CreatedAt time.Time   `gorm:"type:datetime(3)" json:"createdAt"`
+	ReplyTo *ReplyBrief `gorm:"-" json:"replyTo,omitempty"`
+	// Reactions 表情回应聚合，不落库：历史列表与页面加载时按需装配。
+	Reactions []ReactionView `gorm:"-" json:"reactions,omitempty"`
+	CreatedAt time.Time      `gorm:"type:datetime(3)" json:"createdAt"`
+}
+
+// ReactionView 单条消息上某个表情的聚合结果。
+type ReactionView struct {
+	Emoji string `json:"emoji"`
+	Count int    `json:"count"`
+	Mine  bool   `json:"mine"`
+}
+
+// MessageReaction 消息表情回应：每人对每条消息最多一个表情。
+type MessageReaction struct {
+	MessageID uint      `gorm:"primaryKey;autoIncrement:false" json:"-"`
+	UserID    uint      `gorm:"primaryKey;autoIncrement:false;index" json:"-"`
+	Emoji     string    `gorm:"size:32;not null" json:"emoji"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"-"`
 }
 
 // ReplyBrief 引用消息的摘要快照（只渲染用，不回表取全文）。

@@ -2,6 +2,7 @@
 import UiSlider from '@/components/ui/UiSlider.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
@@ -9,6 +10,11 @@ import { ArrowLeftIcon } from 'tdesign-icons-vue-next'
 
 import AppBackgroundPicker from '@/components/common/AppBackgroundPicker.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
+import {
+  notificationsEnabled,
+  notificationsSupported,
+  setNotificationsEnabled,
+} from '@/composables/notifications'
 import { systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -25,6 +31,25 @@ const friendsStore = useFriendsStore()
 const layout = useLayoutStore()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
+
+// ===== 桌面通知 =====
+const notifyOn = ref(notificationsEnabled())
+const notifySupported = notificationsSupported()
+
+async function onNotifyToggle(v: unknown) {
+  const on = v === true
+  if (on && !notifySupported) {
+    void MessagePlugin.warning(t('settings.notifyUnsupported'))
+    return
+  }
+  const ok = await setNotificationsEnabled(on)
+  notifyOn.value = ok
+  if (on && !ok) {
+    void MessagePlugin.error(t('settings.notifyDenied'))
+  } else {
+    void MessagePlugin.success(on ? t('settings.notifyOn') : t('settings.notifyOff'))
+  }
+}
 
 // 直接打开/刷新设置页时不会经过聊天页的初始化，auth.user 为空 →
 // 账号卡片会误显示「登录后可修改昵称与邮箱」。这里自行补一次资料拉取。
@@ -191,6 +216,18 @@ function goBack() {
             <span class="settings-row__hint text-placeholder">{{ t('settings.appBackgroundHint') }}</span>
           </div>
           <AppBackgroundPicker />
+        </div>
+      </section>
+
+      <!-- 桌面通知 -->
+      <section class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.notify') }}</h2>
+        <div class="settings-row settings-row--last">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.notifyLabel') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.notifyHint') }}</span>
+          </div>
+          <UiSwitch :value="notifyOn" @change="onNotifyToggle" />
         </div>
       </section>
 

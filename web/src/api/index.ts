@@ -8,6 +8,7 @@ import type {
   FriendRequestItem,
   Message,
   Plugin,
+  SearchHit,
   User,
 } from '@/types/proto'
 
@@ -123,11 +124,25 @@ export const convApi = {
       prefs,
     ),
   kick: (convId: number, userId: number) => http.post<{ ok: true }>(`/conversations/${convId}/kick`, { userId }),
+  /** 群主设置 / 取消管理员 */
+  setAdmin: (convId: number, userId: number, admin: boolean) =>
+    http.post<{ ok: true }>(`/conversations/${convId}/admin`, { userId, admin }),
+  /** 禁言 / 解除禁言（minutes=0） */
+  mute: (convId: number, userId: number, minutes: number) =>
+    http.post<{ ok: true; mutedUntil?: string }>(`/conversations/${convId}/mute`, { userId, minutes }),
   transfer: (convId: number, userId: number) =>
     http.post<{ ok: true }>(`/conversations/${convId}/transfer`, { userId }),
   /** 仅自己删除：只从当前账号的聊天记录移除，对方仍可见 */
   deleteMessage: (convId: number, messageId: number) =>
     http.delete<{ ok: true }>(`/conversations/${convId}/messages/${messageId}`),
+}
+
+// ===== 消息搜索 =====
+
+export const searchApi = {
+  /** convId 省略时为全局搜索；只返回当前用户已加入的会话 */
+  messages: (kw: string, convId?: number, limit = 30) =>
+    http.get<SearchHit[]>('/search/messages', { kw, convId, limit }),
 }
 
 // ===== 收藏 =====

@@ -24,3 +24,12 @@ app.use(router)
 usePrefsStore(pinia).init()
 
 app.mount('#app')
+
+// PWA：生产环境注册 Service Worker（缓存静态资源，断网时保留应用外壳）
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* 注册失败不影响正常使用 */
+    })
+  })
+}

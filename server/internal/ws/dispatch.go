@@ -12,6 +12,9 @@ import (
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
 
+// EditWindow 消息编辑时限（与前端 canEdit 的判断保持一致）。
+const EditWindow = 5 * time.Minute
+
 // 上行帧（§7）：宽松解析，按 type 路由。
 type clientFrame struct {
 	Type        string `json:"type"`
@@ -26,6 +29,9 @@ type clientFrame struct {
 	Mentions  []uint  `json:"mentions"`
 	// Forwarded 标记这是一条转发消息（只影响展示，不改变投递逻辑）
 	Forwarded bool `json:"forwarded"`
+	// Emoji / Action 用于表情回应：action=set|remove
+	Emoji  string `json:"emoji"`
+	Action string `json:"action"`
 }
 
 // Dispatch 上行帧路由：非成员一律 error 帧。
@@ -46,6 +52,10 @@ func (h *Hub) Dispatch(c *Client, data []byte) {
 		h.handleRead(c, &f)
 	case "recall":
 		h.handleRecall(c, &f)
+	case "edit":
+		h.handleEdit(c, &f)
+	case "reaction":
+		h.handleReaction(c, &f)
 	default:
 		h.sendError(c, "未知帧类型")
 	}
@@ -70,6 +80,11 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		return
 	}
 	if !h.requireMember(c, f.ConvID) {
+		return
+	}
+	// 禁言：到时间自动失效；命中时直接拒绝发送
+	if h.memberMuted(c, f.ConvID) {
+		h.sendError(c, "你已被禁言，暂时不能发送消息")
 		return
 	}
 	// 消息长度上限可在后台调整，默认 1000
@@ -312,6 +327,117 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 	})
 }
 
+// handleEdit 编辑自己的文本消息：5 分钟内、未撤回、仅文本。
+func (h *Hub) handleEdit(c *Client, f *clientFrame) {
+	if f.MessageID == 0 || h.deps == nil || h.deps.Messages == nil {
+		return
+	}
+	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	if err != nil {
+		slog.Error("ws edit lookup", "err", err.Error(), "uid", c.UserID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	if msg == nil || msg.SenderID != c.UserID {
+		h.sendError(c, "只能编辑自己的消息")
+		return
+	}
+	if msg.IsRecalled {
+		h.sendError(c, "已撤回的消息不能编辑")
+		return
+	}
+	if msg.MsgType != "text" {
+		h.sendError(c, "只有文本消息可以编辑")
+		return
+	}
+	if time.Since(msg.CreatedAt) > EditWindow {
+		h.sendError(c, "超过 5 分钟，无法编辑")
+		return
+	}
+	if !h.requireMember(c, msg.ConversationID) {
+		return
+	}
+	if h.memberMuted(c, msg.ConversationID) {
+		h.sendError(c, "你已被禁言，暂时不能编辑消息")
+		return
+	}
+	maxLen := store.DefaultOps().MaxMessageLength
+	if h.deps.Settings != nil {
+		maxLen = h.deps.Settings.Ops().MaxMessageLength
+	}
+	content := []rune(f.Content)
+	if len(content) < 1 || len(content) > maxLen {
+		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen))
+		return
+	}
+	now, err := h.deps.Messages.UpdateContent(msg.ID, string(content))
+	if err != nil {
+		slog.Error("ws edit update", "err", err.Error(), "msg", msg.ID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	if err != nil {
+		return
+	}
+	h.ToUsers(ids, ginH{
+		"type":     "message_update",
+		"id":       msg.ID,
+		"convId":   msg.ConversationID,
+		"content":  string(content),
+		"editedAt": now.UTC().Format(time.RFC3339Nano),
+	})
+	slog.Debug("message edited", "msg", msg.ID, "conv", msg.ConversationID, "uid", c.UserID)
+}
+
+// handleReaction 表情回应：每人每条消息最多一个表情；action=set|remove。
+func (h *Hub) handleReaction(c *Client, f *clientFrame) {
+	if f.MessageID == 0 || h.deps == nil || h.deps.Messages == nil {
+		return
+	}
+	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	if err != nil || msg == nil || msg.IsRecalled {
+		return
+	}
+	if !h.requireMember(c, msg.ConversationID) {
+		return
+	}
+	emoji := strings.TrimSpace(f.Emoji)
+	if n := len([]rune(emoji)); n < 1 || n > 4 {
+		h.sendError(c, "表情不合法")
+		return
+	}
+	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	if err != nil {
+		return
+	}
+	if f.Action == "remove" {
+		if err := h.deps.Messages.RemoveReaction(msg.ID, c.UserID); err != nil {
+			slog.Error("ws reaction remove", "err", err.Error())
+			return
+		}
+		h.ToUsers(ids, ginH{
+			"type": "reaction", "messageId": msg.ID, "convId": msg.ConversationID,
+			"emoji": emoji, "userId": c.UserID, "action": "remove",
+		})
+		return
+	}
+	before, err := h.deps.Messages.SetReaction(msg.ID, c.UserID, emoji)
+	if err != nil {
+		slog.Error("ws reaction set", "err", err.Error())
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	// 已经就是这个表情：幂等，不重复广播
+	if before == emoji {
+		return
+	}
+	h.ToUsers(ids, ginH{
+		"type": "reaction", "messageId": msg.ID, "convId": msg.ConversationID,
+		"emoji": emoji, "before": before, "userId": c.UserID, "action": "set",
+	})
+}
+
 // checkConnState 连接级封禁 / token_version 复核（handleChat 落库前调用）。
 //
 // 修复缺陷：IsBanned / TokenVersion 此前只在 serve.go 握手段校验，连接建立后
@@ -356,6 +482,18 @@ func (h *Hub) denyConn(c *Client, convID uint, reason string) {
 	h.sendError(c, reason)
 	// 先冲刷队列把 error 帧送达，再关闭连接（与 KickUser 语义一致）。
 	c.requestKick(true)
+}
+
+// memberMuted 调用者在该会话是否处于禁言期。
+func (h *Hub) memberMuted(c *Client, convID uint) bool {
+	if h.deps == nil || h.deps.Convs == nil {
+		return false
+	}
+	m, err := h.deps.Convs.MemberOf(convID, c.UserID)
+	if err != nil || m == nil {
+		return false
+	}
+	return m.MuteUntil != nil && m.MuteUntil.After(time.Now())
 }
 
 // requireMember 上行帧的会话成员校验。

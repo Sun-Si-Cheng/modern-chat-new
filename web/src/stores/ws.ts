@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { MessagePlugin } from 'tdesign-vue-next'
+
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useConversationsStore } from './conversations'
@@ -102,8 +104,8 @@ export const useWsStore = defineStore('ws', () => {
         break
       }
       case 'error':
-        // 协议错误暂只记录；可接入 MessagePlugin
-        console.warn('[ws] error frame:', frame.reason)
+        // 服务端返回的业务错误（撤回/编辑/表情校验失败等）：直接提示用户
+        if (frame.reason) void MessagePlugin.error(frame.reason)
         break
       default:
         conversations.handleServerFrame(frame)

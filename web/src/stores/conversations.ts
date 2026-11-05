@@ -33,6 +33,14 @@ export const useConversationsStore = defineStore('conversations', () => {
    * 右键「引用」要跨组件传，走 store 比一路 emit 干净。
    */
   const replyTarget = ref<Message | null>(null)
+  /** 搜索结果待定位的消息 id；MessagePane 渲染到该条后会自动滚动并高亮 */
+  const pendingJumpId = ref<number | null>(null)
+  /** 正在编辑的消息；输入区据此切换为「编辑模式」 */
+  const editingMessage = ref<Message | null>(null)
+
+  function setEditingMessage(m: Message | null) {
+    editingMessage.value = m
+  }
 
   function setReplyTarget(m: Message | null) {
     replyTarget.value = m
@@ -156,6 +164,10 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   async function openConversation(convId: number) {
     currentConvId.value = convId
+    // 切到别的会话时退出编辑态，避免把 A 会话的编辑内容发到 B
+    if (editingMessage.value && editingMessage.value.conversationId !== convId) {
+      editingMessage.value = null
+    }
     if (!messagesByConv[convId]) {
       loadingMessages.value = true
       try {
@@ -194,6 +206,30 @@ export const useConversationsStore = defineStore('conversations', () => {
     } finally {
       loadingMessages.value = false
     }
+  }
+
+  /**
+   * 打开会话并定位到指定消息（搜索结果用）。
+   *
+   * 目标可能在尚未加载的早期历史里：最多向前翻 10 页，避免超大群为了
+   * 一条旧消息把全部历史拉下来。找到后写入 pendingJumpId，由 MessagePane 滚动高亮。
+   */
+  async function openConversationAtMessage(convId: number, messageId: number): Promise<boolean> {
+    pendingJumpId.value = null
+    await openConversation(convId)
+    const has = () => (messagesByConv[convId] ?? []).some((m) => m.id === messageId)
+    if (has()) {
+      pendingJumpId.value = messageId
+      return true
+    }
+    for (let i = 0; i < 10 && hasMoreByConv[convId]; i++) {
+      await loadMore(convId)
+      if (has()) {
+        pendingJumpId.value = messageId
+        return true
+      }
+    }
+    return false
   }
 
   // ===== 已读 =====
@@ -391,6 +427,22 @@ export const useConversationsStore = defineStore('conversations', () => {
     sendFrame({ type: 'recall', messageId })
   }
 
+  /**
+   * 编辑自己的文本消息。服务端会再次校验发送者 / 时限，
+   * 这里不做本地乐观更新：等 message_update 帧回来再改，避免服务端拒绝后本地显示错误内容。
+   */
+  function editMessage(messageId: number, content: string): boolean {
+    const trimmed = content.trim()
+    const max = useSiteStore().config.maxMessageLength
+    if (!trimmed || trimmed.length > max) return false
+    return sendFrame({ type: 'edit', messageId, content: trimmed })
+  }
+
+  /** 表情回应：set 表示设置/切换，remove 表示取消 */
+  function toggleReaction(messageId: number, emoji: string, remove: boolean): boolean {
+    return sendFrame({ type: 'reaction', messageId, emoji, action: remove ? 'remove' : 'set' })
+  }
+
   /** 「仅自己删除」成功后同步本地缓存（服务端已写删除标记） */
   function removeMessageLocal(convId: number, messageId: number) {
     const list = messagesByConv[convId]
@@ -475,6 +527,23 @@ export const useConversationsStore = defineStore('conversations', () => {
         }
         break
       }
+      case 'message_update': {
+        const msg = messagesByConv[frame.convId]?.find((m) => m.id === frame.id)
+        if (msg) {
+          msg.content = frame.content
+          msg.editedAt = frame.editedAt
+        }
+        if (editingMessage.value?.id === frame.id) {
+          editingMessage.value.content = frame.content
+        }
+        const conv = conversations.value.find((c) => c.id === frame.convId)
+        if (conv && conv.lastMessageId === frame.id) conv.lastMessagePreview = frame.content
+        break
+      }
+      case 'reaction': {
+        applyReactionFrame(frame)
+        break
+      }
       case 'read': {
         ;(readByConv[frame.convId] ??= {})[frame.userId] = frame.upToId
         break
@@ -496,6 +565,47 @@ export const useConversationsStore = defineStore('conversations', () => {
         break
       }
     }
+  }
+
+  /** 表情回应增量：服务端只广播变化，前端按计数增减并维护 mine */
+  function applyReactionFrame(frame: Extract<ServerFrame, { type: 'reaction' }>) {
+    const msg = messagesByConv[frame.convId]?.find((m) => m.id === frame.messageId)
+    if (!msg) return
+    const views = (msg.reactions ?? []).map((r) => ({ ...r }))
+    const dec = (emoji: string) => {
+      const r = views.find((x) => x.emoji === emoji)
+      if (r) r.count = Math.max(0, r.count - 1)
+    }
+    const inc = (emoji: string) => {
+      let r = views.find((x) => x.emoji === emoji)
+      if (!r) {
+        r = { emoji, count: 0, mine: false }
+        views.push(r)
+      }
+      r.count++
+    }
+    const clearMine = (emoji: string) => {
+      const r = views.find((x) => x.emoji === emoji)
+      if (r) r.mine = false
+    }
+    const mine = frame.userId === auth.user?.id
+    if (frame.action === 'remove') {
+      dec(frame.emoji)
+      if (mine) clearMine(frame.emoji)
+    } else {
+      if (frame.before && frame.before !== frame.emoji) {
+        dec(frame.before)
+        if (mine) clearMine(frame.before)
+      }
+      inc(frame.emoji)
+      if (mine) {
+        const r = views.find((x) => x.emoji === frame.emoji)
+        if (r) r.mine = true
+      }
+    }
+    msg.reactions = views
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji))
   }
 
   function handleIncomingMessage(frame: Extract<ServerFrame, { type: 'message' }>) {
@@ -561,6 +671,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     conversations.value = []
     currentConvId.value = null
     filter.value = 'all'
+    editingMessage.value = null
     for (const k of Object.keys(messagesByConv)) delete messagesByConv[Number(k)]
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
     for (const k of Object.keys(readByConv)) delete readByConv[Number(k)]
@@ -578,6 +689,9 @@ export const useConversationsStore = defineStore('conversations', () => {
     setDraft,
     draftOf,
     replyTarget,
+    pendingJumpId,
+    editingMessage,
+    setEditingMessage,
     setReplyTarget,
     pinnedIds,
     isPinned,
@@ -599,6 +713,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     upsertConversation,
     applyUserProfile,
     openConversation,
+    openConversationAtMessage,
     loadMore,
     resync,
     filter,
@@ -610,6 +725,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     resend,
     sendTyping,
     recallMessage,
+    editMessage,
+    toggleReaction,
     removeMessageLocal,
     bindSender,
     handleServerFrame,

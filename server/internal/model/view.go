@@ -62,6 +62,19 @@ type FavoriteView struct {
 	FavoritedAt    time.Time `json:"favoritedAt"`
 }
 
+// SearchHitView 消息搜索结果（GET /api/search/messages）。
+type SearchHitView struct {
+	MessageID      uint64    `json:"messageId"`
+	ConversationID uint      `json:"conversationId"`
+	ConvType       int8      `json:"convType"`
+	ConvName       string    `json:"convName"`
+	SenderID       uint      `json:"senderId"`
+	SenderNickname string    `json:"senderNickname"`
+	MsgType        string    `json:"msgType"`
+	Content        string    `json:"content"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
 // FriendItemView 好友列表行（GET /api/friends）。
 type FriendItemView struct {
 	ID        uint      `json:"id"` // 关系记录 id
@@ -79,10 +92,11 @@ type FriendRequestView struct {
 
 // MemberView 会话成员行（GET /api/conversations/:id/members）。
 type MemberView struct {
-	UserID   uint      `json:"userId"`
-	Role     string    `json:"role"` // owner | member
-	JoinedAt time.Time `json:"joinedAt"`
-	User     UserBrief `json:"user"`
+	UserID     uint       `json:"userId"`
+	Role       string     `json:"role"` // owner | admin | member
+	JoinedAt   time.Time  `json:"joinedAt"`
+	MutedUntil *time.Time `json:"mutedUntil"`
+	User       UserBrief  `json:"user"`
 }
 
 // PluginView 插件响应体（permissions/allowedHosts 为数组）。

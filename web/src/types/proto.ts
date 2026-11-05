@@ -58,8 +58,10 @@ export interface Conversation {
 
 export interface ConversationMember {
   userId: number
-  role: 'owner' | 'member'
+  role: 'owner' | 'admin' | 'member'
   joinedAt: string
+  /** 禁言截止时间；null/过期表示未禁言 */
+  mutedUntil?: string | null
   user: Pick<User, 'id' | 'username' | 'nickname' | 'avatarColor' | 'avatar'>
 }
 
@@ -75,6 +77,13 @@ export interface ReplyBrief {
   isRecalled: boolean
 }
 
+/** 单条消息上某个表情的聚合 */
+export interface ReactionView {
+  emoji: string
+  count: number
+  mine: boolean
+}
+
 export interface Message {
   id: number
   conversationId: number
@@ -86,6 +95,10 @@ export interface Message {
   isRecalled: boolean
   /** 服务端撤回时间（RFC3339）；撤回提示显示满 3 分钟后前端不再渲染该条消息 */
   recalledAt?: string | null
+  /** 编辑时间；有值表示消息被编辑过 */
+  editedAt?: string | null
+  /** 表情回应聚合（随历史分页下发） */
+  reactions?: ReactionView[]
   /** 引用的消息 id（须同会话） */
   replyToId?: number | null
   /** 引用消息的摘要（服务端装配，前端直接渲染） */
@@ -117,6 +130,21 @@ export interface FavoriteItem {
   isRecalled: boolean
   createdAt: string
   favoritedAt: string
+}
+
+// ===== 消息搜索 =====
+
+/** 消息搜索结果（GET /api/search/messages） */
+export interface SearchHit {
+  messageId: number
+  conversationId: number
+  convType: ConvType
+  convName: string
+  senderId: number
+  senderNickname: string
+  msgType: string
+  content: string
+  createdAt: string
 }
 
 // ===== 好友 =====
@@ -171,6 +199,8 @@ export type ClientFrame =
   | { type: 'typing'; convId: number }
   | { type: 'read'; convId: number; upToId: number }
   | { type: 'recall'; messageId: number }
+  | { type: 'edit'; messageId: number; content: string }
+  | { type: 'reaction'; messageId: number; emoji: string; action: 'set' | 'remove' }
   | { type: 'ping' }
 
 export type ServerFrame =
@@ -192,6 +222,17 @@ export type ServerFrame =
       createdAt: string
     }
   | { type: 'recall'; messageId: number; convId: number; recalledAt?: string }
+  | { type: 'message_update'; id: number; convId: number; content: string; editedAt: string }
+  | {
+      type: 'reaction'
+      messageId: number
+      convId: number
+      emoji: string
+      /** set 时该用户此前回应的表情（可能为空） */
+      before?: string
+      userId: number
+      action: 'set' | 'remove'
+    }
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }

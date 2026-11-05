@@ -17,6 +17,7 @@ import PluginDrawer from '@/components/chat/PluginDrawer.vue'
 import PaneResizer from '@/components/common/PaneResizer.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { lastSeenAnnouncementId, markAnnouncementSeen } from '@/composables/announcement'
+import { showMessageNotification } from '@/composables/notifications'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { convApi } from '@/api'
@@ -52,6 +53,7 @@ const favoriteDrawerVisible = ref(false)
 const announcementVisible = ref(false)
 const announcementContent = ref('')
 let offAnnouncement: (() => void) | null = null
+let offNotify: (() => void) | null = null
 
 const systemConversation = computed(
   () => convStore.conversations.find((c) => c.type === 3) ?? null,
@@ -82,6 +84,26 @@ function onAnnouncementFrame(frame: ServerFrame) {
     return
   }
   showAnnouncement(frame.id, frame.content)
+}
+
+/** 新消息系统通知：页面不可见、非自己发送、会话未免打扰时弹出 */
+function notifyPreview(frame: Extract<ServerFrame, { type: 'message' }>): string {
+  if (frame.msgType === 'image') return t('chat.previewImage')
+  if (frame.msgType === 'audio') return t('chat.previewVoice')
+  if (frame.msgType === 'sticker') return t('message.quoteSticker')
+  if (frame.msgType !== 'text') return t('message.unknownType', { type: frame.msgType })
+  return frame.content
+}
+
+function onMessageNotify(frame: ServerFrame) {
+  if (frame.type !== 'message') return
+  if (frame.from.id === auth.user?.id) return
+  const conv = convStore.conversations.find((c) => c.id === frame.convId)
+  if (!conv || conv.muted) return
+  const name = conv.type === 1 ? (conv.peer?.nickname ?? t('app.name')) : (conv.name ?? t('app.name'))
+  showMessageNotification(name, notifyPreview(frame), () => {
+    void convStore.openConversation(frame.convId)
+  })
 }
 
 // 离线期间产生的公告没有 WS 帧：以系统会话最后一条消息为准补弹
@@ -147,6 +169,7 @@ onMounted(async () => {
     void router.replace({ path: '/chat' })
   }
   offAnnouncement = ws.onFrame(onAnnouncementFrame)
+  offNotify = ws.onFrame(onMessageNotify)
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -154,6 +177,8 @@ onMounted(async () => {
 onUnmounted(() => {
   offAnnouncement?.()
   offAnnouncement = null
+  offNotify?.()
+  offNotify = null
   host.stop()
   pluginsStore.reset()
   favoritesStore.reset()

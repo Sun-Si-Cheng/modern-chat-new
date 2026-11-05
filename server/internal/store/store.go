@@ -65,6 +65,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.UserConversation{},
 		&model.MessageDeletion{},
 		&model.MessageFavorite{},
+		&model.MessageReaction{},
 		&model.Friend{},
 		&model.Plugin{},
 		&model.PasswordReset{},
