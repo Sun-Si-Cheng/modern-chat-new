@@ -40,6 +40,9 @@ const (
 	KeySiteMaintenanceMode   = "site.maintenanceMode"
 	KeySiteMaintenanceMsg    = "site.maintenanceMessage"
 	KeySiteRequireInviteCode = "site.requireInviteCode"
+	// 注册需邮箱验证：默认开启；开启时注册必须带邮箱 + 邮件验证码。
+	// 首个账号（站长）始终豁免，保证没有 SMTP 时也能把站点引导起来。
+	KeySiteRequireEmailVerify = "site.requireEmailVerify"
 
 	// 安全
 	KeySecurityLoginMaxAttempts = "security.loginMaxAttempts"
@@ -68,7 +71,8 @@ var knownKeys = map[string]bool{
 
 	KeySiteName: true, KeySiteAllowRegister: true,
 	KeySiteMaintenanceMode: true, KeySiteMaintenanceMsg: true, KeySiteRequireInviteCode: true,
-	KeyChatMaxMessageLen: true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
+	KeySiteRequireEmailVerify: true,
+	KeyChatMaxMessageLen:      true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
 	KeyChatBlockedWords: true,
 	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
 	KeyUploadMaxStorageMB:       true,
@@ -212,6 +216,8 @@ type Ops struct {
 	MaintenanceMode    bool
 	MaintenanceMessage string
 	RequireInviteCode  bool
+	// RequireEmailVerify 注册需邮箱验证（默认开）
+	RequireEmailVerify bool
 	MaxMessageLength   int
 	RecallMinutes      int
 	MaxGroupMembers    int
@@ -234,6 +240,9 @@ func DefaultOps() Ops {
 		MaintenanceMode:    false,
 		MaintenanceMessage: "站点正在维护，请稍后再试。",
 		RequireInviteCode:  false,
+		// 默认要求邮箱验证：站点的第一件事通常是配好 SMTP。
+		// 首个账号（站长）在 Register 里豁免，不会把部署者锁在门外。
+		RequireEmailVerify: true,
 		MaxMessageLength:   1000,
 		RecallMinutes:      2,
 		MaxGroupMembers:    200,
@@ -286,6 +295,11 @@ func OpsFrom(all map[string]string) Ops {
 	}
 	if strings.TrimSpace(all[KeySiteRequireInviteCode]) == "true" {
 		out.RequireInviteCode = true
+	}
+	// 默认开：只有显式写 "false" 才关闭（与 AllowRegister 的「默认开」口径相反，
+	// 因为这里的安全默认值是「要验证」，而不是「不验证」）
+	if strings.TrimSpace(all[KeySiteRequireEmailVerify]) == "false" {
+		out.RequireEmailVerify = false
 	}
 
 	out.MaxMessageLength = clampInt(all[KeyChatMaxMessageLen], 100, 5000, def.MaxMessageLength)

@@ -42,7 +42,7 @@ export interface LegalDoc {
 
 export const termsZh: LegalDoc = {
   title: '用户协议',
-  updatedAt: '2026-10-24',
+  updatedAt: '2026-11-05',
   intro: [
     `本协议是你与${legalMeta.operator}（以下简称"运营者"）之间就使用 ${legalMeta.domain}（以下简称"本服务"）所订立的协议。`,
     '请在注册或使用本服务前完整阅读本协议。你注册账号、登录或使用本服务的任一功能，即表示你已阅读并同意本协议全部内容。若你不同意，请停止使用。',
@@ -145,7 +145,7 @@ export const termsZh: LegalDoc = {
 
 export const termsEn: LegalDoc = {
   title: 'Terms of Service',
-  updatedAt: '2026-10-24',
+  updatedAt: '2026-11-05',
   intro: [
     `These terms govern your use of ${legalMeta.domain} (the "Service"), operated by ${legalMeta.operator} (the "Operator").`,
     'Please read them before registering. By registering, signing in, or using any feature of the Service, you agree to these terms in full. If you do not agree, do not use the Service.',
@@ -249,7 +249,7 @@ export const termsEn: LegalDoc = {
 
 export const privacyZh: LegalDoc = {
   title: '隐私协议',
-  updatedAt: '2026-10-24',
+  updatedAt: '2026-11-05',
   intro: [
     `本协议说明${legalMeta.operator}在你使用 ${legalMeta.domain} 时如何收集、使用、存储与保护你的个人信息。`,
     '我们遵循最小必要原则：只收集提供服务所必需的信息。你使用本服务即表示理解并同意本协议。',
@@ -258,7 +258,7 @@ export const privacyZh: LegalDoc = {
     {
       heading: '一、我们收集的信息',
       blocks: [
-        '1. 账号信息：用户名、密码（仅保存不可逆的加密哈希，不保存明文）、昵称、头像颜色；如你选择填写，还包括邮箱。',
+        '1. 账号信息：用户名、密码（仅保存不可逆的加密哈希，不保存明文）、昵称、头像颜色；如站点要求邮箱验证或你选择填写，还包括邮箱。',
         '2. 内容信息：你发送的消息（正文、消息类型、发送时间、所属会话）、你创建或加入的群聊、好友关系、已读状态与未读数。',
         '3. 设备与日志信息：IP 地址、浏览器类型与版本、请求路径、响应状态、耗时。这些信息用于安全防护、故障排查与频率限制。',
         '4. 在线状态：你是否在线、正在输入的状态。该状态仅保存在服务器内存中，不上报给第三方，服务重启即清除。',
@@ -272,7 +272,7 @@ export const privacyZh: LegalDoc = {
         '提供核心功能：完成账号注册登录、消息存储与投递、会话与好友管理、未读与已读状态同步。',
         '保障安全：识别异常登录与滥用行为，执行频率限制、封禁与插件下架，防止 SSRF、跨站请求伪造等攻击。',
         '改善服务：通过聚合后的日志定位故障与性能问题（不用于个性化广告，也不向第三方出售）。',
-        '发送邮件：仅在你请求找回密码时，向你的邮箱发送一次性重置链接。',
+        '发送邮件：仅在你请求找回密码或注册需要邮箱验证时，向你的邮箱发送一次性重置链接或 6 位验证码。',
       ],
     },
     {
@@ -290,7 +290,7 @@ export const privacyZh: LegalDoc = {
       heading: '四、信息的共享与披露',
       blocks: [
         '我们不会出售、出租你的个人信息。仅在以下情形共享必要信息：',
-        '- 邮件服务商：找回密码时，将你的邮箱地址与重置链接交给为你部署实例所配置的 SMTP 服务商发送；未配置邮件服务时，重置链接仅打印在服务器日志中。',
+        '- 邮件服务商：找回密码或注册邮箱验证时，将你的邮箱地址与链接/验证码交给为你部署实例所配置的 SMTP 服务商发送；未配置邮件服务时，重置链接仅打印在服务器日志中。',
         '- 插件网络请求：经你授权后，插件可请求其白名单内的域名。请求内容由插件决定，可能包含该插件获取到的消息事件数据。请只安装可信插件。',
         '- 法律要求：依法配合司法或行政机关的合法要求，或在必要时为保护用户与公众的人身财产安全而披露。',
         '需要说明的是：部署本服务的运营者拥有服务器与数据库的管理权限，在技术上具备访问全部存储数据的能力。我们通过权限分离（站长后台不提供阅读消息的功能）与操作留痕来限制此类访问，但无法从技术上完全排除。若你对这一点有顾虑，请勿在私密对话中分享高度敏感的信息。',
@@ -355,7 +355,7 @@ export const privacyZh: LegalDoc = {
 
 export const privacyEn: LegalDoc = {
   title: 'Privacy Policy',
-  updatedAt: '2026-10-24',
+  updatedAt: '2026-11-05',
   intro: [
     `This policy explains how ${legalMeta.operator} collects, uses, stores, and protects your information when you use ${legalMeta.domain}.`,
     'We follow the principle of data minimisation: we collect only what is needed to run the Service. By using the Service you acknowledge and agree to this policy.',
@@ -364,7 +364,7 @@ export const privacyEn: LegalDoc = {
     {
       heading: '1. Information We Collect',
       blocks: [
-        'Account data: username, password (stored only as an irreversible hash, never in plain text), display name, avatar colour, and email if you choose to provide one.',
+        'Account data: username, password (stored only as an irreversible hash, never in plain text), display name, avatar colour, and email if the site requires verification or you choose to provide one.',
         'Content data: messages you send (text, type, timestamp, conversation), groups you create or join, friend relationships, read receipts, and unread counts.',
         'Device and log data: IP address, browser type and version, request path, response status, and duration, used for security, troubleshooting, and rate limiting.',
         'Presence: whether you are online and typing. Presence is kept in server memory only, is not shared with third parties, and is cleared on restart.',
@@ -378,7 +378,7 @@ export const privacyEn: LegalDoc = {
         'Providing core features: registration and sign-in, message storage and delivery, conversation and contact management, read-state sync.',
         'Security: detecting abnormal sign-ins and abuse, enforcing rate limits, bans, and plugin takedowns, and preventing SSRF, cross-site request forgery, and similar attacks.',
         'Improving the Service: diagnosing faults and performance issues using aggregated logs. We do not use your data for ad targeting and do not sell it.',
-        'Email: only when you request a password reset, to send a one-time reset link to your address.',
+        'Email: only when you request a password reset or when registration requires email verification, to send a one-time reset link or a 6-digit code.',
       ],
     },
     {
@@ -396,7 +396,7 @@ export const privacyEn: LegalDoc = {
       heading: '4. Sharing and Disclosure',
       blocks: [
         'We do not sell or rent your information. We share only what is necessary in these cases:',
-        '- Email provider: your address and reset link are handed to the SMTP provider configured for this instance. If no mail service is configured, the link is printed to server logs only.',
+        '- Email provider: your address plus the reset link or verification code are handed to the SMTP provider configured for this instance. If no mail service is configured, the reset link is printed to server logs only.',
         '- Plugin network requests: after you grant permission, a plugin may call domains on its allowlist. The request content is determined by the plugin and may include message data it received. Install only plugins you trust.',
         '- Legal requirements: we may disclose data to comply with lawful requests, or where necessary to protect the safety of users and the public.',
         'Please note: whoever operates this instance has administrative access to the server and database, and therefore technically can access all stored data. Operation is restricted by design (the admin console offers no message-reading feature) and by the audit trail, but this cannot be ruled out technically. If that matters to you, do not share highly sensitive information in private conversations.',

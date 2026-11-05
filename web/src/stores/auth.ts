@@ -22,8 +22,21 @@ export const useAuthStore = defineStore('auth', () => {
     applyAuth(await authApi.login({ username, password }))
   }
 
-  async function register(username: string, password: string, nickname: string, inviteCode?: string) {
-    applyAuth(await authApi.register({ username, password, nickname, inviteCode }))
+  async function register(
+    username: string,
+    password: string,
+    nickname: string,
+    inviteCode?: string,
+    email?: string,
+    emailCode?: string,
+  ) {
+    applyAuth(await authApi.register({ username, password, nickname, inviteCode, email, emailCode }))
+  }
+
+  /** 发送注册邮箱验证码；返回服务端给的冷却秒数（冷却期内重复调用也成功） */
+  async function sendRegisterCode(email: string): Promise<number> {
+    const r = await authApi.emailCode(email)
+    return r.cooldownSeconds ?? 60
   }
 
   async function fetchMe() {
@@ -45,5 +58,16 @@ export const useAuthStore = defineStore('auth', () => {
     setToken('')
   }
 
-  return { token, user, isLoggedIn, isAdmin, login, register, fetchMe, updateMe, logout }
+  return {
+    token,
+    user,
+    isLoggedIn,
+    isAdmin,
+    login,
+    register,
+    sendRegisterCode,
+    fetchMe,
+    updateMe,
+    logout,
+  }
 })

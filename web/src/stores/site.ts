@@ -17,6 +17,7 @@ export const useSiteStore = defineStore('site', () => {
     maintenanceMode: false,
     maintenanceMessage: '站点正在维护，请稍后再试。',
     requireInviteCode: false,
+    requireEmailVerify: true,
     maxMessageLength: 1000,
     recallMinutes: 2,
     maxGroupMembers: 200,

@@ -21,8 +21,15 @@ export const authApi = {
     nickname: string
     /** 站点开启「注册需邀请码」时必填 */
     inviteCode?: string
+    /** 站点开启「注册需邮箱验证」时必填 */
+    email?: string
+    /** 邮件里的 6 位验证码 */
+    emailCode?: string
   }) => http.post<AuthPayload>('/auth/register', body),
   login: (body: { username: string; password: string }) => http.post<AuthPayload>('/auth/login', body),
+  /** 发送注册验证码；返回剩余冷却秒数（冷却期内重复调用也返回 200） */
+  emailCode: (email: string) =>
+    http.post<{ ok: true; cooldownSeconds: number }>('/auth/email-code', { email }),
   forgot: (body: { email: string }) => http.post<{ ok: true }>('/auth/forgot', body),
   reset: (body: { token: string; newPassword: string }) =>
     http.post<{ ok: true }>('/auth/reset', { token: body.token, newPassword: body.newPassword }),
@@ -386,6 +393,8 @@ export interface SiteConfig {
   maintenanceMessage: string
   /** 注册是否需要邀请码 */
   requireInviteCode: boolean
+  /** 注册是否需要邮箱验证（开启时注册页出现邮箱 + 验证码） */
+  requireEmailVerify: boolean
   maxMessageLength: number
   recallMinutes: number
   maxGroupMembers: number
@@ -444,6 +453,7 @@ export interface AdminSettingsPayload {
     maintenanceMode: boolean
     maintenanceMessage: string
     requireInviteCode: boolean
+    requireEmailVerify: boolean
   }
   chat: ChatRules
   upload: UploadLimits

@@ -59,6 +59,8 @@ type siteSetting struct {
 	MaintenanceMode    bool   `json:"maintenanceMode"`
 	MaintenanceMessage string `json:"maintenanceMessage"`
 	RequireInviteCode  bool   `json:"requireInviteCode"`
+	// RequireEmailVerify 注册需邮箱验证（默认开；开启前必须配好 SMTP）
+	RequireEmailVerify bool `json:"requireEmailVerify"`
 }
 
 // securitySetting 登录安全策略。
@@ -154,6 +156,7 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 		MaintenanceMode:    ops.MaintenanceMode,
 		MaintenanceMessage: ops.MaintenanceMessage,
 		RequireInviteCode:  ops.RequireInviteCode,
+		RequireEmailVerify: ops.RequireEmailVerify,
 	}
 	view.Security = securitySetting{
 		LoginMaxAttempts: ops.LoginMaxAttempts,
@@ -206,6 +209,15 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 	if n := len([]rune(maintenanceMsg)); n > 200 {
 		fail(c, http.StatusBadRequest, "维护提示最多 200 个字符")
 		return
+	}
+	// 邮箱验证依赖 SMTP：没配邮件服务就开启，注册页会卡在「收不到验证码」。
+	// 本次提交里带了 SMTP host 也算配好（站长可以一次填完再开启）。
+	if req.Site.RequireEmailVerify {
+		smtpReady := h.mailer.Config().Enabled() || strings.TrimSpace(req.SMTP.Host) != ""
+		if !smtpReady {
+			fail(c, http.StatusBadRequest, "开启注册邮箱验证前请先配置 SMTP（邮件服务）")
+			return
+		}
 	}
 	if v := req.Security.LoginMaxAttempts; v != 0 && (v < 2 || v > 20) {
 		fail(c, http.StatusBadRequest, "登录失败次数阈值需为 0（关闭）或 2-20")
@@ -264,11 +276,12 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyStorageSecretKey:  req.Storage.SecretKey,
 		store.KeyStoragePublicBase: strings.TrimSpace(req.Storage.PublicBase),
 
-		store.KeySiteName:              siteName,
-		store.KeySiteAllowRegister:     strconv.FormatBool(req.Site.AllowRegister),
-		store.KeySiteMaintenanceMode:   strconv.FormatBool(req.Site.MaintenanceMode),
-		store.KeySiteMaintenanceMsg:    maintenanceMsg,
-		store.KeySiteRequireInviteCode: strconv.FormatBool(req.Site.RequireInviteCode),
+		store.KeySiteName:               siteName,
+		store.KeySiteAllowRegister:      strconv.FormatBool(req.Site.AllowRegister),
+		store.KeySiteMaintenanceMode:    strconv.FormatBool(req.Site.MaintenanceMode),
+		store.KeySiteMaintenanceMsg:     maintenanceMsg,
+		store.KeySiteRequireInviteCode:  strconv.FormatBool(req.Site.RequireInviteCode),
+		store.KeySiteRequireEmailVerify: strconv.FormatBool(req.Site.RequireEmailVerify),
 
 		store.KeySecurityLoginMaxAttempts: strconv.Itoa(req.Security.LoginMaxAttempts),
 		store.KeySecurityLoginLockMinutes: strconv.Itoa(req.Security.LoginLockMinutes),

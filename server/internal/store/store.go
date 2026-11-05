@@ -79,6 +79,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.MessageReport{},
 		&model.ConversationInvite{},
 		&model.PushSubscription{},
+		&model.EmailCode{},
 	)
 }
 

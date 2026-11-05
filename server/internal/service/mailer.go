@@ -71,6 +71,27 @@ func (m *Mailer) SendResetLink(to, link string) {
 	slog.Info("mail sent", "to", to)
 }
 
+// SendVerifyCode 发送注册验证码。
+//
+// 与重置链接不同，这里**返回错误**：注册接口必须能明确告诉用户
+// 「邮件没发出去」，否则用户会一直等一封永远不来的邮件。
+func (m *Mailer) SendVerifyCode(to, code string, ttl time.Duration) error {
+	cfg := m.Config()
+	if !cfg.Enabled() {
+		slog.Warn("mail(SMTP 未配置) 验证码未发送", "to", to)
+		return errors.New("SMTP 未配置")
+	}
+	body := "你的注册验证码是：" + code + "\r\n\r\n" +
+		fmt.Sprintf("有效期 %d 分钟，仅可使用一次，请勿转发给他人。\r\n\r\n", int(ttl.Minutes())) +
+		"若非本人操作，请忽略本邮件。\r\n"
+	if err := sendMail(cfg, to, buildPlainMessage(cfg, to, "ModernChat 注册验证码", body)); err != nil {
+		slog.Error("mail send failed", "to", to, "host", cfg.Host, "port", cfg.Port, "err", err.Error())
+		return err
+	}
+	slog.Info("mail sent", "to", to, "kind", "verify-code")
+	return nil
+}
+
 // SendTest 给指定地址发一封测试邮件，返回具体错误供后台展示。
 // 与找回密码不同：这里必须把失败原因暴露给站长，否则配错了也看不出。
 func (m *Mailer) SendTest(to string) error {

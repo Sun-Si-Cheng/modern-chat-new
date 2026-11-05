@@ -19,7 +19,7 @@ const (
 // tsHints 用于在没有明确语言提示时判断源码像不像 TypeScript。
 // 只在「明确不像 JS」时才命中最保守的几种写法，避免把普通 JS 误判成 TS。
 var tsHints = []*regexp.Regexp{
-	// interface Foo { / type Foo = 
+	// interface Foo { / type Foo =
 	regexp.MustCompile(`(?m)^\s*(?:export\s+)?(?:interface|type)\s+[A-Za-z_$][\w$]*\s*[={<]`),
 	// 形参/返回值的类型标注：): Foo {  或  x: string)
 	regexp.MustCompile(`\)\s*:\s*[A-Za-z_$][\w$<>\[\]| ,.]*\s*(?:=>|\{)`),

@@ -106,7 +106,9 @@ func New(d Deps) *gin.Engine {
 		slog.Info("smtp config loaded from database", "host", cfg.Host, "port", cfg.Port)
 	}
 
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts)
+	// 注册邮箱验证码：哈希密钥由 JWT_SECRET 派生（换密钥后旧码自动失效）
+	emailCodes := store.NewEmailCodeStore(d.DB, d.Cfg.JWTSecret)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts, emailCodes)
 	inviteH := handler.NewInviteHandler(invites)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs, moderation)
@@ -142,7 +144,7 @@ func New(d Deps) *gin.Engine {
 	api.GET("/metrics", metrics.Handler(d.Cfg.MetricsToken))
 	// 站点信息（免鉴权）：站点名、注册开关、消息长度/撤回时限/上传上限。
 	// 不含任何密钥类配置。
-	api.GET("/site", handler.NewSiteHandler(settings).Get)
+	api.GET("/site", handler.NewSiteHandler(settings, d.Mailer).Get)
 	// 群邀请落地页信息（免登录可看；实际加入需要登录）
 	api.GET("/invite/:token", convH.InviteInfo)
 
@@ -153,6 +155,8 @@ func New(d Deps) *gin.Engine {
 	api.POST("/auth/register", authLimit, middleware.Maintenance(settings), authH.Register)
 	api.POST("/auth/forgot", authLimit, middleware.Maintenance(settings), authH.Forgot)
 	api.POST("/auth/reset", authLimit, middleware.Maintenance(settings), authH.Reset)
+	// 注册验证码：与注册同组限流（IP 10/min），另外 store 内对同一邮箱有 60 秒冷却
+	api.POST("/auth/email-code", authLimit, middleware.Maintenance(settings), authH.EmailCode)
 
 	// 需登录（Auth → Ban → Maintenance：维护模式要能读到用户角色）
 	authed := api.Group(

@@ -162,6 +162,7 @@ const settingsForm = ref<AdminSettingsPayload>({
     maintenanceMode: false,
     maintenanceMessage: '',
     requireInviteCode: false,
+    requireEmailVerify: true,
   },
   chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200, blockedWords: '' },
   upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20, maxStorageMB: 0 },
@@ -1121,7 +1122,21 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 <span class="text-placeholder">{{ t('admin.inviteHint') }}</span>
               </div>
             </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.requireEmailVerify') }}</span>
+              <div class="mc-settings__switch-row">
+                <UiSwitch
+                  :value="settingsForm.site.requireEmailVerify"
+                  @change="(v) => (settingsForm.site.requireEmailVerify = v)"
+                />
+                <span class="text-placeholder">{{ t('admin.emailVerifyHint') }}</span>
+              </div>
+            </label>
           </div>
+
+          <p v-if="!settingsMeta.smtpEnabled && settingsForm.site.requireEmailVerify" class="mc-settings__warn">
+            {{ t('admin.emailVerifyNoSmtp') }}
+          </p>
 
           <label class="mc-settings__field mc-settings__field--wide">
             <span>{{ t('admin.maintenanceMessage') }}</span>

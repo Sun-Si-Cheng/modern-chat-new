@@ -2,11 +2,11 @@
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
-import { LockOnIcon, UserIcon } from 'tdesign-icons-vue-next'
+import { LockOnIcon, MailIcon, UserIcon } from 'tdesign-icons-vue-next'
 
 import AuthScene from '@/components/common/AuthScene.vue'
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
@@ -34,7 +34,55 @@ const registerForm = reactive({
   password: '',
   confirm: '',
   inviteCode: '',
+  email: '',
+  emailCode: '',
 })
+
+/** 站点开启「注册需邮箱验证」时才出现邮箱相关字段 */
+const needEmail = computed(() => site.config.requireEmailVerify)
+
+// ===== 邮箱验证码 =====
+
+const sendingCode = ref(false)
+const codeCooldown = ref(0)
+let codeTimer: number | undefined
+
+function stopCodeTimer() {
+  if (codeTimer !== undefined) {
+    window.clearInterval(codeTimer)
+    codeTimer = undefined
+  }
+}
+
+function startCooldown(seconds: number) {
+  codeCooldown.value = Math.min(600, Math.max(1, Math.floor(seconds) || 60))
+  stopCodeTimer()
+  codeTimer = window.setInterval(() => {
+    codeCooldown.value -= 1
+    if (codeCooldown.value <= 0) stopCodeTimer()
+  }, 1000)
+}
+
+onBeforeUnmount(stopCodeTimer)
+
+async function sendEmailCode() {
+  if (sendingCode.value || codeCooldown.value > 0) return
+  const email = registerForm.email.trim()
+  // 前端先挡一次明显错误的邮箱：省一次请求，也避免「验证码发到不存在的地址」
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    void MessagePlugin.warning(t('auth.validation.emailRequired'))
+    return
+  }
+  sendingCode.value = true
+  try {
+    startCooldown(await auth.sendRegisterCode(email))
+    void MessagePlugin.success(t('auth.codeSent'))
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.codeSendFailed'))
+  } finally {
+    sendingCode.value = false
+  }
+}
 
 /**
  * 协议同意状态：
@@ -72,6 +120,13 @@ const rules = computed<FormProps['rules']>(() => ({
       trigger: 'blur',
     },
   ],
+  // 邮箱验证只在站点开启时校验（关闭时字段不渲染，规则也不该拦提交）
+  ...(needEmail.value
+    ? {
+        email: [{ required: true, message: t('auth.validation.emailRequired'), trigger: 'blur' }],
+        emailCode: [{ required: true, message: t('auth.validation.codeRequired'), trigger: 'blur' }],
+      }
+    : {}),
 }))
 
 async function doSubmit() {
@@ -85,11 +140,13 @@ async function doSubmit() {
       await auth.login(loginForm.username, loginForm.password)
     } else {
       await auth.register(
-  registerForm.username,
-  registerForm.password,
-  registerForm.nickname,
-  registerForm.inviteCode,
-)
+        registerForm.username,
+        registerForm.password,
+        registerForm.nickname,
+        site.config.requireInviteCode ? registerForm.inviteCode.trim() : undefined,
+        needEmail.value ? registerForm.email.trim() : undefined,
+        needEmail.value ? registerForm.emailCode.trim() : undefined,
+      )
       void MessagePlugin.success(t('auth.registerOk'))
     }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/chat'
@@ -149,6 +206,39 @@ function switchMode(m: 'login' | 'register') {
           <UiInput v-model="registerForm.nickname" size="large" :placeholder="t('auth.nickname')" clearable>
             <template #prefix-icon><UserIcon /></template>
           </UiInput>
+        </TFormItem>
+
+        <!-- 站点开启「注册需邮箱验证」时才出现：邮箱 + 验证码 -->
+        <TFormItem v-if="mode === 'register' && needEmail" name="email">
+          <UiInput
+            v-model="registerForm.email"
+            size="large"
+            type="email"
+            :placeholder="t('auth.email')"
+            clearable
+          >
+            <template #prefix-icon><MailIcon /></template>
+          </UiInput>
+        </TFormItem>
+
+        <TFormItem v-if="mode === 'register' && needEmail" name="emailCode">
+          <div class="auth-card__code-row">
+            <UiInput
+              v-model="registerForm.emailCode"
+              size="large"
+              :maxlength="6"
+              :placeholder="t('auth.emailCode')"
+            />
+            <UiButton
+              variant="outline"
+              size="large"
+              :loading="sendingCode"
+              :disabled="codeCooldown > 0"
+              @click="sendEmailCode"
+            >
+              {{ codeCooldown > 0 ? t('auth.resendIn', { n: codeCooldown }) : t('auth.sendCode') }}
+            </UiButton>
+          </div>
         </TFormItem>
 
         <!-- 站点开启邀请码注册时才出现 -->
@@ -325,6 +415,23 @@ function switchMode(m: 'login' | 'register') {
   .auth-card__form {
     animation: none;
   }
+}
+
+/* 验证码行：输入框占满剩余宽度，按钮固定不换行 */
+.auth-card__code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-card__code-row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth-card__code-row > :last-child {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* 协议同意行：位于密码之后、提交按钮之前 */

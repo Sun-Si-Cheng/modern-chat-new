@@ -246,3 +246,19 @@ type PasswordReset struct {
 	Used      bool      `json:"-"`
 	CreatedAt time.Time `json:"-"`
 }
+
+// EmailCode 注册邮箱验证码：6 位数字，10 分钟有效，一次性。
+// 库里只存哈希（sha256(code + email + purpose + 服务端密钥)），不存明文。
+type EmailCode struct {
+	ID        uint       `gorm:"primaryKey" json:"-"`
+	Email     string     `gorm:"size:254;not null;index" json:"-"`
+	CodeHash  string     `gorm:"size:64;not null" json:"-"`
+	Purpose   string     `gorm:"size:16;not null;default:register" json:"-"`
+	Attempts  int        `gorm:"not null;default:0" json:"-"`
+	ExpiresAt time.Time  `gorm:"type:datetime(3);not null" json:"-"`
+	UsedAt    *time.Time `gorm:"type:datetime(3)" json:"-"`
+	CreatedAt time.Time  `gorm:"type:datetime(3)" json:"-"`
+}
+
+// TableName 显式指定表名（迁移里建的是 email_codes）。
+func (EmailCode) TableName() string { return "email_codes" }
