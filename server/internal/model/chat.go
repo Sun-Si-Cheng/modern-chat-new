@@ -54,6 +54,10 @@ type Message struct {
 	Forwarded bool `gorm:"default:false" json:"forwarded,omitempty"`
 	// EditedAt 编辑时间：NULL 表示从未编辑；前端据此显示「已编辑」
 	EditedAt *time.Time `gorm:"type:datetime(3)" json:"editedAt"`
+	// AdminDeletedAt 管理员删除时间：非 NULL 表示该消息对所有成员不可见。
+	AdminDeletedAt *time.Time `gorm:"type:datetime(3)" json:"adminDeletedAt,omitempty"`
+	// AdminDeletedBy 执行管理员删除的用户 id。
+	AdminDeletedBy *uint `json:"adminDeletedBy,omitempty"`
 	// ReplyTo 引用消息的摘要，不落库：查询与广播时按需装配。
 	ReplyTo *ReplyBrief `gorm:"-" json:"replyTo,omitempty"`
 	// Reactions 表情回应聚合，不落库：历史列表与页面加载时按需装配。
@@ -119,6 +123,24 @@ type MessageFavorite struct {
 	UserID    uint      `gorm:"primaryKey;autoIncrement:false" json:"-"`
 	MessageID uint      `gorm:"primaryKey;autoIncrement:false;index" json:"-"`
 	CreatedAt time.Time `gorm:"type:datetime(3)" json:"-"`
+}
+
+// UserBlock 拉黑关系：blocker_id 拉黑 blocked_id（单向记录，双向拦截由业务层判断）。
+type UserBlock struct {
+	BlockerID uint      `gorm:"primaryKey;autoIncrement:false" json:"-"`
+	BlockedID uint      `gorm:"primaryKey;autoIncrement:false;index" json:"-"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"-"`
+}
+
+// MessageReport 消息举报：每人对同一条消息只能举报一次。
+// status: 0=待处理 1=已处理 2=已忽略（当前只落库，后台处理留待后续）。
+type MessageReport struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	ReporterID uint      `gorm:"uniqueIndex:uk_reporter_message,priority:1" json:"reporterId"`
+	MessageID  uint      `gorm:"uniqueIndex:uk_reporter_message,priority:2;index" json:"messageId"`
+	Reason     string    `gorm:"size:200;not null" json:"reason"`
+	Status     int8      `gorm:"default:0" json:"status"`
+	CreatedAt  time.Time `gorm:"type:datetime(3)" json:"createdAt"`
 }
 
 // Friend 好友关系：user_id 视角指向 friend_id。

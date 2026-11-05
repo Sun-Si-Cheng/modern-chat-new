@@ -34,6 +34,10 @@ export const authApi = {
 
 export const userApi = {
   search: (kw: string) => http.get<User[]>('/users/search', { kw }),
+  /** 查询我是否拉黑了该用户 */
+  blockStatus: (userId: number) => http.get<{ blocked: boolean }>(`/users/${userId}/block`),
+  block: (userId: number) => http.post<{ ok: true }>(`/users/${userId}/block`),
+  unblock: (userId: number) => http.delete<{ ok: true }>(`/users/${userId}/block`),
 }
 
 // ===== 好友 =====
@@ -165,6 +169,17 @@ export const favoriteApi = {
   list: () => http.get<FavoriteItem[]>('/favorites'),
   add: (messageId: number) => http.post<{ ok: true }>(`/messages/${messageId}/favorite`),
   remove: (messageId: number) => http.delete<{ ok: true }>(`/messages/${messageId}/favorite`),
+}
+
+// ===== 治理（举报 / 管理员删除违规消息） =====
+
+export const moderationApi = {
+  /** 举报消息：同一人对同一条消息只能举报一次（重复提交返回 duplicate=true） */
+  report: (messageId: number, reason: string) =>
+    http.post<{ ok: true; duplicate?: boolean }>(`/messages/${messageId}/report`, { reason }),
+  /** 管理员删除违规消息：站点管理员或群主/管理员可用 */
+  adminDelete: (messageId: number) =>
+    http.post<{ ok: true; duplicate?: boolean }>(`/messages/${messageId}/admin-delete`),
 }
 
 // ===== 插件 =====
@@ -338,6 +353,8 @@ export interface ChatRules {
   maxMessageLength: number
   recallMinutes: number
   maxGroupMembers: number
+  /** 敏感词（换行分隔），命中的文本消息会被服务端拒绝 */
+  blockedWords: string
 }
 
 export interface UploadLimits {

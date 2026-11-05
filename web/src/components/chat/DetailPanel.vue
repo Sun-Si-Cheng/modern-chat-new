@@ -11,7 +11,7 @@ import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import PluginPanel from '@/components/declarative/PluginPanel.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, mediaApi, type ConversationFile } from '@/api'
+import { convApi, mediaApi, userApi, type ConversationFile } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
@@ -33,6 +33,60 @@ const myMember = computed(() => members.value.find((m) => m.userId === auth.user
 const isAdmin = computed(() => myMember.value?.role === 'admin')
 /** 群主与管理员都能踢人 / 禁言；具体边界在操作处再判断 */
 const canManage = computed(() => isOwner.value || isAdmin.value)
+
+// ===== 拉黑（仅单聊）=====
+const peerBlocked = ref(false)
+const blockBusy = ref(false)
+
+watch(
+  () => conv.value?.id,
+  async () => {
+    peerBlocked.value = false
+    const peerId = conv.value?.peer?.id
+    if (!peerId || isGroup.value) return
+    try {
+      peerBlocked.value = (await userApi.blockStatus(peerId)).blocked
+    } catch {
+      /* 忽略：查询失败时按未拉黑展示，操作时服务端会再校验 */
+    }
+  },
+  { immediate: true },
+)
+
+async function toggleBlock() {
+  const peer = conv.value?.peer
+  if (!peer || blockBusy.value) return
+  const next = !peerBlocked.value
+  const confirmed = await new Promise<boolean>((resolve) => {
+    const dlg = DialogPlugin.confirm({
+      header: next ? t('group.blockTitle') : t('group.unblockTitle'),
+      body: next
+        ? t('group.blockBody', { name: peer.nickname })
+        : t('group.unblockBody', { name: peer.nickname }),
+      theme: next ? 'warning' : 'default',
+      onConfirm: () => {
+        dlg.destroy()
+        resolve(true)
+      },
+      onClose: () => {
+        dlg.destroy()
+        resolve(false)
+      },
+    })
+  })
+  if (!confirmed) return
+  blockBusy.value = true
+  try {
+    if (next) await userApi.block(peer.id)
+    else await userApi.unblock(peer.id)
+    peerBlocked.value = next
+    void MessagePlugin.success(next ? t('group.blockOk') : t('group.unblockOk'))
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    blockBusy.value = false
+  }
+}
 
 // ===== 全员禁言 =====
 const mutingAll = ref(false)
@@ -772,6 +826,19 @@ async function leave() {
             <div class="text-placeholder">@{{ conv.peer?.username }}</div>
           </div>
         </div>
+        <p v-if="peerBlocked" class="mc-detail__hint text-placeholder">{{ t('group.blockedHint') }}</p>
+        <div class="mc-detail__footer">
+          <UiButton
+            variant="outline"
+            :theme="peerBlocked ? 'default' : 'danger'"
+            size="small"
+            block
+            :loading="blockBusy"
+            @click="toggleBlock"
+          >
+            {{ peerBlocked ? t('group.unblock') : t('group.block') }}
+          </UiButton>
+        </div>
       </div>
     </template>
 
@@ -1194,5 +1261,11 @@ async function leave() {
 .mc-detail__footer {
   margin-top: 14px;
   flex-shrink: 0;
+}
+
+.mc-detail__hint {
+  margin: 10px 0 0;
+  font-size: var(--mc-fs-caption);
+  line-height: 1.5;
 }
 </style>

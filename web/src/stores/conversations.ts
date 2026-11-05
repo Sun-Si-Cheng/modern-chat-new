@@ -640,6 +640,12 @@ export const useConversationsStore = defineStore('conversations', () => {
         if (m) m.deliveredAt = new Date().toISOString()
         break
       }
+      case 'message_admin_deleted': {
+        removeMessageLocal(frame.convId, frame.messageId)
+        // 会话预览/未读可能来自这条被删消息，重新拉列表让服务端回退
+        void loadConversations()
+        break
+      }
       case 'typing': {
         if (frame.userId === auth.user?.id) break
         ;(typingByConv[frame.convId] ??= {})[frame.userId] = Date.now() + 3000

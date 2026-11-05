@@ -287,6 +287,16 @@ func (s *ConversationStore) SetOwner(convID, newOwnerID, oldOwnerID uint) error 
 	})
 }
 
+// OtherMemberID 单聊里除指定用户外的另一方 id（拉黑拦截用）。
+func (s *ConversationStore) OtherMemberID(convID, userID uint) (uint, error) {
+	var id uint
+	err := s.db.Model(&model.ConversationMember{}).
+		Where("conversation_id = ? AND user_id <> ?", convID, userID).
+		Limit(1).
+		Pluck("user_id", &id).Error
+	return id, err
+}
+
 // MemberUserIDs 全部成员 id（fan-out 用）。
 func (s *ConversationStore) MemberUserIDs(convID uint) ([]uint, error) {
 	var ids []uint
@@ -490,6 +500,16 @@ func (s *ConversationStore) deletedLastIDs(userID uint, ids []uint64) (map[uint6
 	for _, id := range found {
 		out[id] = true
 	}
+	// 管理员删除的消息对所有成员都不可见，同样需要回退列表预览
+	var adminDeleted []uint64
+	if err := s.db.Model(&model.Message{}).
+		Where("id IN ? AND admin_deleted_at IS NOT NULL", ids).
+		Pluck("id", &adminDeleted).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range adminDeleted {
+		out[id] = true
+	}
 	return out, nil
 }
 
@@ -502,7 +522,7 @@ func (s *ConversationStore) latestVisible(userID, convID uint) (uint64, *time.Ti
 	err := s.db.Raw(`
 		SELECT m.id, m.created_at FROM messages m
 		LEFT JOIN message_deletions d ON d.message_id = m.id AND d.user_id = ?
-		WHERE m.conversation_id = ? AND d.message_id IS NULL
+		WHERE m.conversation_id = ? AND d.message_id IS NULL AND m.admin_deleted_at IS NULL
 		ORDER BY m.id DESC LIMIT 1`, userID, convID).Scan(&last).Error
 	if err != nil || last.ID == 0 {
 		return 0, nil, err

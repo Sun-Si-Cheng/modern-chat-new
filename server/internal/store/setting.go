@@ -49,6 +49,8 @@ const (
 	KeyChatMaxMessageLen   = "chat.maxMessageLength"
 	KeyChatRecallMinutes   = "chat.recallMinutes"
 	KeyChatMaxGroupMembers = "chat.maxGroupMembers"
+	// 敏感词：换行分隔；文本消息命中即拒绝发送
+	KeyChatBlockedWords = "chat.blockedWords"
 
 	// 上传体积上限（MB）
 	KeyUploadMaxImageMB = "upload.maxImageMB"
@@ -65,6 +67,7 @@ var knownKeys = map[string]bool{
 	KeySiteName: true, KeySiteAllowRegister: true,
 	KeySiteMaintenanceMode: true, KeySiteMaintenanceMsg: true, KeySiteRequireInviteCode: true,
 	KeyChatMaxMessageLen: true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
+	KeyChatBlockedWords: true,
 	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
 	KeySecurityLoginMaxAttempts: true, KeySecurityLoginLockMinutes: true,
 }
@@ -209,6 +212,8 @@ type Ops struct {
 	MaxMessageLength   int
 	RecallMinutes      int
 	MaxGroupMembers    int
+	// BlockedWords 敏感词（已按行拆分、去空、去首尾空白）
+	BlockedWords []string
 	MaxImageMB         int
 	MaxAudioMB         int
 	MaxFileMB          int
@@ -281,6 +286,7 @@ func OpsFrom(all map[string]string) Ops {
 	out.MaxMessageLength = clampInt(all[KeyChatMaxMessageLen], 100, 5000, def.MaxMessageLength)
 	out.RecallMinutes = clampInt(all[KeyChatRecallMinutes], 0, 60, def.RecallMinutes)
 	out.MaxGroupMembers = clampInt(all[KeyChatMaxGroupMembers], 2, 2000, def.MaxGroupMembers)
+	out.BlockedWords = splitBlockedWords(all[KeyChatBlockedWords])
 	out.MaxImageMB = clampInt(all[KeyUploadMaxImageMB], 1, 32, def.MaxImageMB)
 	out.MaxAudioMB = clampInt(all[KeyUploadMaxAudioMB], 1, 32, def.MaxAudioMB)
 	out.MaxFileMB = clampInt(all[KeyUploadMaxFileMB], 1, 200, def.MaxFileMB)
@@ -291,6 +297,26 @@ func OpsFrom(all map[string]string) Ops {
 		out.LoginMaxAttempts = clampInt(raw, 2, 20, def.LoginMaxAttempts)
 	}
 	out.LoginLockMinutes = clampInt(all[KeySecurityLoginLockMinutes], 1, 1440, def.LoginLockMinutes)
+	return out
+}
+
+// splitBlockedWords 把后台填写的多行敏感词拆成列表：去空行、去首尾空白，
+// 单个词按 rune 截断到 50，最多保留 200 个（防止误粘贴超长文本拖慢每条消息的匹配）。
+func splitBlockedWords(raw string) []string {
+	var out []string
+	for _, line := range strings.Split(raw, "\n") {
+		w := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if w == "" {
+			continue
+		}
+		if r := []rune(w); len(r) > 50 {
+			w = string(r[:50])
+		}
+		out = append(out, w)
+		if len(out) >= 200 {
+			break
+		}
+	}
 	return out
 }
 

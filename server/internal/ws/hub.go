@@ -31,7 +31,8 @@ type Deps struct {
 	Messages   *store.MessageStore
 	Friends    *store.FriendStore
 	Users      *store.UserStore   // 连接级封禁 / token_version 复核（可为 nil）
-	MsgLimiter middleware.Limiter // 每用户 20 条/分（内存或 Redis）
+	Moderation *store.ModerationStore // 单聊拉黑拦截（可为 nil，测试环境跳过）
+	MsgLimiter middleware.Limiter     // 每用户 20 条/分（内存或 Redis）
 	// Storage 用于校验图片/语音消息的 URL 归属（可为 nil，测试环境走本地前缀兜底）
 	Storage service.Storage
 	// Settings 提供可运营的聊天规则（消息长度、撤回时限）。可为 nil，回落默认值。

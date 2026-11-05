@@ -25,6 +25,8 @@ type ConversationHandler struct {
 	friends *store.FriendStore
 	convs   *store.ConversationStore
 	msgs    *store.MessageStore
+	// mod 拉黑关系：单聊发起前双向拦截
+	mod *store.ModerationStore
 	// settings 用于读取群人数上限等可运营规则（可为 nil，回落到内置默认值）
 	settings *store.SettingStore
 	// storage 校验群头像 URL 归属（可为 nil，回落本地前缀判断）
@@ -44,11 +46,12 @@ func NewConversationHandler(
 	friends *store.FriendStore,
 	convs *store.ConversationStore,
 	msgs *store.MessageStore,
+	mod *store.ModerationStore,
 	settings *store.SettingStore,
 	storage service.Storage,
 ) *ConversationHandler {
 	return &ConversationHandler{
-		users: users, friends: friends, convs: convs, msgs: msgs,
+		users: users, friends: friends, convs: convs, msgs: msgs, mod: mod,
 		settings: settings, storage: storage,
 	}
 }
@@ -108,6 +111,16 @@ func (h *ConversationHandler) CreateSingle(c *gin.Context) {
 	if len(friends) == 0 {
 		fail(c, http.StatusUnprocessableEntity, "只能与好友发起单聊")
 		return
+	}
+	// 拉黑即互不打扰：任一方向拉黑都不允许发起（或复用）单聊
+	if h.mod != nil {
+		if blocked, err := h.mod.BlockedEither(me.ID, target.ID); err != nil {
+			internal(c, err)
+			return
+		} else if blocked {
+			fail(c, http.StatusForbidden, "对方已将你拉黑，无法发起会话")
+			return
+		}
 	}
 
 	if existing, err := h.convs.SingleExists(me.ID, target.ID); err != nil {

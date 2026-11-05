@@ -245,6 +245,8 @@ export type ServerFrame =
       action: 'set' | 'remove'
     }
   | { type: 'message_delivered'; messageId: number; convId: number; userId: number }
+  /** 管理员删除违规消息：所有端都要从聊天记录移除 */
+  | { type: 'message_admin_deleted'; messageId: number; convId: number }
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }

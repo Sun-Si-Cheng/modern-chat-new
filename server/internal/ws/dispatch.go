@@ -90,18 +90,44 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		return
 	}
 	// 全员禁言：群主与管理员不受影响
-	if conv, err := h.deps.Convs.ByID(f.ConvID); err == nil && conv != nil && conv.MuteAll {
+	conv, err := h.deps.Convs.ByID(f.ConvID)
+	if err != nil {
+		slog.Error("ws conversation lookup", "err", err.Error(), "conv", f.ConvID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	if conv != nil && conv.MuteAll {
 		m, _ := h.deps.Convs.MemberOf(f.ConvID, c.UserID)
 		if m == nil || (m.Role != "owner" && m.Role != "admin") {
 			h.sendError(c, "群已开启全员禁言，只有群主和管理员可以发言")
 			return
 		}
 	}
-	// 消息长度上限可在后台调整，默认 1000
-	maxLen := store.DefaultOps().MaxMessageLength
-	if h.deps.Settings != nil {
-		maxLen = h.deps.Settings.Ops().MaxMessageLength
+	// 单聊拉黑：任一方向拉黑后双方都不能再发送（拉黑即互不打扰）
+	if conv != nil && conv.Type == 1 && h.deps.Moderation != nil {
+		peerID, pErr := h.deps.Convs.OtherMemberID(f.ConvID, c.UserID)
+		if pErr != nil {
+			slog.Error("ws single peer lookup", "err", pErr.Error(), "conv", f.ConvID)
+			h.sendError(c, "服务器开小差了，请稍后再试")
+			return
+		}
+		if peerID > 0 {
+			if blocked, bErr := h.deps.Moderation.BlockedEither(c.UserID, peerID); bErr != nil {
+				slog.Error("ws block lookup", "err", bErr.Error())
+				h.sendError(c, "服务器开小差了，请稍后再试")
+				return
+			} else if blocked {
+				h.sendError(c, "你们已互相拉黑，无法发送消息")
+				return
+			}
+		}
 	}
+	// 消息长度上限与敏感词可在后台调整，默认 1000 / 无敏感词
+	ops := store.DefaultOps()
+	if h.deps.Settings != nil {
+		ops = h.deps.Settings.Ops()
+	}
+	maxLen := ops.MaxMessageLength
 	content := []rune(f.Content)
 	if len(content) < 1 || len(content) > maxLen {
 		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen))
@@ -117,6 +143,10 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 	if l := len(msgType); l > 32 || !isSafeMsgType(msgType) {
 		h.sendError(c, "msgType 不合法")
+		return
+	}
+	if msgType == "text" && hitBlockedWord(ops.BlockedWords, string(content)) {
+		h.sendError(c, "消息包含敏感词，请修改后重发")
 		return
 	}
 	// 图片/语音的 content 必须是本站上传目录下的相对地址。
@@ -394,13 +424,18 @@ func (h *Hub) handleEdit(c *Client, f *clientFrame) {
 		h.sendError(c, "你已被禁言，暂时不能编辑消息")
 		return
 	}
-	maxLen := store.DefaultOps().MaxMessageLength
+	ops := store.DefaultOps()
 	if h.deps.Settings != nil {
-		maxLen = h.deps.Settings.Ops().MaxMessageLength
+		ops = h.deps.Settings.Ops()
 	}
+	maxLen := ops.MaxMessageLength
 	content := []rune(f.Content)
 	if len(content) < 1 || len(content) > maxLen {
 		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen))
+		return
+	}
+	if hitBlockedWord(ops.BlockedWords, string(content)) {
+		h.sendError(c, "消息包含敏感词，请修改后重发")
 		return
 	}
 	now, err := h.deps.Messages.UpdateContent(msg.ID, string(content))
@@ -614,6 +649,16 @@ func messageFrame(m *model.Message, clientMsgID string) ginH {
 		frame["forwarded"] = true
 	}
 	return frame
+}
+
+// hitBlockedWord 文本是否命中后台配置的敏感词（子串匹配，大小写敏感）。
+func hitBlockedWord(words []string, content string) bool {
+	for _, w := range words {
+		if w != "" && strings.Contains(content, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func isSafeMsgType(s string) bool {

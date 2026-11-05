@@ -17,10 +17,17 @@ type FriendHandler struct {
 	users   *store.UserStore
 	friends *store.FriendStore
 	convs   *store.ConversationStore
+	// mod 拉黑关系：被拉黑后不能再发好友申请
+	mod *store.ModerationStore
 }
 
-func NewFriendHandler(users *store.UserStore, friends *store.FriendStore, convs *store.ConversationStore) *FriendHandler {
-	return &FriendHandler{users: users, friends: friends, convs: convs}
+func NewFriendHandler(
+	users *store.UserStore,
+	friends *store.FriendStore,
+	convs *store.ConversationStore,
+	mod *store.ModerationStore,
+) *FriendHandler {
+	return &FriendHandler{users: users, friends: friends, convs: convs, mod: mod}
 }
 
 // List 我的好友。
@@ -71,6 +78,15 @@ func (h *FriendHandler) Apply(c *gin.Context) {
 	if target.ID == me.ID {
 		fail(c, http.StatusUnprocessableEntity, "不能添加自己为好友")
 		return
+	}
+	if h.mod != nil {
+		if blocked, err := h.mod.BlockedEither(me.ID, target.ID); err != nil {
+			internal(c, err)
+			return
+		} else if blocked {
+			fail(c, http.StatusForbidden, "无法向对方发送好友申请")
+			return
+		}
 	}
 
 	// 已有待申请 / 已通过：拒绝重复

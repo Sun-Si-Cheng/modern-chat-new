@@ -13,7 +13,7 @@ import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMe
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, searchApi } from '@/api'
+import { convApi, moderationApi, searchApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { useConversationsStore } from '@/stores/conversations'
@@ -171,6 +171,26 @@ onMounted(() => {
 // ===== 群成员昵称缓存 =====
 
 const memberNameCache = reactive<Record<number, string>>({})
+/** 我在当前群的角色（判断是否显示「删除违规消息」）；单聊为空 */
+const myGroupRole = ref('')
+
+/** 站点管理员或当前群群主/管理员可删除违规消息 */
+const canModerate = computed(() => {
+  if (auth.user?.role === 'admin') return true
+  return conv.value?.type === 2 && (myGroupRole.value === 'owner' || myGroupRole.value === 'admin')
+})
+
+let memberNamesLoading = false
+
+watch(
+  () => conv.value?.id,
+  (id) => {
+    myGroupRole.value = ''
+    if (id === undefined || conv.value?.type !== 2) return
+    void loadMemberNames()
+  },
+  { immediate: true },
+)
 
 function memberName(userId: number): string {
   if (memberNameCache[userId]) return memberNameCache[userId]
@@ -178,14 +198,15 @@ function memberName(userId: number): string {
   return t('message.userFallback', { n: userId })
 }
 
-let memberNamesLoading = false
-
 async function loadMemberNames() {
   if (memberNamesLoading || !conv.value) return
   memberNamesLoading = true
   try {
     const members = await convApi.members(conv.value.id)
-    for (const m of members) memberNameCache[m.userId] = m.user.nickname
+    for (const m of members) {
+      memberNameCache[m.userId] = m.user.nickname
+      if (m.userId === auth.user?.id) myGroupRole.value = m.role
+    }
   } catch {
     /* 忽略：下次渲染重试 */
   } finally {
@@ -533,6 +554,13 @@ function commonActions(m: Message, dividerFirst: boolean): ContextMenuItem[] {
   }
   if (actionable) {
     items.push({ key: 'delete', label: t('message.delete'), danger: true, dividerBefore: true })
+    // 举报他人消息（自己的消息不提供举报入口）
+    if (!senderOf(m)) {
+      items.push({ key: 'report', label: t('message.report'), danger: true })
+    }
+    if (canModerate.value) {
+      items.push({ key: 'adminDelete', label: t('message.adminDelete'), danger: true })
+    }
   }
   return items
 }
@@ -604,6 +632,8 @@ function onMenuSelect(key: string) {
   if (key === 'recall') recall(m)
   if (key === 'favorite') void toggleFavorite(m)
   if (key === 'delete') confirmDelete(m)
+  if (key === 'report') startReport(m)
+  if (key === 'adminDelete') confirmAdminDelete(m)
 }
 
 // ===== 收藏 / 删除（仅自己） =====
@@ -634,6 +664,56 @@ function confirmDelete(m: Message) {
         // 会话预览与未读可能随之变化，重新拉取列表
         await convStore.loadConversations().catch(() => undefined)
         void MessagePlugin.success(t('message.deleteOk'))
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+      }
+      dialog.destroy()
+    },
+  })
+}
+
+// ===== 举报 / 管理员删除违规消息 =====
+
+const reportTarget = ref<Message | null>(null)
+const reportReason = ref('')
+const reporting = ref(false)
+
+function startReport(m: Message) {
+  reportTarget.value = m
+  reportReason.value = ''
+}
+
+async function submitReport() {
+  const m = reportTarget.value
+  if (!m) return
+  const reason = reportReason.value.trim()
+  if (!reason) {
+    void MessagePlugin.warning(t('message.reportReasonEmpty'))
+    return
+  }
+  reporting.value = true
+  try {
+    const r = await moderationApi.report(m.id, reason)
+    void MessagePlugin.success(r.duplicate ? t('message.reportDuplicate') : t('message.reportOk'))
+    reportTarget.value = null
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    reporting.value = false
+  }
+}
+
+function confirmAdminDelete(m: Message) {
+  const dialog = DialogPlugin.confirm({
+    header: t('message.adminDeleteTitle'),
+    body: t('message.adminDeleteBody'),
+    confirmBtn: { content: t('message.adminDelete'), theme: 'danger' },
+    onConfirm: async () => {
+      try {
+        await moderationApi.adminDelete(m.id)
+        convStore.removeMessageLocal(m.conversationId, m.id)
+        await convStore.loadConversations().catch(() => undefined)
+        void MessagePlugin.success(t('message.adminDeleteOk'))
       } catch (e) {
         void MessagePlugin.error(te(e))
       }
@@ -1130,6 +1210,44 @@ const senderName = (m: Message) => {
                 {{ t('message.forwardSameConv') }}
               </span>
             </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 举报消息：填写理由后提交 -->
+    <Teleport to="body">
+      <div v-if="reportTarget" class="mc-forward" @click.self="reportTarget = null">
+        <div class="mc-forward__panel" role="dialog" aria-modal="true">
+          <div class="mc-forward__head">
+            <span>{{ t('message.reportTitle') }}</span>
+            <button
+              type="button"
+              class="mc-forward__close"
+              :aria-label="t('common.cancel')"
+              @click="reportTarget = null"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div class="mc-report__body">
+            <textarea
+              v-model="reportReason"
+              class="mc-report__input"
+              :maxlength="200"
+              rows="4"
+              :placeholder="t('message.reportPlaceholder')"
+            />
+            <div class="mc-report__foot">
+              <UiButton variant="outline" size="small" @click="reportTarget = null">
+                {{ t('common.cancel') }}
+              </UiButton>
+              <UiButton theme="danger" size="small" :loading="reporting" @click="submitReport">
+                {{ t('message.reportSubmit') }}
+              </UiButton>
+            </div>
           </div>
         </div>
       </div>
@@ -1745,6 +1863,39 @@ const senderName = (m: Message) => {
   flex-shrink: 0;
   font-size: var(--mc-fs-caption);
   color: var(--td-text-color-placeholder);
+}
+
+/* ===== 举报消息 ===== */
+.mc-report__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+
+.mc-report__input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.mc-report__input:focus {
+  border-color: var(--td-brand-color);
+}
+
+.mc-report__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* 必须盖过 .mc-msg.mine .mc-msg__bubble（3 类选择器）：

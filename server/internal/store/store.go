@@ -75,6 +75,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.ConversationFile{},
 		&model.InviteCode{},
 		&model.LoginAttempt{},
+		&model.UserBlock{},
+		&model.MessageReport{},
 	)
 }
 

@@ -72,6 +72,8 @@ type chatSetting struct {
 	MaxMessageLength int `json:"maxMessageLength"`
 	RecallMinutes    int `json:"recallMinutes"`
 	MaxGroupMembers  int `json:"maxGroupMembers"`
+	// BlockedWords 敏感词（换行分隔，原样存取）
+	BlockedWords string `json:"blockedWords"`
 }
 
 // uploadSetting 上传体积上限（MB）。
@@ -159,6 +161,7 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 		MaxMessageLength: ops.MaxMessageLength,
 		RecallMinutes:    ops.RecallMinutes,
 		MaxGroupMembers:  ops.MaxGroupMembers,
+		BlockedWords:     strings.Join(ops.BlockedWords, "\n"),
 	}
 	view.Upload = uploadSetting{
 		MaxImageMB: ops.MaxImageMB,
@@ -229,6 +232,12 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 			return
 		}
 	}
+	// 敏感词按行分隔；限制总长度，避免误粘贴超长文本拖慢每条消息的匹配
+	blockedWords := strings.TrimSpace(req.Chat.BlockedWords)
+	if n := len([]rune(blockedWords)); n > 2000 {
+		fail(c, http.StatusBadRequest, "敏感词总长度最多 2000 个字符")
+		return
+	}
 
 	updates := map[string]string{
 		store.KeySMTPHost: strings.TrimSpace(req.SMTP.Host),
@@ -260,6 +269,7 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyChatMaxMessageLen:   strconv.Itoa(req.Chat.MaxMessageLength),
 		store.KeyChatRecallMinutes:   strconv.Itoa(req.Chat.RecallMinutes),
 		store.KeyChatMaxGroupMembers: strconv.Itoa(req.Chat.MaxGroupMembers),
+		store.KeyChatBlockedWords:    blockedWords,
 
 		store.KeyUploadMaxImageMB: strconv.Itoa(req.Upload.MaxImageMB),
 		store.KeyUploadMaxAudioMB: strconv.Itoa(req.Upload.MaxAudioMB),

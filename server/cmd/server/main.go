@@ -126,6 +126,7 @@ func main() {
 		Messages:   store.NewMessageStore(db),
 		Friends:    store.NewFriendStore(db),
 		Users:      store.NewUserStore(db), // 连接级封禁 / tv 复核（task-4 修复点）
+		Moderation: store.NewModerationStore(db),
 		MsgLimiter: msgLimiter,
 		Storage:    uploadStorage,
 		Settings:   settings,

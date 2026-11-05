@@ -46,7 +46,7 @@ func (s *MessageStore) ByClientMsg(convID uint, clientMsgID string) (*model.Mess
 func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int) ([]model.Message, bool, error) {
 	var rows []model.Message
 	if err := s.db.Where(
-		"conversation_id = ? AND id > ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
+		"conversation_id = ? AND id > ? AND admin_deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
 		convID, afterID, viewerID, viewerID, convID,
 	).Order("id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return nil, false, err
@@ -63,7 +63,7 @@ func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int)
 // viewerID 的「仅自己删除」记录会被排除，避免分页里再次出现被删消息。
 func (s *MessageStore) PageBefore(convID, viewerID uint, beforeID uint64, limit int) ([]model.Message, bool, error) {
 	q := s.db.Where(
-		"conversation_id = ? AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
+		"conversation_id = ? AND admin_deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = messages.id) AND messages.id > COALESCE((SELECT cleared_before_id FROM user_conversations WHERE user_id = ? AND conversation_id = ?), 0)",
 		convID, viewerID, viewerID, convID,
 	)
 	if beforeID > 0 {
@@ -281,7 +281,7 @@ func (s *MessageStore) DeleteForUser(userID uint, msg *model.Message) error {
 		if err := tx.Raw(`
 			SELECT m.id, m.created_at FROM messages m
 			LEFT JOIN message_deletions d ON d.message_id = m.id AND d.user_id = ?
-			WHERE m.conversation_id = ? AND d.message_id IS NULL
+			WHERE m.conversation_id = ? AND d.message_id IS NULL AND m.admin_deleted_at IS NULL
 			ORDER BY m.id DESC LIMIT 1`, userID, msg.ConversationID).Scan(&last).Error; err != nil {
 			return err
 		}
@@ -320,7 +320,7 @@ func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, 
 		Joins("JOIN messages m ON m.id = f.message_id").
 		Joins("JOIN conversations c ON c.id = m.conversation_id").
 		Joins("JOIN users u ON u.id = m.sender_id").
-		Where("f.user_id = ?", userID).
+		Where("f.user_id = ? AND m.admin_deleted_at IS NULL", userID).
 		Order("f.created_at DESC").
 		Limit(limit).
 		Scan(&rows).Error; err != nil {
@@ -371,7 +371,7 @@ func (s *MessageStore) Search(userID, convID uint, kw string, limit int) ([]mode
 			m.msg_type, m.content, m.created_at`).
 		Joins("JOIN conversations c ON c.id = m.conversation_id").
 		Joins("JOIN users u ON u.id = m.sender_id").
-		Where("m.is_recalled = ? AND m.content LIKE ?", false, pat).
+		Where("m.is_recalled = ? AND m.admin_deleted_at IS NULL AND m.content LIKE ?", false, pat).
 		Where("EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = m.conversation_id AND cm.user_id = ?)", userID).
 		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID)
 	if convID > 0 {

@@ -161,7 +161,7 @@ const settingsForm = ref<AdminSettingsPayload>({
     maintenanceMessage: '',
     requireInviteCode: false,
   },
-  chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200 },
+  chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200, blockedWords: '' },
   upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20 },
   security: { loginMaxAttempts: 5, loginLockMinutes: 15 },
 })
@@ -1090,7 +1090,18 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 :step="10"
               />
             </label>
+            <label class="mc-settings__field mc-settings__field--wide">
+              <span>{{ t('admin.blockedWords') }}</span>
+              <textarea
+                v-model="settingsForm.chat.blockedWords"
+                class="mc-settings__textarea"
+                rows="5"
+                :maxlength="2000"
+                :placeholder="t('admin.blockedWordsHint')"
+              />
+            </label>
           </div>
+          <p class="mc-settings__warn">{{ t('admin.blockedWordsNote') }}</p>
           <p class="mc-settings__warn">{{ t('admin.recallZeroHint') }}</p>
         </section>
 
@@ -1628,6 +1639,25 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 .mc-settings__field > div {
   background: var(--td-bg-color-page);
   border-color: var(--td-component-border);
+}
+
+.mc-settings__textarea {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.mc-settings__textarea:focus {
+  border-color: var(--td-brand-color);
 }
 
 .mc-settings__field--wide {

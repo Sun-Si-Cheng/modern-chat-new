@@ -50,19 +50,11 @@ func setup(t *testing.T) *env {
 	if err := store.AutoMigrate(db); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	for _, table := range []string{"system_settings", "message_reactions", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
+	for _, table := range []string{"system_settings", "message_reactions", "message_reports", "user_blocks", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("清理表 %s: %v", table, err)
 		}
 	}
-
-	hub := ws.NewHub(&ws.Deps{
-		Convs:      store.NewConversationStore(db),
-		Messages:   store.NewMessageStore(db),
-		Friends:    store.NewFriendStore(db),
-		MsgLimiter: middleware.NewLimiterStore(20, 20),
-	})
-	go hub.Run()
 
 	gin.SetMode(gin.TestMode)
 	// 系统设置是路由构造的必需依赖（SMTP 配置在启动时从库里覆盖环境变量），
@@ -72,13 +64,27 @@ func setup(t *testing.T) *env {
 	if err != nil {
 		t.Fatalf("secret box: %v", err)
 	}
+	// Hub 与 REST 必须共用同一个 SettingStore：敏感词、消息长度等规则由 WS 侧读取，
+	// 各建一个实例会让后台保存的设置对 WS 不可见。
+	settingsStore := store.NewSettingStore(db, box)
+
+	hub := ws.NewHub(&ws.Deps{
+		Convs:      store.NewConversationStore(db),
+		Messages:   store.NewMessageStore(db),
+		Friends:    store.NewFriendStore(db),
+		Moderation: store.NewModerationStore(db),
+		MsgLimiter: middleware.NewLimiterStore(20, 20),
+		Settings:   settingsStore,
+	})
+	go hub.Run()
+
 	r := router.New(router.Deps{
 		Cfg:      config.Config{JWTSecret: jwtSecret, PluginMaxSize: 1 << 20},
 		DB:       db,
 		Mailer:   service.NewMailer(config.SMTPConfig{}),
 		Notifier: hub,
 		WS:       hub,
-		Settings: store.NewSettingStore(db, box),
+		Settings: settingsStore,
 		// 两个限流器都必需：Deps.PluginLimiter 为零值时，RateLimit 会在请求路径上
 		// 调用 nil 接口方法直接 panic（gin.Recovery 兜成 500），插件用例永远过不了。
 		AuthLimiter:   middleware.NewLimiterStore(1000, 1000),
@@ -1978,5 +1984,171 @@ func TestFriendStalePendingNotDuplicated(t *testing.T) {
 	}
 	if n := len(friendsAny.([]any)); n != 1 {
 		t.Fatalf("好友列表应为 1 条，got %d", n)
+	}
+}
+
+// TestModeration 治理能力：拉黑、举报、敏感词、管理员删除违规消息。
+func TestModeration(t *testing.T) {
+	e := setup(t)
+	tokenAdmin, adminUser := register(t, e, "mod-admin")
+	if adminUser.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", adminUser.Role)
+	}
+	tokenA, userA := register(t, e, "mod-alice")
+	tokenB, userB := register(t, e, "mod-bob")
+	tokenC, userC := register(t, e, "mod-carol")
+	_ = tokenC
+
+	// A、B 成为好友并建立单聊
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", tokenA,
+		fmt.Sprintf(`{"toUsername":%q}`, userB.Username)); code != http.StatusOK {
+		t.Fatalf("apply status = %d", code)
+	}
+	code, reqsAny := apiAny(t, e, "GET", "/api/friends/requests", tokenB, "")
+	if code != http.StatusOK {
+		t.Fatalf("requests status = %d", code)
+	}
+	reqs, _ := reqsAny.([]any)
+	if len(reqs) == 0 {
+		t.Fatal("应有好友申请")
+	}
+	reqID := uint(reqs[len(reqs)-1].(map[string]any)["id"].(float64))
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/handle", tokenB,
+		fmt.Sprintf(`{"requestId":%d,"accept":true}`, reqID)); code != http.StatusOK {
+		t.Fatalf("handle status = %d", code)
+	}
+	code, conv := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID))
+	if code != http.StatusOK {
+		t.Fatalf("create single status = %d", code)
+	}
+	convID := uint64(conv["id"].(float64))
+
+	connA := wsDial(t, e, tokenA)
+	connB := wsDial(t, e, tokenB)
+	sendChat := func(conn *websocket.Conn, content string) {
+		t.Helper()
+		f := fmt.Sprintf(`{"type":"chat","convId":%d,"clientMsgId":%q,"content":%q}`,
+			convID, fmt.Sprintf("m-%d", time.Now().UnixNano()), content)
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(f)); err != nil {
+			t.Fatalf("ws send: %v", err)
+		}
+	}
+
+	// ===== 1) 拉黑 =====
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/users/%d/block", userB.ID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("block status = %d", code)
+	}
+	code, st := apiJSON(t, e, "GET", fmt.Sprintf("/api/users/%d/block", userB.ID), tokenA, "")
+	if code != http.StatusOK || st["blocked"] != true {
+		t.Fatalf("block status 查询异常：%d %v", code, st)
+	}
+	// 被拉黑方不能发；拉黑方自己也发不了（互不打扰）
+	sendChat(connB, "被拉黑后发送")
+	if f := readFrame(t, connB, "error"); f["reason"] != "你们已互相拉黑，无法发送消息" {
+		t.Fatalf("被拉黑方应收到拦截 error，got %v", f)
+	}
+	sendChat(connA, "拉黑方发送")
+	if f := readFrame(t, connA, "error"); f["reason"] != "你们已互相拉黑，无法发送消息" {
+		t.Fatalf("拉黑方也应被拦截，got %v", f)
+	}
+	// 拉黑期间不能发起单聊
+	if code, _ := apiJSON(t, e, "POST", "/api/conversations/single", tokenA,
+		fmt.Sprintf(`{"toUserId":%d}`, userB.ID)); code != http.StatusForbidden {
+		t.Fatalf("拉黑期间发起单聊应 403，got %d", code)
+	}
+	// 拉黑期间不能发好友申请（C 申请 A）
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/users/%d/block", userC.ID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("block C status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", tokenC,
+		fmt.Sprintf(`{"toUsername":%q}`, userA.Username)); code != http.StatusForbidden {
+		t.Fatalf("被拉黑后发好友申请应 403，got %d", code)
+	}
+	// 取消拉黑后恢复正常
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/users/%d/block", userB.ID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("unblock status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "DELETE", fmt.Sprintf("/api/users/%d/block", userC.ID), tokenA, ""); code != http.StatusOK {
+		t.Fatalf("unblock C status = %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/friends/apply", tokenC,
+		fmt.Sprintf(`{"toUsername":%q}`, userA.Username)); code != http.StatusOK {
+		t.Fatalf("取消拉黑后发好友申请应 200，got %d", code)
+	}
+
+	// ===== 2) 举报 =====
+	sendChat(connB, "测试举报消息")
+	echoB := readFrame(t, connB, "message")
+	_ = readFrame(t, connA, "message")
+	msgID := uint64(echoB["id"].(float64))
+	if code, r := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/report", msgID), tokenA,
+		`{"reason":"垃圾广告"}`); code != http.StatusOK || r["duplicate"] != false {
+		t.Fatalf("举报应成功：%d %v", code, r)
+	}
+	if code, r := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/report", msgID), tokenA,
+		`{"reason":"再次举报"}`); code != http.StatusOK || r["duplicate"] != true {
+		t.Fatalf("重复举报应幂等：%d %v", code, r)
+	}
+	// 非会话成员不能举报
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/report", msgID), tokenC,
+		`{"reason":"路人举报"}`); code != http.StatusForbidden {
+		t.Fatalf("非成员举报应 403，got %d", code)
+	}
+	// 理由为空 → 400
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/report", msgID), tokenA,
+		`{"reason":"  "}`); code != http.StatusBadRequest {
+		t.Fatalf("空理由应 400，got %d", code)
+	}
+
+	// ===== 3) 敏感词 =====
+	settingsBody := `{
+		"smtp":{"host":"","port":"","user":"","from":"","pass":""},
+		"redis":{"addr":"","db":"","pass":""},
+		"storage":{"endpoint":"","region":"","bucket":"","accessKey":"","secretKey":"","publicBase":""},
+		"site":{"name":"ModernChat","allowRegister":true,"maintenanceMode":false,"maintenanceMessage":"","requireInviteCode":false},
+		"chat":{"maxMessageLength":1000,"recallMinutes":2,"maxGroupMembers":200,"blockedWords":"坏话"},
+		"upload":{"maxImageMB":8,"maxAudioMB":5,"maxFileMB":20},
+		"security":{"loginMaxAttempts":5,"loginLockMinutes":15}
+	}`
+	if code, _ := apiJSON(t, e, "PUT", "/api/admin/settings", tokenAdmin, settingsBody); code != http.StatusOK {
+		t.Fatalf("保存敏感词设置 status = %d", code)
+	}
+	code, cfg := apiJSON(t, e, "GET", "/api/admin/settings", tokenAdmin, "")
+	if code != http.StatusOK || cfg["chat"].(map[string]any)["blockedWords"] != "坏话" {
+		t.Fatalf("敏感词回显异常：%d %v", code, cfg)
+	}
+	sendChat(connB, "这是一句坏话")
+	if f := readFrame(t, connB, "error"); f["reason"] != "消息包含敏感词，请修改后重发" {
+		t.Fatalf("敏感词应被拦截，got %v", f)
+	}
+
+	// ===== 4) 管理员删除违规消息 =====
+	sendChat(connB, "这条要被管理员删除")
+	echoB2 := readFrame(t, connB, "message")
+	_ = readFrame(t, connA, "message")
+	delID := uint64(echoB2["id"].(float64))
+	// 普通成员不能管理员删除
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/admin-delete", delID), tokenB, ""); code != http.StatusForbidden {
+		t.Fatalf("普通成员管理员删除应 403，got %d", code)
+	}
+	if code, _ := apiJSON(t, e, "POST", fmt.Sprintf("/api/messages/%d/admin-delete", delID), tokenAdmin, ""); code != http.StatusOK {
+		t.Fatalf("站点管理员删除应 200，got %d", code)
+	}
+	if f := readFrame(t, connB, "message_admin_deleted"); uint64(f["messageId"].(float64)) != delID {
+		t.Fatalf("被删消息的广播异常：%v", f)
+	}
+	if f := readFrame(t, connA, "message_admin_deleted"); uint64(f["messageId"].(float64)) != delID {
+		t.Fatalf("其他成员也应收到删除广播：%v", f)
+	}
+	code, page := apiJSON(t, e, "GET", fmt.Sprintf("/api/conversations/%d/messages?limit=50", convID), tokenA, "")
+	if code != http.StatusOK {
+		t.Fatalf("读取消息 status = %d", code)
+	}
+	list, _ := page["messages"].([]any)
+	for _, it := range list {
+		if m, _ := it.(map[string]any); uint64(m["id"].(float64)) == delID {
+			t.Fatalf("被管理员删除的消息不应再出现在历史里：%v", m)
+		}
 	}
 }
