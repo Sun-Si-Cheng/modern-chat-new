@@ -287,6 +287,9 @@ export default {
     selectedCount: '{n} selected',
     mergeForward: 'Merge forward',
     mergeTooLong: 'Merged content exceeds {max} characters; select fewer messages',
+    mergeLimit: 'You can merge at most {max} messages',
+    mergeSkippedRecalled: 'Skipped {n} recalled message(s)',
+    forwardRecalled: 'This message was recalled and cannot be forwarded',
     recallAria: 'Recall message',
     typingOnly: '{names} is typing',
     noEarlier: 'No earlier messages',
@@ -342,6 +345,7 @@ export default {
     fileDelete: 'Delete file',
     fileDeleteConfirm: 'Delete "{name}"? It will be removed from the file list.',
     fileTooLarge: 'File must be under 20 MB',
+    fileTooLargeMB: 'File must be under {mb} MB',
     transfer: 'Transfer ownership',
     kick: 'Remove',
     // Invite friends into the group

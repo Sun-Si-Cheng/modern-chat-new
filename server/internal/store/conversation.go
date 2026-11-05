@@ -598,7 +598,9 @@ func (s *ConversationStore) previewMap(ids []uint64) (map[uint64]previewInfo, er
 	}
 	for _, r := range rows {
 		if r.IsRecalled {
-			out[r.ID] = previewInfo{Content: "消息已撤回", MsgType: "text"}
+			// 不写死中文：文案由前端按当前语言渲染（英文界面刷新后不该冒出中文）。
+			// MsgType 用合成的 "recalled"，前端据此显示「消息已撤回」。
+			out[r.ID] = previewInfo{Content: "", MsgType: "recalled"}
 			continue
 		}
 		// 图片/语音的 content 是文件地址，直接当预览会把 URL 显示在列表里

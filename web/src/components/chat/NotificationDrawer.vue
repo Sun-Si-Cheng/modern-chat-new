@@ -44,8 +44,9 @@ function convName(c: Conversation): string {
 }
 
 function preview(c: Conversation): string {
+  // 与会话列表保持一致：撤回是「空内容 + recalled 类型」，必须先判
+  if (c.lastMessageType === 'recalled') return t('message.recalledPreview')
   if (!c.lastMessagePreview) return t('chat.noMessage')
-  // 与会话列表保持一致：媒体消息不能把文件地址直接显示出来
   if (c.lastMessageType === 'image') return t('chat.previewImage')
   if (c.lastMessageType === 'audio') return t('chat.previewVoice')
   if (c.lastMessageType === 'sticker') return t('chat.previewSticker')

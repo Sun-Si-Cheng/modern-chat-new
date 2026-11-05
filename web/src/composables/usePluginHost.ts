@@ -430,7 +430,12 @@ function createHost() {
         }
         case 'messages.recent': {
           const want = Math.max(1, Math.min(50, Number(args[0] ?? 20) || 20))
-          const msgs = useConversationsStore().currentMessages.slice(-want)
+          // 只给「已落库的可见消息」：
+          //  - 乐观消息（pending/failed/id<=0）还没确认，不该被插件当历史读走
+          //  - 撤回消息只置 isRecalled 不清 content，直接下发等于把撤回原文交给插件
+          const msgs = useConversationsStore()
+            .currentMessages.filter((m) => m.id > 0 && !m.pending && !m.failed)
+            .slice(-want)
           reply(
             runtime,
             callId,
@@ -439,7 +444,7 @@ function createHost() {
               id: m.id,
               senderId: m.senderId,
               msgType: m.msgType,
-              content: m.content,
+              content: m.isRecalled ? '' : m.content,
               createdAt: m.createdAt,
               recalled: m.isRecalled,
             })),

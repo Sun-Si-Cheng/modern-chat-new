@@ -1308,12 +1308,18 @@ func (h *ConversationHandler) buildSingleView(conv *model.Conversation, target *
 		v.UnreadCount = inbox.UnreadCount
 		if inbox.LastMessageID != nil {
 			if msg, err := h.msgs.ByID(uint(*inbox.LastMessageID)); err == nil && msg != nil {
+				// 预览的文案/占位交给前端本地化：
+				// 严格按 is_recalled / msg_type 输出，不要在这里写死中文
 				if msg.IsRecalled {
-					s := "消息已撤回"
-					v.LastMessagePreview = &s
+					empty := ""
+					recalled := "recalled"
+					v.LastMessagePreview = &empty
+					v.LastMessageType = &recalled
 				} else {
 					s := msg.Content
+					mt := msg.MsgType
 					v.LastMessagePreview = &s
+					v.LastMessageType = &mt
 				}
 			}
 		}

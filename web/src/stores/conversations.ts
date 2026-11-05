@@ -261,10 +261,27 @@ export const useConversationsStore = defineStore('conversations', () => {
    * 目标可能在尚未加载的早期历史里：最多向前翻 10 页，避免超大群为了
    * 一条旧消息把全部历史拉下来。找到后写入 pendingJumpId，由 MessagePane 滚动高亮。
    */
+  /**
+   * 撤回提示在聊天记录里只保留 3 分钟（与 MessagePane 的 RECALL_TTL 一致），
+   * 之后整条移除。这里用于判断「跳转过去还能不能看到东西」。
+   */
+  const RECALL_TTL_MS = 3 * 60 * 1000
+
+  function isVisibleMessage(m: Message): boolean {
+    if (!m.isRecalled) return true
+    if (!m.recalledAt) return false // 无时间的历史遗留数据：按已过期处理
+    const at = new Date(m.recalledAt).getTime()
+    return Number.isFinite(at) && Date.now() < at + RECALL_TTL_MS
+  }
+
   async function openConversationAtMessage(convId: number, messageId: number): Promise<boolean> {
     pendingJumpId.value = null
     await openConversation(convId)
-    const has = () => (messagesByConv[convId] ?? []).some((m) => m.id === messageId)
+    // 只有「列表里真的会渲染出来」的消息才算找到：
+    // 撤回超过 3 分钟的提示会被 MessagePane 整条移除，那时定位过去只剩空白，
+    // pendingJumpId 也会永远清不掉（后续跳转带着脏状态）
+    const has = () =>
+      (messagesByConv[convId] ?? []).some((m) => m.id === messageId && isVisibleMessage(m))
     if (has()) {
       pendingJumpId.value = messageId
       return true
@@ -427,7 +444,9 @@ export const useConversationsStore = defineStore('conversations', () => {
    * 转发出去的是一条独立消息，原消息被撤回/删除都不影响它。
    */
   function forwardMessage(targetConvId: number, m: Message) {
-    if (!m.content || targetConvId === m.conversationId) return false
+    // 已撤回的消息不能转发：转发选择框停留期间原消息可能被撤回，
+    // 不判的话会把撤回前的原文发出去（等于撤回被绕过）
+    if (!m.content || m.isRecalled || targetConvId === m.conversationId) return false
     pushAndSend(targetConvId, m.msgType, m.content, { forwarded: true })
     return true
   }
@@ -621,17 +640,37 @@ export const useConversationsStore = defineStore('conversations', () => {
           // 服务端时间优先；老服务端/丢字段时用本地时间兜底
           msg.recalledAt = frame.recalledAt ?? new Date().toISOString()
         }
+        // 引用块里的快照也要跟着变：否则别人看到的是撤回前的原文，
+        // 而重新进会话（服务端 AttachReply 取实时值）又会变，前后不一致
+        for (const m of list ?? []) {
+          if (m.replyTo?.id === frame.messageId) m.replyTo.isRecalled = true
+        }
+        // 正在编辑这条消息：直接退出编辑态，否则要等提交时才被服务端拒绝
+        if (editingMessage.value?.id === frame.messageId) setEditingMessage(null)
         const conv = conversations.value.find((c) => c.id === frame.convId)
         if (conv && conv.lastMessageId === frame.messageId) {
-          conv.lastMessagePreview = '消息已撤回'
+          // 空内容 + 合成类型：列表按当前语言显示「消息已撤回」，
+          // 而不是把中文写死在 store 里（英文界面也会是中文）
+          conv.lastMessagePreview = ''
+          conv.lastMessageType = 'recalled'
+        }
+        // 服务端撤回时会同步扣未读（RecallUnreadAdjust），本地也要扣，
+        // 否则侧栏红点会比服务端多 1，直到切会话/刷新才对齐
+        if (conv && frame.messageId > (conv.lastReadMessageId ?? 0)) {
+          conv.unreadCount = Math.max(0, conv.unreadCount - 1)
         }
         break
       }
       case 'message_update': {
-        const msg = messagesByConv[frame.convId]?.find((m) => m.id === frame.id)
+        const list = messagesByConv[frame.convId]
+        const msg = list?.find((m) => m.id === frame.id)
         if (msg) {
           msg.content = frame.content
           msg.editedAt = frame.editedAt
+        }
+        // 引用它的消息：快照正文同步更新，避免引用块长期显示旧文本
+        for (const m of list ?? []) {
+          if (m.replyTo?.id === frame.id) m.replyTo.content = frame.content
         }
         if (editingMessage.value?.id === frame.id) {
           editingMessage.value.content = frame.content

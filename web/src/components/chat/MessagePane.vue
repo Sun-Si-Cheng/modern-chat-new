@@ -254,6 +254,24 @@ async function loadMemberNames() {
   }
 }
 
+// 群主转让 / 被降级只发 conv_change(meta)，不会换会话：
+// 这里主动刷新一次角色与昵称，否则右键菜单里的「删除违规消息」会一直按旧角色显示
+watch(
+  () => convStore.convChangeTick,
+  () => {
+    const c = conv.value
+    if (!c || c.type !== 2) return
+    memberNamesFailed = false
+    for (const k of Object.keys(memberNameCache)) delete memberNameCache[Number(k)]
+    void convStore.loadMembers(c.id, true).then((members) => {
+      for (const m of members) {
+        memberNameCache[m.userId] = m.user.nickname
+        if (m.userId === auth.user?.id) myGroupRole.value = m.role
+      }
+    })
+  },
+)
+
 // ===== 撤回 =====
 
 function canRecall(m: Message): boolean {
@@ -347,8 +365,16 @@ function exitSelect() {
 function toggleSelect(m: Message) {
   if (m.id <= 0) return
   const i = selectedIds.value.indexOf(m.id)
-  if (i >= 0) selectedIds.value.splice(i, 1)
-  else selectedIds.value.push(m.id)
+  if (i >= 0) {
+    selectedIds.value.splice(i, 1)
+    return
+  }
+  // 合并转发有 20 条上限：超了必须当场拒绝，否则会静默丢掉后面的消息
+  if (selectedIds.value.length >= MAX_MERGE) {
+    void MessagePlugin.warning(t('message.mergeLimit', { max: MAX_MERGE }))
+    return
+  }
+  selectedIds.value.push(m.id)
 }
 
 function isSelected(m: Message): boolean {
@@ -356,8 +382,11 @@ function isSelected(m: Message): boolean {
 }
 
 /** 媒体消息在多选模式下点击=选中，否则维持原来的预览行为 */
-function onMediaClick(m: Message) {
+function onMediaClick(m: Message, e?: MouseEvent) {
   if (selectMode.value) {
+    // 外层消息行也有「多选时点击=选中」的处理：不阻止冒泡会选中再取消，
+    // 表现为图片/表情在多选模式下永远选不上
+    e?.stopPropagation()
     toggleSelect(m)
     return
   }
@@ -388,8 +417,15 @@ function startMergeForward() {
 function doMergeForward(convId: number) {
   const ids = mergeSourceIds.value
   if (!ids) return
-  const msgs = messages.value.filter((m) => ids.includes(m.id))
-  if (!msgs.length) return
+  const picked = messages.value.filter((m) => ids.includes(m.id))
+  // 选中之后原消息可能被撤回：撤回的内容不能再转发出去
+  const msgs = picked.filter((m) => !m.isRecalled)
+  if (!msgs.length) {
+    mergeSourceIds.value = null
+    void MessagePlugin.warning(t('message.forwardRecalled'))
+    return
+  }
+  const skipped = picked.length - msgs.length
   const text = mergeText(msgs)
   if (text.length > siteStore.config.maxMessageLength) {
     void MessagePlugin.warning(t('message.mergeTooLong', { max: siteStore.config.maxMessageLength }))
@@ -398,6 +434,7 @@ function doMergeForward(convId: number) {
   convStore.sendText(convId, text, { forwarded: true })
   mergeSourceIds.value = null
   exitSelect()
+  if (skipped > 0) void MessagePlugin.info(t('message.mergeSkippedRecalled', { n: skipped }))
   void MessagePlugin.success(t('message.forwardOk'))
 }
 
@@ -434,6 +471,12 @@ function convLabel(c: Conversation): string {
 function doForward(convId: number) {
   const m = forwardSource.value
   if (!m) return
+  // 选择目标会话期间原消息可能被撤回：发之前再判一次，别把撤回内容发出去
+  if (m.isRecalled) {
+    forwardSource.value = null
+    void MessagePlugin.warning(t('message.forwardRecalled'))
+    return
+  }
   const ok = convStore.forwardMessage(convId, m)
   forwardSource.value = null
   if (ok) void MessagePlugin.success(t('message.forwardOk'))
@@ -488,17 +531,29 @@ function jumpToMessage(id: number) {
 }
 
 // 搜索结果跨会话跳转：消息页加载到位后滚动并高亮
+let jumpTimer: number | undefined
 watch(
   [() => convStore.pendingJumpId, () => displayItems.value.length],
   () => {
     const id = convStore.pendingJumpId
-    if (!id) return
+    if (!id) {
+      window.clearTimeout(jumpTimer)
+      return
+    }
     if (displayItems.value.some((it) => it.kind === 'msg' && it.msg?.id === id)) {
+      window.clearTimeout(jumpTimer)
       void nextTick(() => {
         jumpToMessage(id)
         convStore.pendingJumpId = null
       })
+      return
     }
+    // 兜底：目标消息可能已被移除（撤回过期/被删），等不到就清掉标记，
+    // 否则残留的 pendingJumpId 会让下一次跳转带着脏状态
+    window.clearTimeout(jumpTimer)
+    jumpTimer = window.setTimeout(() => {
+      if (convStore.pendingJumpId === id) convStore.pendingJumpId = null
+    }, 1500)
   },
 )
 
@@ -522,6 +577,7 @@ onBeforeUnmount(() => {
   // 离开聊天页时恢复自动已读，避免这个开关一直挂在 store 上影响别的入口
   convStore.setAutoReadPaused(false)
   clearTimeout(recallTimer)
+  window.clearTimeout(jumpTimer)
 })
 
 // ===== 消息右键菜单 =====
@@ -1096,7 +1152,7 @@ const senderName = (m: Message) => {
                     :src="item.msg.content"
                     alt=""
                     decoding="async"
-                    @click="onMediaClick(item.msg)"
+                    @click="onMediaClick(item.msg, $event)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />
                 </div>
@@ -1127,7 +1183,7 @@ const senderName = (m: Message) => {
                     :src="item.msg.content"
                     alt=""
                     decoding="async"
-                    @click="onMediaClick(item.msg)"
+                    @click="onMediaClick(item.msg, $event)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />
                 </div>

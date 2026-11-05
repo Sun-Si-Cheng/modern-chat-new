@@ -302,8 +302,10 @@ async function onFileChange(e: Event) {
   input.value = '' // 允许连续选同一个文件
   const c = conv.value
   if (!file || !c) return
-  if (file.size > 20 << 20) {
-    void MessagePlugin.warning(t('group.fileTooLarge'))
+  // 上限跟随后台配置：写死 20MB 时，站长调到 50MB 前端仍会拦、调小到 10MB 前端又放行
+  const maxFile = siteStore.config.maxFileMB << 20
+  if (file.size > maxFile) {
+    void MessagePlugin.warning(t('group.fileTooLargeMB', { mb: siteStore.config.maxFileMB }))
     return
   }
   uploadingFile.value = true

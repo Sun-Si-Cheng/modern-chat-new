@@ -234,6 +234,9 @@ async function doCreateGroup() {
  * 这里按 msgType 换成占位文案。
  */
 function previewText(c: Conversation): string {
+  // 撤回要先判：服务端给的是「空内容 + recalled 类型」，
+  // 顺序反了会被下面的「空内容 → 暂无消息」挡住
+  if (c.lastMessageType === 'recalled') return t('message.recalledPreview')
   if (!c.lastMessagePreview) return t('chat.noMessage')
   if (c.lastMessageType === 'image') return t('chat.previewImage')
   if (c.lastMessageType === 'audio') return t('chat.previewVoice')

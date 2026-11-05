@@ -219,7 +219,9 @@ export const searchApi = {
 // ===== 收藏 =====
 
 export const favoriteApi = {
-  list: () => http.get<FavoriteItem[]>('/favorites'),
+  // 显式要 200（服务端上限）：默认 100 时，收藏超过 100 条后老消息的
+  // isFavorited 会恒为 false，右键菜单显示「收藏」其实早已收藏过
+  list: (limit = 200) => http.get<FavoriteItem[]>('/favorites', { limit }),
   add: (messageId: number) => http.post<{ ok: true }>(`/messages/${messageId}/favorite`),
   remove: (messageId: number) => http.delete<{ ok: true }>(`/messages/${messageId}/favorite`),
 }

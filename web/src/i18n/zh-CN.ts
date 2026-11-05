@@ -291,6 +291,9 @@ export default {
     selectedCount: '已选 {n} 条',
     mergeForward: '合并转发',
     mergeTooLong: '合并后的内容超过 {max} 字，请减少选中消息',
+    mergeLimit: '合并转发最多选 {max} 条消息',
+    mergeSkippedRecalled: '已跳过 {n} 条已撤回的消息',
+    forwardRecalled: '该消息已撤回，无法转发',
     typingOnly: '{names} 正在输入',
     noEarlier: '没有更早的消息了',
     emptyChat: '还没有消息，发一条打个招呼吧',
@@ -347,6 +350,7 @@ export default {
     fileDelete: '删除文件',
     fileDeleteConfirm: '确定删除「{name}」？文件将从群文件列表中移除。',
     fileTooLarge: '文件不能超过 20 MB',
+    fileTooLargeMB: '文件不能超过 {mb} MB',
     transfer: '转让群主',
     kick: '移出',
     // 拉人入群
