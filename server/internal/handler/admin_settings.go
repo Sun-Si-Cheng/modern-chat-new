@@ -83,6 +83,7 @@ type uploadSetting struct {
 	MaxImageMB int `json:"maxImageMB"`
 	MaxAudioMB int `json:"maxAudioMB"`
 	MaxFileMB  int `json:"maxFileMB"`
+	MaxVideoMB int `json:"maxVideoMB"`
 	// MaxStorageMB 本地上传目录总配额（0=不限制）
 	MaxStorageMB int `json:"maxStorageMB"`
 }
@@ -172,6 +173,7 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 		MaxImageMB:   ops.MaxImageMB,
 		MaxAudioMB:   ops.MaxAudioMB,
 		MaxFileMB:    ops.MaxFileMB,
+		MaxVideoMB:   ops.MaxVideoMB,
 		MaxStorageMB: ops.MaxStorageMB,
 	}
 	c.JSON(http.StatusOK, view)
@@ -196,6 +198,13 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 	if db := strings.TrimSpace(req.Redis.DB); db != "" && !isAllDigits(db) {
 		fail(c, http.StatusBadRequest, "Redis DB 必须是数字")
 		return
+	}
+
+	// 新增字段的兼容处理：老版本前端/脚本提交的设置里没有 maxVideoMB（零值），
+	// 此时应回落到默认值，而不是被下面的区间校验拒成 400。
+	if req.Upload.MaxVideoMB == 0 {
+		def := store.DefaultOps()
+		req.Upload.MaxVideoMB = def.MaxVideoMB
 	}
 
 	// 站点 / 聊天 / 上传：越界直接拒，而不是静默收敛——
@@ -239,6 +248,7 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		{"图片大小上限（MB）", req.Upload.MaxImageMB, 1, 32},
 		{"语音大小上限（MB）", req.Upload.MaxAudioMB, 1, 32},
 		{"群文件大小上限（MB）", req.Upload.MaxFileMB, 1, 200},
+		{"视频大小上限（MB）", req.Upload.MaxVideoMB, 1, 100},
 	}
 	for _, ck := range checks {
 		if ck.v < ck.min || ck.v > ck.max {
@@ -294,6 +304,7 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyUploadMaxImageMB:   strconv.Itoa(req.Upload.MaxImageMB),
 		store.KeyUploadMaxAudioMB:   strconv.Itoa(req.Upload.MaxAudioMB),
 		store.KeyUploadMaxFileMB:    strconv.Itoa(req.Upload.MaxFileMB),
+		store.KeyUploadMaxVideoMB:   strconv.Itoa(req.Upload.MaxVideoMB),
 		store.KeyUploadMaxStorageMB: strconv.Itoa(req.Upload.MaxStorageMB),
 	}
 

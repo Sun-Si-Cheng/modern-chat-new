@@ -2109,7 +2109,7 @@ func TestModeration(t *testing.T) {
 		"storage":{"endpoint":"","region":"","bucket":"","accessKey":"","secretKey":"","publicBase":""},
 		"site":{"name":"ModernChat","allowRegister":true,"maintenanceMode":false,"maintenanceMessage":"","requireInviteCode":false},
 		"chat":{"maxMessageLength":1000,"recallMinutes":2,"maxGroupMembers":200,"blockedWords":"坏话"},
-		"upload":{"maxImageMB":8,"maxAudioMB":5,"maxFileMB":20},
+		"upload":{"maxImageMB":8,"maxAudioMB":5,"maxFileMB":20,"maxVideoMB":30},
 		"security":{"loginMaxAttempts":5,"loginLockMinutes":15}
 	}`
 	if code, _ := apiJSON(t, e, "PUT", "/api/admin/settings", tokenAdmin, settingsBody); code != http.StatusOK {

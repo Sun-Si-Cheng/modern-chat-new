@@ -27,6 +27,7 @@ export const useSiteStore = defineStore('site', () => {
     maxImageMB: 8,
     maxAudioMB: 5,
     maxFileMB: 20,
+    maxVideoMB: 30,
   })
   const loaded = ref(false)
 

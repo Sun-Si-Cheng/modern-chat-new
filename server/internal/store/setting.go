@@ -59,6 +59,8 @@ const (
 	KeyUploadMaxImageMB = "upload.maxImageMB"
 	KeyUploadMaxAudioMB = "upload.maxAudioMB"
 	KeyUploadMaxFileMB  = "upload.maxFileMB"
+	// 视频（MB）：手机短视频体积大，默认给 30
+	KeyUploadMaxVideoMB = "upload.maxVideoMB"
 	// 本地上传目录总配额（MB，0=不限制）
 	KeyUploadMaxStorageMB = "upload.maxStorageMB"
 )
@@ -75,6 +77,7 @@ var knownKeys = map[string]bool{
 	KeyChatMaxMessageLen:      true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
 	KeyChatBlockedWords: true,
 	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
+	KeyUploadMaxVideoMB:         true,
 	KeyUploadMaxStorageMB:       true,
 	KeySecurityLoginMaxAttempts: true, KeySecurityLoginLockMinutes: true,
 }
@@ -226,6 +229,7 @@ type Ops struct {
 	MaxImageMB   int
 	MaxAudioMB   int
 	MaxFileMB    int
+	MaxVideoMB   int
 	// MaxStorageMB 本地上传目录总配额（0=不限制）
 	MaxStorageMB     int
 	LoginMaxAttempts int
@@ -249,6 +253,7 @@ func DefaultOps() Ops {
 		MaxImageMB:         8,
 		MaxAudioMB:         5,
 		MaxFileMB:          20,
+		MaxVideoMB:         30,
 		LoginMaxAttempts:   5,
 		LoginLockMinutes:   15,
 	}
@@ -309,6 +314,7 @@ func OpsFrom(all map[string]string) Ops {
 	out.MaxImageMB = clampInt(all[KeyUploadMaxImageMB], 1, 32, def.MaxImageMB)
 	out.MaxAudioMB = clampInt(all[KeyUploadMaxAudioMB], 1, 32, def.MaxAudioMB)
 	out.MaxFileMB = clampInt(all[KeyUploadMaxFileMB], 1, 200, def.MaxFileMB)
+	out.MaxVideoMB = clampInt(all[KeyUploadMaxVideoMB], 1, 100, def.MaxVideoMB)
 	// 0 = 不限制；其它值 1-102400（100 GB）
 	if raw := strings.TrimSpace(all[KeyUploadMaxStorageMB]); raw == "0" || raw == "" {
 		out.MaxStorageMB = 0

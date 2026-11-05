@@ -105,9 +105,13 @@ export interface ConversationFile {
   createdAt: string
 }
 
-/** 图片 / 语音上传：先传文件拿到 URL，再发消息（消息里只存 URL） */
+/** 图片 / 语音 / 视频上传：先传文件拿到 URL，再发消息（消息里只存 URL） */
 export const mediaApi = {
-  upload: (kind: 'image' | 'audio' | 'sticker' | 'file', file: Blob, filename = 'file') => {
+  upload: (
+    kind: 'image' | 'audio' | 'sticker' | 'file' | 'video',
+    file: Blob,
+    filename = 'file',
+  ) => {
     const form = new FormData()
     form.append('file', file, filename)
     return http.upload<{ url: string; size: number; kind: string }>(`/upload?kind=${kind}`, form)
@@ -412,6 +416,8 @@ export interface SiteConfig {
   maxImageMB: number
   maxAudioMB: number
   maxFileMB: number
+  /** 视频单条上限（MB） */
+  maxVideoMB: number
 }
 
 export interface ChatRules {
@@ -426,6 +432,7 @@ export interface UploadLimits {
   maxImageMB: number
   maxAudioMB: number
   maxFileMB: number
+  maxVideoMB: number
   /** 本地上传目录总配额（MB，0=不限制） */
   maxStorageMB: number
 }

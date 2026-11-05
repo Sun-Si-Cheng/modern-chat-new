@@ -56,6 +56,57 @@ func TestDetectTypeNeverYieldsExecutableMarkupExtension(t *testing.T) {
 	}
 }
 
+// 视频按容器白名单识别：mp4 / webm / mov 通过，其他容器拒绝（浏览器播不了）。
+func TestDetectTypeVideo(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		// MP4：第 4-8 字节是 ftyp box
+		{"mp4", []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00"), ".mp4"},
+		// WebM 容器（Magic 0x1A45DFA3）
+		{"webm", []byte("\x1a\x45\xdf\xa3video-payload"), ".webm"},
+		// QuickTime：ftypqt
+		{"mov", []byte("\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00"), ".mov"},
+	}
+	for _, c := range cases {
+		ext, err := detectType("video", c.data, 0)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", c.name, err)
+		}
+		if ext != c.want {
+			t.Fatalf("%s: got %q, want %q", c.name, ext, c.want)
+		}
+	}
+	// 非视频内容不能借 kind=video 混进来
+	if _, err := detectType("video", []byte("hello, plain text payload"), 0); err == nil {
+		t.Fatal("plain text must be rejected for kind=video")
+	}
+}
+
+// 视频超过上限要拒绝（上限由后台配置传入，0 表示用内置默认值）。
+func TestDetectTypeVideoSizeLimit(t *testing.T) {
+	data := []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00")
+	if _, err := detectType("video", data, 4); err == nil {
+		t.Fatal("oversized video should be rejected")
+	}
+}
+
+// `.webm` 既可能是语音也可能是视频：对象存储的 Content-Type 必须按 kind 区分，
+// 否则视频会被标成 audio/webm，浏览器拿到后按音频处理、画面出不来。
+func TestMimeOfExtDistinguishesWebm(t *testing.T) {
+	if got := mimeOfExt("video", ".webm"); got != "video/webm" {
+		t.Fatalf("video webm: got %q", got)
+	}
+	if got := mimeOfExt("audio", ".webm"); got != "audio/webm" {
+		t.Fatalf("audio webm: got %q", got)
+	}
+	if got := mimeOfExt("video", ".mp4"); got != "video/mp4" {
+		t.Fatalf("mp4: got %q", got)
+	}
+}
+
 // 切到对象存储后，历史消息里的 /uploads/... 仍必须被认作「本站文件」，
 // 否则老图片/语音无法转发、引用（功能静默退化）。
 func TestS3OwnsAcceptsLegacyLocalUploads(t *testing.T) {

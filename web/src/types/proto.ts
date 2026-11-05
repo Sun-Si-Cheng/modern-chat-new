@@ -42,7 +42,7 @@ export interface Conversation {
   lastMessageId: number | null
   lastMessageAt: string | null
   lastMessagePreview: string | null
-  /** 最后一条消息的类型：image/audio 时列表里显示占位文案而不是文件地址 */
+  /** 最后一条消息的类型：image/audio/sticker/video 时列表里显示占位文案而不是文件地址 */
   lastMessageType: string | null
   /** 当前用户已读游标（离线补齐与多端同步用） */
   lastReadMessageId?: number

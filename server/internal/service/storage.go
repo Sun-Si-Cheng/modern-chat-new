@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,8 @@ const (
 	MaxStickerBytes = 2 << 20
 	// 群文件：文档/压缩包较大，但仍要设上限避免被当网盘
 	MaxFileBytes = 20 << 20
+	// 视频：手机 1 分钟 1080p 约 20-40 MB，默认给 30 MB（后台可调 1-100 MB）
+	MaxVideoBytes = 30 << 20
 
 	// MaxAllowedUploadBytes 后台可配置的上限天花板（200 MB）。
 	// 请求体中间件按它放宽，真正的逐类型限额由 handler 在读之前卡住。
@@ -65,6 +68,18 @@ var audioTypes = map[string]string{
 	"audio/mp4":   ".m4a",
 	"audio/wave":  ".wav",
 	"audio/x-wav": ".wav",
+}
+
+// videoTypes 允许的视频容器（MIME → 扩展名）。
+//
+// 只收浏览器能直接播放的容器：mp4(H.264) / webm / mov / m4v。
+// 刻意不含 avi、wmv、flv：即使上传成功，接收方点开也只是一片黑，
+// 不如直接拒绝并提示转成 mp4。
+var videoTypes = map[string]string{
+	"video/mp4":       ".mp4",
+	"video/webm":      ".webm",
+	"video/quicktime": ".mov",
+	"video/x-m4v":     ".m4v",
 }
 
 // Storage 文件存储抽象。本地磁盘与对象存储都实现它。
@@ -216,7 +231,7 @@ func (s *S3Storage) Save(kind string, data []byte, maxBytes int64) (string, erro
 	defer cancel()
 
 	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: mimeOfExt(ext)})
+		minio.PutObjectOptions{ContentType: mimeOfExt(kind, ext)})
 	if err != nil {
 		// 明确报错而不是回退本地：否则会出现"配置了云端、文件却在本机"的隐性数据分裂
 		return "", fmt.Errorf("上传到对象存储失败: %w", err)
@@ -259,6 +274,8 @@ func detectType(kind string, data []byte, maxOverride int64) (string, error) {
 		allowed, maxBytes = imageTypes, MaxStickerBytes
 	case "file":
 		allowed, maxBytes = fileTypes, MaxFileBytes
+	case "video":
+		allowed, maxBytes = videoTypes, MaxVideoBytes
 	default:
 		return "", fmt.Errorf("不支持的文件类型")
 	}
@@ -301,6 +318,14 @@ func detectType(kind string, data []byte, maxOverride int64) (string, error) {
 			return ext, nil
 		}
 	}
+	// 视频同理，且更严重：Go 的嗅探表只认 `\x00\x00\x00\x18ftypmp42` 等少数 brand，
+	// 真实手机/相机导出的 mp4（brand 是 isom / avc1 / mp42 以外）会判成
+	// application/octet-stream，不兜底就一律「不支持的文件格式」。
+	if kind == "video" {
+		if ext := guessVideoExt(data); ext != "" {
+			return ext, nil
+		}
+	}
 	return "", fmt.Errorf("不支持的文件格式（检测为 %s）", mime)
 }
 
@@ -327,7 +352,45 @@ func guessAudioExt(data []byte) string {
 	return ""
 }
 
-func mimeOfExt(ext string) string {
+// mimeOfExt 按 kind + 扩展名给出对象存储的 Content-Type。
+//
+// 必须带 kind：`.webm` 既可能是语音（MediaRecorder 录音）也可能是视频，
+// 只看扩展名会把视频标成 audio/webm，浏览器拿到后按音频处理、画面出不来。
+// guessVideoExt 按容器特征判断视频扩展名。
+//
+// ISO-BMFF（mp4/mov/m4v）统一以 "ftyp" box 开头，靠 brand 区分具体容器；
+// 纯音频的 m4a 也用 ftyp（brand 为 M4A /M4B），这里明确拒掉，
+// 避免把音频当视频存成 .mp4（视频元素能出声但画面永远黑）。
+func guessVideoExt(data []byte) string {
+	if len(data) < 12 {
+		return ""
+	}
+	if data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3 {
+		return ".webm" // WebM / Matroska
+	}
+	// ftyp 一般紧跟 4 字节 box size，但个别工具会先塞 free/skip box，
+	// 所以在前 512 字节里找而不是死抠偏移
+	limit := len(data)
+	if limit > 512 {
+		limit = 512
+	}
+	idx := bytes.Index(data[:limit], []byte("ftyp"))
+	if idx < 0 || idx+8 > len(data) {
+		return ""
+	}
+	switch brand := string(data[idx+4 : idx+8]); brand {
+	case "qt  ":
+		return ".mov"
+	case "M4V ", "M4VH", "M4VP":
+		return ".m4v"
+	case "M4A ", "M4B ", "M4P ":
+		return "" // 纯音频容器：不接受
+	default:
+		return ".mp4"
+	}
+}
+
+func mimeOfExt(kind, ext string) string {
 	switch ext {
 	case ".jpg":
 		return "image/jpeg"
@@ -337,7 +400,16 @@ func mimeOfExt(ext string) string {
 		return "image/webp"
 	case ".gif":
 		return "image/gif"
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".m4v":
+		return "video/x-m4v"
 	case ".webm":
+		if kind == "video" {
+			return "video/webm"
+		}
 		return "audio/webm"
 	case ".ogg":
 		return "audio/ogg"

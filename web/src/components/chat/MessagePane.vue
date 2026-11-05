@@ -365,6 +365,7 @@ function mergeText(msgs: Message[]): string {
     if (m.msgType === 'image') body = t('message.quoteImage')
     else if (m.msgType === 'audio') body = t('message.quoteAudio')
     else if (m.msgType === 'sticker') body = t('message.quoteSticker')
+    else if (m.msgType === 'video') body = t('message.quoteVideo')
     else if (m.msgType !== 'text') body = t('message.unknownType', { type: m.msgType })
     body = [...body].slice(0, 100).join('')
     const who = senderOf(m) ? (auth.user?.nickname ?? '') : senderName(m)
@@ -462,6 +463,7 @@ function quoteText(r: ReplyBrief): string {
   if (r.msgType === 'image') return t('message.quoteImage')
   if (r.msgType === 'audio') return t('message.quoteAudio')
   if (r.msgType === 'sticker') return t('message.quoteSticker')
+  if (r.msgType === 'video') return t('message.quoteVideo')
   return r.content
 }
 
@@ -1100,6 +1102,19 @@ const senderName = (m: Message) => {
                   :mine="senderOf(item.msg)"
                 />
 
+                <!-- 视频：原生控件（播放/进度/全屏交给浏览器）。
+                     固定 16:9 占位：DynamicScroller 依赖测量高度，
+                     元数据到达前高度为 0 会让列表跳动。 -->
+                <div v-else-if="item.msg.msgType === 'video'" class="mc-msg__video">
+                  <video
+                    :src="item.msg.content"
+                    controls
+                    playsinline
+                    preload="metadata"
+                    @contextmenu.prevent.stop="openMenu($event, item.msg)"
+                  />
+                </div>
+
                 <!-- 表情：透明底、无气泡（和图片区分：表情是"贴"在对话里的） -->
                 <div v-else-if="item.msg.msgType === 'sticker'" class="mc-msg__sticker">
                   <img
@@ -1499,6 +1514,23 @@ const senderName = (m: Message) => {
   max-height: 280px;
   object-fit: cover;
   cursor: zoom-in;
+}
+
+/* 视频：固定 16:9 占位，竖屏视频以黑边居中（object-fit: contain） */
+.mc-msg__video {
+  width: min(260px, 62vw);
+  aspect-ratio: 16 / 9;
+  border-radius: var(--mc-radius-lg);
+  overflow: hidden;
+  background: #000;
+  line-height: 0;
+}
+
+.mc-msg__video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* 表情：不套气泡背景，透明贴图 */

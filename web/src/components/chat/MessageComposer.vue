@@ -186,6 +186,38 @@ async function onImageChange(e: Event) {
   }
 }
 
+// ===== 视频上传 =====
+//
+// 不做前端转码：浏览器里转视频必然要 WebAssembly + 长时间占用主线程，
+// 收益远不如「压缩图片」明显。体积上限跟随后台配置（默认 30 MB）。
+const videoInput = ref<HTMLInputElement | null>(null)
+
+function pickVideo() {
+  videoInput.value?.click()
+}
+
+async function onVideoChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许连续选同一个文件
+  const convId = convStore.currentConvId
+  if (!file || !convId) return
+  const maxVideo = siteStore.config.maxVideoMB << 20
+  if (file.size > maxVideo) {
+    void MessagePlugin.warning(t('message.videoTooLargeMB', { mb: siteStore.config.maxVideoMB }))
+    return
+  }
+  uploading.value = true
+  try {
+    const r = await mediaApi.upload('video', file, file.name || 'video.mp4')
+    sendMediaMsg(convId, 'video', r.url)
+  } catch (err) {
+    void MessagePlugin.error(String(err))
+  } finally {
+    uploading.value = false
+  }
+}
+
 // ===== 表情包 =====
 //
 // 表情是"收藏关系 + URL"，文件本身走 upload(kind=sticker)。
@@ -215,7 +247,11 @@ function toggleStickerPanel() {
  * 之前三处各自直接调 sendMedia，导致「先引用再发图」时引用被静默丢掉，
  * 而且引用条还挂在输入框上，用户以为引用发出去了。
  */
-function sendMediaMsg(convId: number, msgType: 'image' | 'audio' | 'sticker', url: string) {
+function sendMediaMsg(
+  convId: number,
+  msgType: 'image' | 'audio' | 'sticker' | 'video',
+  url: string,
+) {
   convStore.sendMedia(convId, msgType, url, {
     replyToId: convStore.replyTarget?.id || undefined,
   })
@@ -626,6 +662,33 @@ function onKeydown(e: KeyboardEvent) {
               />
             </svg>
           </button>
+          <!-- 视频 -->
+          <button
+            type="button"
+            class="mc-tool"
+            :disabled="uploading || recording || !!editing || !canSpeak"
+            :title="t('message.sendVideo')"
+            :aria-label="t('message.sendVideo')"
+            @click="pickVideo"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect
+                x="3"
+                y="6"
+                width="12"
+                height="12"
+                rx="2.5"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <path
+                d="M15 10.6l4.1-2.3a.8.8 0 0 1 1.2.7v6a.8.8 0 0 1-1.2.7L15 13.4"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
           <!-- 表情 -->
           <button
             type="button"
@@ -696,6 +759,13 @@ function onKeydown(e: KeyboardEvent) {
           accept="image/png,image/jpeg,image/webp,image/gif"
           class="mc-composer__file"
           @change="onImageChange"
+        />
+        <input
+          ref="videoInput"
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
+          class="mc-composer__file"
+          @change="onVideoChange"
         />
         <input
           ref="stickerInput"

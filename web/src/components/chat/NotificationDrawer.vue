@@ -44,7 +44,13 @@ function convName(c: Conversation): string {
 }
 
 function preview(c: Conversation): string {
-  return c.lastMessagePreview || t('chat.noMessage')
+  if (!c.lastMessagePreview) return t('chat.noMessage')
+  // 与会话列表保持一致：媒体消息不能把文件地址直接显示出来
+  if (c.lastMessageType === 'image') return t('chat.previewImage')
+  if (c.lastMessageType === 'audio') return t('chat.previewVoice')
+  if (c.lastMessageType === 'sticker') return t('chat.previewSticker')
+  if (c.lastMessageType === 'video') return t('chat.previewVideo')
+  return c.lastMessagePreview
 }
 
 async function openMention(c: Conversation) {

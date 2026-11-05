@@ -441,12 +441,12 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   /**
-   * 发送图片 / 语音。content 是上传接口返回的相对地址，
-   * 后端会再校验它必须落在本站 /uploads/ 下。
+   * 发送图片 / 语音 / 视频。content 是上传接口返回的相对地址，
+   * 后端会再校验它必须落在本站存储下。
    */
   function sendMedia(
     convId: number,
-    msgType: 'image' | 'audio' | 'sticker',
+    msgType: 'image' | 'audio' | 'sticker' | 'video',
     url: string,
     extra?: SendExtra,
   ) {
@@ -784,6 +784,9 @@ export const useConversationsStore = defineStore('conversations', () => {
       conv.lastMessageId = frame.id
       conv.lastMessageAt = frame.createdAt
       conv.lastMessagePreview = frame.content
+      // 类型必须同步：列表预览靠 lastMessageType 把图片/语音/视频换占位文案，
+      // 漏更新会在收到媒体消息后短暂显示一串 /uploads/... 地址
+      conv.lastMessageType = frame.msgType
       if (!autoRead) conv.unreadCount += 1
       // 单聊：收到即回送达回执，发送方据此显示「已送达」
       if (conv.type === 1) sendFrame({ type: 'delivered', messageId: frame.id })

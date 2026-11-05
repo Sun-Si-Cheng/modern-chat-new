@@ -55,5 +55,6 @@ func (h *SiteHandler) Get(c *gin.Context) {
 		"maxImageMB":         ops.MaxImageMB,
 		"maxAudioMB":         ops.MaxAudioMB,
 		"maxFileMB":          ops.MaxFileMB,
+		"maxVideoMB":         ops.MaxVideoMB,
 	})
 }

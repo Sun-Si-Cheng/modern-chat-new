@@ -169,7 +169,7 @@ const settingsForm = ref<AdminSettingsPayload>({
     requireEmailVerify: true,
   },
   chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200, blockedWords: '' },
-  upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20, maxStorageMB: 0 },
+  upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20, maxVideoMB: 30, maxStorageMB: 0 },
   security: { loginMaxAttempts: 5, loginLockMinutes: 15 },
 })
 
@@ -183,6 +183,7 @@ const nginxBodyHint = computed(() => {
     settingsForm.value.upload.maxImageMB,
     settingsForm.value.upload.maxAudioMB,
     settingsForm.value.upload.maxFileMB,
+    settingsForm.value.upload.maxVideoMB,
   )
   return max + 2
 })
@@ -1251,6 +1252,10 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
             <label class="mc-settings__field">
               <span>{{ t('admin.maxAudioMB') }}</span>
               <UiInputNumber v-model="settingsForm.upload.maxAudioMB" :min="1" :max="32" :step="1" />
+            </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxVideoMB') }}</span>
+              <UiInputNumber v-model="settingsForm.upload.maxVideoMB" :min="1" :max="100" :step="1" />
             </label>
             <label class="mc-settings__field">
               <span>{{ t('admin.maxFileMB') }}</span>

@@ -151,10 +151,10 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		h.sendError(c, "消息包含敏感词，请修改后重发")
 		return
 	}
-	// 图片/语音的 content 必须是本站上传目录下的相对地址。
-	// 不校验的话用户可以塞 https://evil.com/x.png，接收方客户端会去加载外部资源
+	// 媒体消息（图片/语音/表情/视频）的 content 必须是本站上传目录下的地址。
+	// 不校验的话用户可以塞 https://evil.com/x.mp4，接收方客户端会去加载外部资源
 	// （泄露 IP、可被打点统计），而消息看起来完全正常。
-	if msgType == "image" || msgType == "audio" || msgType == "sticker" {
+	if msgType == "image" || msgType == "audio" || msgType == "sticker" || msgType == "video" {
 		// 由存储实现自己判断 URL 归属（本地是 /uploads/，S3 是配置的对外域名），
 		// 这样换存储不用改校验逻辑。测试里未注入 Storage 时退回本地前缀判断。
 		var ok bool
@@ -164,7 +164,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 			ok = strings.HasPrefix(string(content), "/uploads/") && !strings.Contains(string(content), "..")
 		}
 		if !ok {
-			h.sendError(c, "图片/语音消息的内容必须是本站上传地址")
+			h.sendError(c, "媒体消息的内容必须是本站上传地址")
 			return
 		}
 	}
@@ -305,6 +305,8 @@ func pushPreview(m *model.Message) string {
 		return "[语音]"
 	case "sticker":
 		return "[表情]"
+	case "video":
+		return "[视频]"
 	}
 	s := m.Content
 	if r := []rune(s); len(r) > 60 {

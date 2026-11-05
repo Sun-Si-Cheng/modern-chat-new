@@ -36,9 +36,10 @@ func (h *UploadHandler) ops() store.Ops {
 	return h.settings.Ops()
 }
 
-func (h *UploadHandler) limits() (image, audio, file int64) {
+func (h *UploadHandler) limits() (image, audio, file, video int64) {
 	ops := h.ops()
-	return int64(ops.MaxImageMB) << 20, int64(ops.MaxAudioMB) << 20, int64(ops.MaxFileMB) << 20
+	return int64(ops.MaxImageMB) << 20, int64(ops.MaxAudioMB) << 20,
+		int64(ops.MaxFileMB) << 20, int64(ops.MaxVideoMB) << 20
 }
 
 // Upload 接收 multipart 文件并保存，返回可直接放进消息 content 的 URL。
@@ -55,12 +56,12 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 
 	kind := strings.TrimSpace(c.Query("kind"))
-	if kind != "image" && kind != "audio" && kind != "sticker" && kind != "file" {
-		fail(c, http.StatusBadRequest, "kind 只能是 image / audio / sticker / file")
+	if kind != "image" && kind != "audio" && kind != "sticker" && kind != "file" && kind != "video" {
+		fail(c, http.StatusBadRequest, "kind 只能是 image / audio / sticker / file / video")
 		return
 	}
 
-	imageMax, audioMax, fileMax := h.limits()
+	imageMax, audioMax, fileMax, videoMax := h.limits()
 	maxBytes := audioMax
 	switch kind {
 	case "image":
@@ -69,6 +70,8 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		maxBytes = service.MaxStickerBytes
 	case "file":
 		maxBytes = fileMax
+	case "video":
+		maxBytes = videoMax
 	}
 
 	// 防止超大请求把内存打满：在读取前按当前配置卡住

@@ -48,6 +48,7 @@ function previewText(item: FavoriteItem): string {
   if (item.msgType === 'audio') return t('chat.previewVoice')
   // 新增 sticker 类型后这里漏了一档，收藏的表情会显示成 /uploads/xxx.png
   if (item.msgType === 'sticker') return t('chat.previewSticker')
+  if (item.msgType === 'video') return t('chat.previewVideo')
   return item.content
 }
 

@@ -93,6 +93,7 @@ function notifyPreview(frame: Extract<ServerFrame, { type: 'message' }>): string
   if (frame.msgType === 'image') return t('chat.previewImage')
   if (frame.msgType === 'audio') return t('chat.previewVoice')
   if (frame.msgType === 'sticker') return t('message.quoteSticker')
+  if (frame.msgType === 'video') return t('chat.previewVideo')
   if (frame.msgType !== 'text') return t('message.unknownType', { type: frame.msgType })
   return frame.content
 }

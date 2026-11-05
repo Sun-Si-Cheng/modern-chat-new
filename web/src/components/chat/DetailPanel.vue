@@ -101,6 +101,7 @@ function searchPreview(hit: SearchHit): string {
   if (hit.msgType === 'image') return t('message.quoteImage')
   if (hit.msgType === 'audio') return t('message.quoteAudio')
   if (hit.msgType === 'sticker') return t('message.quoteSticker')
+  if (hit.msgType === 'video') return t('message.quoteVideo')
   if (hit.msgType !== 'text') return t('message.unknownType', { type: hit.msgType })
   return hit.content
 }
