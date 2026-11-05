@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -2150,5 +2151,67 @@ func TestModeration(t *testing.T) {
 		if m, _ := it.(map[string]any); uint64(m["id"].(float64)) == delID {
 			t.Fatalf("被管理员删除的消息不应再出现在历史里：%v", m)
 		}
+	}
+}
+
+// TestOpsEndpoints 运维：Prometheus 指标、附件统计/清理、备份列表。
+func TestOpsEndpoints(t *testing.T) {
+	e := setup(t)
+	tokenAdmin, adminUser := register(t, e, "ops-admin")
+	if adminUser.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", adminUser.Role)
+	}
+	tokenUser, _ := register(t, e, "ops-user")
+
+	// ===== Prometheus 指标 =====
+	resp, err := http.Get(e.ts.URL + "/api/metrics")
+	if err != nil {
+		t.Fatalf("metrics request: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("metrics status = %d", resp.StatusCode)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"modernchat_http_requests_total",
+		"modernchat_users_total",
+		"modernchat_messages_total",
+		"modernchat_ws_online_connections",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("指标缺少 %s", want)
+		}
+	}
+
+	// ===== 附件统计 / 预演清理 =====
+	code, stats := apiJSON(t, e, "GET", "/api/admin/storage/stats", tokenAdmin, "")
+	if code != http.StatusOK {
+		t.Fatalf("storage stats status = %d", code)
+	}
+	if _, ok := stats["orphans"]; !ok {
+		t.Fatalf("统计缺字段：%v", stats)
+	}
+	code, gc := apiJSON(t, e, "POST", "/api/admin/storage/gc", tokenAdmin, `{"dryRun":true}`)
+	if code != http.StatusOK || gc["dryRun"] != true {
+		t.Fatalf("预演清理异常：%d %v", code, gc)
+	}
+
+	// ===== 备份列表 / 未配置时的手动备份 =====
+	code, list := apiJSON(t, e, "GET", "/api/admin/backups", tokenAdmin, "")
+	if code != http.StatusOK {
+		t.Fatalf("备份列表 status = %d", code)
+	}
+	if _, ok := list["backups"].([]any); !ok {
+		t.Fatalf("备份列表格式异常：%v", list)
+	}
+	if code, _ := apiJSON(t, e, "POST", "/api/admin/backups", tokenAdmin, ""); code != http.StatusServiceUnavailable {
+		t.Fatalf("未注入备份服务时应 503，got %d", code)
+	}
+
+	// 普通用户无权访问运维接口
+	if code, _ := apiJSON(t, e, "GET", "/api/admin/storage/stats", tokenUser, ""); code != http.StatusForbidden {
+		t.Fatalf("普通用户访问运维接口应 403，got %d", code)
 	}
 }

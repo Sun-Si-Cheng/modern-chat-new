@@ -224,6 +224,25 @@ func (s *S3Storage) Save(kind string, data []byte, maxBytes int64) (string, erro
 	return s.publicBase + "/" + key, nil
 }
 
+// DirUsage 统计目录内文件数与总字节数（配额检查与后台展示用）。
+func DirUsage(root string) (files int, bytes int64, err error) {
+	err = filepath.Walk(root, func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		files++
+		bytes += info.Size()
+		return nil
+	})
+	return files, bytes, err
+}
+
 // ---------- 共用 ----------
 
 // detectType 按文件头判断真实类型并返回扩展名。

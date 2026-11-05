@@ -12,6 +12,7 @@ import (
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/handler"
+	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/metrics"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
@@ -30,6 +31,8 @@ type Deps struct {
 	// Settings 与 Storage 由 main 装配（Hub 也要用同一个 Storage 做 URL 归属校验）
 	Settings *store.SettingStore
 	Storage  service.Storage
+	// Backup 备份服务（可为 nil：测试环境或未启用）
+	Backup *service.BackupService
 }
 
 // New 装配引擎。
@@ -45,6 +48,14 @@ func New(d Deps) *gin.Engine {
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(gin.Recovery(), middleware.Logger())
+	// Prometheus 指标：记录路由级请求计数，并导出 /api/metrics
+	metrics.Init(d.DB, func() int {
+		if d.WS == nil {
+			return 0
+		}
+		return d.WS.OnlineCount()
+	})
+	r.Use(metrics.Middleware())
 	// 安全响应头 + 请求体上限（防超大 JSON 撑爆内存）。
 	// 插件上传是 octet-stream，按 PLUGIN_MAX_SIZE 单独放宽。
 	r.Use(middleware.SecurityHeaders())
@@ -102,6 +113,7 @@ func New(d Deps) *gin.Engine {
 	fileH := handler.NewFileHandler(files, convs, d.Storage)
 	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
+	opsH := handler.NewOpsHandler(d.Cfg, d.DB, d.Backup)
 
 	// 上传文件存储由 main 依据配置构造（本地或 S3 兼容），这里只挂接口与静态服务
 	storage := d.Storage
@@ -122,6 +134,8 @@ func New(d Deps) *gin.Engine {
 	api := r.Group("/api")
 	api.GET("/health", handler.Health)
 	api.GET("/version", handler.Version)
+	// Prometheus 指标（可通过 METRICS_TOKEN 加 Bearer 保护）
+	api.GET("/metrics", metrics.Handler(d.Cfg.MetricsToken))
 	// 站点信息（免鉴权）：站点名、注册开关、消息长度/撤回时限/上传上限。
 	// 不含任何密钥类配置。
 	api.GET("/site", handler.NewSiteHandler(settings).Get)
@@ -240,6 +254,12 @@ func New(d Deps) *gin.Engine {
 		admin.GET("/settings", adminH.GetSettings)
 		admin.PUT("/settings", adminH.SaveSettings)
 		admin.POST("/settings/smtp/test", adminH.TestSMTP)
+
+		// 运维：附件统计/孤儿清理、数据库备份
+		admin.GET("/storage/stats", opsH.StorageStats)
+		admin.POST("/storage/gc", opsH.GC)
+		admin.GET("/backups", opsH.Backups)
+		admin.POST("/backups", opsH.RunBackup)
 	}
 
 	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）

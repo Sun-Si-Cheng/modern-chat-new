@@ -22,8 +22,18 @@ type Config struct {
 	LogDir         string   // 日志目录；留空则只输出 stdout
 	DataDir        string   // 数据目录（图片/语音等上传文件），默认 ./data
 	LogRetainDays  int      // 日志保留天数（默认 15）
-	Redis          RedisConfig
-	SMTP           SMTPConfig
+	// MetricsToken 非空时 /api/metrics 需要 Bearer token
+	MetricsToken string
+	// BackupDir 备份目录；默认 <DataDir>/backups
+	BackupDir string
+	// BackupIntervalHours 自动备份间隔（0=关闭）
+	BackupIntervalHours int
+	// BackupRetain 保留最近多少份备份
+	BackupRetain int
+	// MysqldumpPath mysqldump 可执行文件路径（默认取 PATH）
+	MysqldumpPath string
+	Redis         RedisConfig
+	SMTP          SMTPConfig
 }
 
 // RedisConfig 可选：配置后限流使用 Redis 共享配额，连接失败自动降级为内存。
@@ -52,16 +62,21 @@ func (c SMTPConfig) Enabled() bool { return c.Host != "" }
 //   - 开发模式缺省时生成随机值并告警（重启即全端失效）。
 func Load() (Config, error) {
 	cfg := Config{
-		Port:          getv("PORT", "8080"),
-		GinMode:       getv("GIN_MODE", "release"),
-		DBDSN:         getv("DB_DSN", "root:root@tcp(127.0.0.1:3306)/modernchat?charset=utf8mb4&parseTime=True&loc=Local"),
-		JWTSecret:     os.Getenv("JWT_SECRET"),
-		LogLevel:      getv("LOG_LEVEL", "info"),
-		Migrate:       getv("MIGRATE", "false") == "true",
-		PluginMaxSize: geti("PLUGIN_MAX_SIZE", 1<<20),
-		LogDir:        getv("LOG_DIR", "logs"),
-		DataDir:       getv("DATA_DIR", "data"),
-		LogRetainDays: int(geti("LOG_RETAIN_DAYS", 15)),
+		Port:                getv("PORT", "8080"),
+		GinMode:             getv("GIN_MODE", "release"),
+		DBDSN:               getv("DB_DSN", "root:root@tcp(127.0.0.1:3306)/modernchat?charset=utf8mb4&parseTime=True&loc=Local"),
+		JWTSecret:           os.Getenv("JWT_SECRET"),
+		LogLevel:            getv("LOG_LEVEL", "info"),
+		Migrate:             getv("MIGRATE", "false") == "true",
+		PluginMaxSize:       geti("PLUGIN_MAX_SIZE", 1<<20),
+		LogDir:              getv("LOG_DIR", "logs"),
+		DataDir:             getv("DATA_DIR", "data"),
+		LogRetainDays:       int(geti("LOG_RETAIN_DAYS", 15)),
+		MetricsToken:        getv("METRICS_TOKEN", ""),
+		BackupDir:           getv("BACKUP_DIR", ""),
+		BackupIntervalHours: int(geti("BACKUP_INTERVAL_HOURS", 0)),
+		BackupRetain:        int(geti("BACKUP_RETAIN", 7)),
+		MysqldumpPath:       getv("MYSQLDUMP_PATH", "mysqldump"),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),

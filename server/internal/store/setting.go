@@ -56,6 +56,8 @@ const (
 	KeyUploadMaxImageMB = "upload.maxImageMB"
 	KeyUploadMaxAudioMB = "upload.maxAudioMB"
 	KeyUploadMaxFileMB  = "upload.maxFileMB"
+	// 本地上传目录总配额（MB，0=不限制）
+	KeyUploadMaxStorageMB = "upload.maxStorageMB"
 )
 
 var knownKeys = map[string]bool{
@@ -69,6 +71,7 @@ var knownKeys = map[string]bool{
 	KeyChatMaxMessageLen: true, KeyChatRecallMinutes: true, KeyChatMaxGroupMembers: true,
 	KeyChatBlockedWords: true,
 	KeyUploadMaxImageMB: true, KeyUploadMaxAudioMB: true, KeyUploadMaxFileMB: true,
+	KeyUploadMaxStorageMB:       true,
 	KeySecurityLoginMaxAttempts: true, KeySecurityLoginLockMinutes: true,
 }
 
@@ -214,11 +217,13 @@ type Ops struct {
 	MaxGroupMembers    int
 	// BlockedWords 敏感词（已按行拆分、去空、去首尾空白）
 	BlockedWords []string
-	MaxImageMB         int
-	MaxAudioMB         int
-	MaxFileMB          int
-	LoginMaxAttempts   int
-	LoginLockMinutes   int
+	MaxImageMB   int
+	MaxAudioMB   int
+	MaxFileMB    int
+	// MaxStorageMB 本地上传目录总配额（0=不限制）
+	MaxStorageMB     int
+	LoginMaxAttempts int
+	LoginLockMinutes int
 }
 
 // DefaultOps 缺省值。后台没配过任何一项时的行为，与改造前完全一致。
@@ -290,6 +295,12 @@ func OpsFrom(all map[string]string) Ops {
 	out.MaxImageMB = clampInt(all[KeyUploadMaxImageMB], 1, 32, def.MaxImageMB)
 	out.MaxAudioMB = clampInt(all[KeyUploadMaxAudioMB], 1, 32, def.MaxAudioMB)
 	out.MaxFileMB = clampInt(all[KeyUploadMaxFileMB], 1, 200, def.MaxFileMB)
+	// 0 = 不限制；其它值 1-102400（100 GB）
+	if raw := strings.TrimSpace(all[KeyUploadMaxStorageMB]); raw == "0" || raw == "" {
+		out.MaxStorageMB = 0
+	} else {
+		out.MaxStorageMB = clampInt(raw, 1, 102400, 0)
+	}
 	// 0 = 关闭账号锁定；其它值收敛到 2-20 次
 	if raw := strings.TrimSpace(all[KeySecurityLoginMaxAttempts]); raw == "0" {
 		out.LoginMaxAttempts = 0

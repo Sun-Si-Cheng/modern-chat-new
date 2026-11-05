@@ -282,6 +282,16 @@ export const adminApi = {
     ),
   testSMTP: (to: string) => http.post<{ ok: true }>('/admin/settings/smtp/test', { to }),
 
+  /** 运维：附件统计 / 孤儿文件清理 / 数据库备份 */
+  storageStats: () => http.get<StorageStats>('/admin/storage/stats'),
+  gcStorage: (dryRun = false) =>
+    http.post<{ ok: true; dryRun: boolean; deleted: number; freedBytes: number }>(
+      '/admin/storage/gc',
+      { dryRun },
+    ),
+  backups: () => http.get<{ backups: BackupFile[]; dir: string }>('/admin/backups'),
+  runBackup: () => http.post<{ ok: true; file: string }>('/admin/backups'),
+
   /** 注册邀请码 */
   invites: () => http.get<InviteCode[]>('/admin/invites'),
   createInvites: (body: { maxUses: number; expiresDays: number; count: number }) =>
@@ -361,6 +371,24 @@ export interface UploadLimits {
   maxImageMB: number
   maxAudioMB: number
   maxFileMB: number
+  /** 本地上传目录总配额（MB，0=不限制） */
+  maxStorageMB: number
+}
+
+/** 运维：本地附件用量 */
+export interface StorageStats {
+  files: number
+  bytes: number
+  referenced: number
+  orphans: number
+  orphanBytes: number
+}
+
+/** 运维：数据库备份文件 */
+export interface BackupFile {
+  name: string
+  size: number
+  createdAt: string
 }
 
 /** 系统设置（写）：敏感字段留空表示不修改 */

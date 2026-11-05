@@ -23,7 +23,9 @@ import {
   type AdminStats,
   type AdminUserDetail,
   type AdminUserRow,
+  type BackupFile,
   type InviteCode,
+  type StorageStats,
   type VersionInfo,
 } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -162,7 +164,7 @@ const settingsForm = ref<AdminSettingsPayload>({
     requireInviteCode: false,
   },
   chat: { maxMessageLength: 1000, recallMinutes: 2, maxGroupMembers: 200, blockedWords: '' },
-  upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20 },
+  upload: { maxImageMB: 8, maxAudioMB: 5, maxFileMB: 20, maxStorageMB: 0 },
   security: { loginMaxAttempts: 5, loginLockMinutes: 15 },
 })
 
@@ -206,6 +208,8 @@ async function fetchSettings() {
       upload: { ...s.upload },
       security: { ...s.security },
     }
+    void loadStorageStats()
+    void loadBackups()
     settingsMeta.value = {
       smtpEnabled: s.smtpEnabled,
       redisEnabled: s.redisEnabled,
@@ -213,6 +217,87 @@ async function fetchSettings() {
     }
   } catch (e) {
     void MessagePlugin.error(te(e))
+  }
+}
+
+// ---- 运维：附件统计 / 孤儿清理 / 数据库备份 ----
+const storageStats = ref<StorageStats | null>(null)
+const backupDir = ref('')
+const backups = ref<BackupFile[]>([])
+const storageBusy = ref(false)
+const backupBusy = ref(false)
+
+function fmtBytes(n: number): string {
+  if (!n) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+async function loadStorageStats() {
+  try {
+    storageStats.value = await adminApi.storageStats()
+  } catch {
+    /* 忽略：运维信息属于辅助展示 */
+  }
+}
+
+async function loadBackups() {
+  try {
+    const r = await adminApi.backups()
+    backupDir.value = r.dir
+    backups.value = r.backups ?? []
+  } catch {
+    /* 忽略 */
+  }
+}
+
+async function gcStorage(dryRun: boolean) {
+  if (!dryRun) {
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const dlg = DialogPlugin.confirm({
+        header: t('admin.gcRun'),
+        body: t('admin.gcConfirm'),
+        theme: 'warning',
+        onConfirm: () => {
+          dlg.destroy()
+          resolve(true)
+        },
+        onClose: () => {
+          dlg.destroy()
+          resolve(false)
+        },
+      })
+    })
+    if (!confirmed) return
+  }
+  storageBusy.value = true
+  try {
+    const r = await adminApi.gcStorage(dryRun)
+    void MessagePlugin.success(
+      dryRun
+        ? t('admin.gcDryRunOk', { n: r.deleted })
+        : t('admin.gcOk', { n: r.deleted, size: fmtBytes(r.freedBytes) }),
+    )
+    await loadStorageStats()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    storageBusy.value = false
+  }
+}
+
+async function doBackup() {
+  backupBusy.value = true
+  try {
+    const r = await adminApi.runBackup()
+    void MessagePlugin.success(t('admin.backupOk', { file: r.file }))
+    await loadBackups()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    backupBusy.value = false
   }
 }
 
@@ -1125,8 +1210,67 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               <span>{{ t('admin.maxFileMB') }}</span>
               <UiInputNumber v-model="settingsForm.upload.maxFileMB" :min="1" :max="200" :step="1" />
             </label>
+            <label class="mc-settings__field">
+              <span>{{ t('admin.maxStorageMB') }}</span>
+              <UiInputNumber
+                v-model="settingsForm.upload.maxStorageMB"
+                :min="0"
+                :max="102400"
+                :step="1024"
+              />
+            </label>
           </div>
+          <p class="mc-settings__warn">{{ t('admin.maxStorageHint') }}</p>
           <p class="mc-settings__warn">{{ t('admin.uploadNginxHint', { mb: nginxBodyHint }) }}</p>
+        </section>
+
+        <!-- 运维：附件治理与数据库备份 -->
+        <section class="mc-settings">
+          <div class="mc-settings__head">
+            <h3 class="mc-settings__title">{{ t('admin.opsTitle') }}</h3>
+          </div>
+          <p class="mc-settings__desc text-placeholder">{{ t('admin.opsDesc') }}</p>
+          <div v-if="storageStats" class="mc-ops__stats">
+            <div class="mc-ops__stat">
+              <span>{{ t('admin.opsFiles') }}</span><b>{{ storageStats.files }}</b>
+            </div>
+            <div class="mc-ops__stat">
+              <span>{{ t('admin.opsSize') }}</span><b>{{ fmtBytes(storageStats.bytes) }}</b>
+            </div>
+            <div class="mc-ops__stat">
+              <span>{{ t('admin.opsReferenced') }}</span><b>{{ storageStats.referenced }}</b>
+            </div>
+            <div class="mc-ops__stat">
+              <span>{{ t('admin.opsOrphans') }}</span>
+              <b>{{ storageStats.orphans }} · {{ fmtBytes(storageStats.orphanBytes) }}</b>
+            </div>
+          </div>
+          <div class="mc-settings__actions">
+            <UiButton variant="outline" size="small" :loading="storageBusy" @click="gcStorage(true)">
+              {{ t('admin.gcDryRun') }}
+            </UiButton>
+            <UiButton
+              variant="outline"
+              theme="danger"
+              size="small"
+              :loading="storageBusy"
+              @click="gcStorage(false)"
+            >
+              {{ t('admin.gcRun') }}
+            </UiButton>
+            <UiButton variant="outline" size="small" :loading="backupBusy" @click="doBackup">
+              {{ t('admin.backupNow') }}
+            </UiButton>
+          </div>
+          <p v-if="backupDir" class="text-placeholder mc-ops__dir">
+            {{ t('admin.backupDir', { dir: backupDir }) }}
+          </p>
+          <div v-if="backups.length" class="mc-ops__backups">
+            <div v-for="b in backups.slice(0, 5)" :key="b.name" class="mc-ops__backup">
+              <span class="mc-ops__backup-name">{{ b.name }}</span>
+              <span class="num text-placeholder">{{ fmtBytes(b.size) }}</span>
+            </div>
+          </div>
         </section>
 
         <!-- 登录安全 -->
@@ -1662,6 +1806,66 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
 
 .mc-settings__field--wide {
   grid-column: 1 / -1;
+}
+
+/* 运维：附件统计与备份列表 */
+.mc-ops__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.mc-ops__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-container);
+}
+
+.mc-ops__stat span {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.mc-ops__stat b {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.mc-ops__dir {
+  margin: 10px 0 0;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.mc-ops__backups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.mc-ops__backup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--mc-radius-sm);
+  background: var(--td-bg-color-container);
+  font-size: 13px;
+}
+
+.mc-ops__backup-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mc-settings__actions {

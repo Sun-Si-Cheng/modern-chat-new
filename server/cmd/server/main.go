@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -120,6 +121,18 @@ func main() {
 		slog.Info("upload storage ready", "kind", uploadStorage.Kind())
 	}
 
+	// 数据库备份：手动接口随时可用；配置了间隔后额外开启定时备份
+	backupDir := cfg.BackupDir
+	if backupDir == "" {
+		backupDir = filepath.Join(cfg.DataDir, "backups")
+	}
+	backup := service.NewBackupService(cfg.DBDSN, backupDir, cfg.BackupRetain, cfg.MysqldumpPath)
+	if cfg.BackupIntervalHours > 0 {
+		slog.Info("automatic backup enabled",
+			"dir", backupDir, "hours", cfg.BackupIntervalHours, "retain", cfg.BackupRetain)
+		go backup.Loop(time.Hour * time.Duration(cfg.BackupIntervalHours))
+	}
+
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
 		Convs:      store.NewConversationStore(db),
@@ -141,6 +154,7 @@ func main() {
 		WS:            hub,
 		Settings:      settings,
 		Storage:       uploadStorage,
+		Backup:        backup,
 		AuthLimiter:   authLimiter,
 		PluginLimiter: pluginLimiter,
 	})

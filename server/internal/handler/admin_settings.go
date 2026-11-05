@@ -81,6 +81,8 @@ type uploadSetting struct {
 	MaxImageMB int `json:"maxImageMB"`
 	MaxAudioMB int `json:"maxAudioMB"`
 	MaxFileMB  int `json:"maxFileMB"`
+	// MaxStorageMB 本地上传目录总配额（0=不限制）
+	MaxStorageMB int `json:"maxStorageMB"`
 }
 
 type settingsPayload struct {
@@ -164,9 +166,10 @@ func (h *AdminHandler) GetSettings(c *gin.Context) {
 		BlockedWords:     strings.Join(ops.BlockedWords, "\n"),
 	}
 	view.Upload = uploadSetting{
-		MaxImageMB: ops.MaxImageMB,
-		MaxAudioMB: ops.MaxAudioMB,
-		MaxFileMB:  ops.MaxFileMB,
+		MaxImageMB:   ops.MaxImageMB,
+		MaxAudioMB:   ops.MaxAudioMB,
+		MaxFileMB:    ops.MaxFileMB,
+		MaxStorageMB: ops.MaxStorageMB,
 	}
 	c.JSON(http.StatusOK, view)
 }
@@ -238,6 +241,10 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "敏感词总长度最多 2000 个字符")
 		return
 	}
+	if v := req.Upload.MaxStorageMB; v < 0 || v > 102400 {
+		fail(c, http.StatusBadRequest, "存储配额需为 0（不限制）或 1-102400 MB")
+		return
+	}
 
 	updates := map[string]string{
 		store.KeySMTPHost: strings.TrimSpace(req.SMTP.Host),
@@ -271,9 +278,10 @@ func (h *AdminHandler) SaveSettings(c *gin.Context) {
 		store.KeyChatMaxGroupMembers: strconv.Itoa(req.Chat.MaxGroupMembers),
 		store.KeyChatBlockedWords:    blockedWords,
 
-		store.KeyUploadMaxImageMB: strconv.Itoa(req.Upload.MaxImageMB),
-		store.KeyUploadMaxAudioMB: strconv.Itoa(req.Upload.MaxAudioMB),
-		store.KeyUploadMaxFileMB:  strconv.Itoa(req.Upload.MaxFileMB),
+		store.KeyUploadMaxImageMB:   strconv.Itoa(req.Upload.MaxImageMB),
+		store.KeyUploadMaxAudioMB:   strconv.Itoa(req.Upload.MaxAudioMB),
+		store.KeyUploadMaxFileMB:    strconv.Itoa(req.Upload.MaxFileMB),
+		store.KeyUploadMaxStorageMB: strconv.Itoa(req.Upload.MaxStorageMB),
 	}
 
 	if err := h.settings.Save(updates, middleware.UserFrom(c).ID); err != nil {

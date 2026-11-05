@@ -29,11 +29,15 @@ func NewUploadHandler(storage service.Storage, settings *store.SettingStore) *Up
 //
 // 注意：请求体上限必须跟着配置走——写死 9 MB 的话，站长把图片调到 16 MB
 // 后仍然会被 MaxBytesReader 卡在 9 MB，报错还是「缺少文件字段」。
-func (h *UploadHandler) limits() (image, audio, file int64) {
-	ops := store.DefaultOps()
-	if h.settings != nil {
-		ops = h.settings.Ops()
+func (h *UploadHandler) ops() store.Ops {
+	if h.settings == nil {
+		return store.DefaultOps()
 	}
+	return h.settings.Ops()
+}
+
+func (h *UploadHandler) limits() (image, audio, file int64) {
+	ops := h.ops()
 	return int64(ops.MaxImageMB) << 20, int64(ops.MaxAudioMB) << 20, int64(ops.MaxFileMB) << 20
 }
 
@@ -104,6 +108,17 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	if int64(len(data)) > maxBytes {
 		fail(c, http.StatusRequestEntityTooLarge, "文件过大")
 		return
+	}
+
+	// 本地存储总配额：0 表示不限制。对象存储无法在本地统计用量，跳过。
+	if quotaMB := h.ops().MaxStorageMB; quotaMB > 0 {
+		if rooter, ok := h.storage.(interface{ Root() string }); ok {
+			_, used, err := service.DirUsage(rooter.Root())
+			if err == nil && used+int64(len(data)) > int64(quotaMB)<<20 {
+				fail(c, http.StatusInsufficientStorage, "存储空间已满，请联系管理员清理")
+				return
+			}
+		}
 	}
 
 	url, err := h.storage.Save(kind, data, maxBytes)
