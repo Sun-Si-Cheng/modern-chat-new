@@ -43,7 +43,7 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 	endpoint := strings.TrimSpace(req.Endpoint)
 	p256dh := strings.TrimSpace(req.P256dh)
 	auth := strings.TrimSpace(req.Auth)
-	if !strings.HasPrefix(endpoint, "https://") || len(endpoint) > 500 ||
+	if !service.ValidPushEndpoint(endpoint) || len(endpoint) > 500 ||
 		p256dh == "" || len(p256dh) > 255 || auth == "" || len(auth) > 128 {
 		fail(c, http.StatusBadRequest, "推送订阅参数不合法")
 		return
