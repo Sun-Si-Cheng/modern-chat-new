@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -95,8 +96,20 @@ func (h *OpsHandler) GC(c *gin.Context) {
 		return
 	}
 	root := service.UploadsDir(h.cfg.DataDir)
-	var deleted int
-	var freed int64
+	deleted, freed, err := gcOrphans(root, ref, orphanMinAge, time.Now(), req.DryRun)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	slog.Info("orphan uploads gc", "dryRun", req.DryRun, "deleted", deleted, "freed", freed)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "dryRun": req.DryRun, "deleted": deleted, "freedBytes": freed})
+}
+
+// gcOrphans 按引用集合清理孤儿文件，返回删除数量与释放字节数。
+//
+// 抽成不依赖数据库的纯函数：dryRun 与真实删除共用同一套判定，
+// 便于用真实临时目录做回归测试（例如视频与其缩略图不能被误删）。
+func gcOrphans(root string, ref map[string]bool, minAge time.Duration, now time.Time, dryRun bool) (deleted int, freed int64, err error) {
 	err = filepath.Walk(root, func(p string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
@@ -107,10 +120,10 @@ func (h *OpsHandler) GC(c *gin.Context) {
 		if info.IsDir() {
 			return nil
 		}
-		if ref[uploadURL(root, p)] || time.Since(info.ModTime()) <= orphanMinAge {
+		if ref[uploadURL(root, p)] || now.Sub(info.ModTime()) <= minAge {
 			return nil
 		}
-		if req.DryRun {
+		if dryRun {
 			deleted++
 			freed += info.Size()
 			return nil
@@ -123,19 +136,18 @@ func (h *OpsHandler) GC(c *gin.Context) {
 		freed += info.Size()
 		return nil
 	})
-	if err != nil {
-		internal(c, err)
-		return
-	}
-	slog.Info("orphan uploads gc", "dryRun", req.DryRun, "deleted", deleted, "freed", freed)
-	c.JSON(http.StatusOK, gin.H{"ok": true, "dryRun": req.DryRun, "deleted": deleted, "freedBytes": freed})
+	return deleted, freed, err
 }
 
 // referencedUploads 收集仍被业务数据引用的 /uploads/ URL。
+//
+// 不按 msg_type 枚举：任何消息内容以 /uploads/ 开头都算引用。
+// 之前只认 image/audio/sticker，前端已支持发送视频（content 就是上传地址），
+// 结果每次 GC 都会把仍在使用的视频当孤儿删掉。
 func (h *OpsHandler) referencedUploads() (map[string]bool, error) {
 	var msgURLs []string
 	if err := h.db.Model(&model.Message{}).
-		Where("msg_type IN ?", []string{"image", "audio", "sticker"}).
+		Where("content LIKE ?", "/uploads/%").
 		Pluck("content", &msgURLs).Error; err != nil {
 		return nil, err
 	}
@@ -160,13 +172,26 @@ func (h *OpsHandler) referencedUploads() (map[string]bool, error) {
 
 	out := make(map[string]bool, len(msgURLs)+len(stickerURLs)+len(fileURLs)+len(convAvatars)+len(userAvatars))
 	for _, list := range [][]string{msgURLs, stickerURLs, fileURLs, convAvatars, userAvatars} {
-		for _, u := range list {
-			if u != "" {
-				out[u] = true
-			}
-		}
+		addUploadRefs(out, list)
 	}
 	return out, nil
+}
+
+// addUploadRefs 把业务引用的 URL 加入集合。
+//
+// 派生文件（图片缩略图 xxx_t.jpg）跟随原文件生命周期：原图仍被引用时
+// 把缩略图地址也标为已引用，否则 GC 会把它单独判成孤儿删掉。
+func addUploadRefs(dst map[string]bool, urls []string) {
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		dst[u] = true
+		// 只有本地上传才在磁盘上派生缩略图；S3 缩略图在对象存储里，不在本次扫描范围
+		if strings.HasPrefix(u, "/uploads/") {
+			dst[service.ThumbPath(u)] = true
+		}
+	}
 }
 
 // uploadURL 磁盘路径 → 对外 URL（统一正斜杠）。
