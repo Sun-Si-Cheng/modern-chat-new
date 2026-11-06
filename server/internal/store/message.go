@@ -257,6 +257,8 @@ func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) (int64, erro
 	// 条件里带上 `unread_count > 0`：正常路径下 last_read 与 unread 一起更新，
 	// 但若两者出现不一致（历史数据 / 手工修过库 / 端上补报），只判 last_read 会跳过更新，
 	// 结果是红点永远消不掉。带上未读条件即可兜住这种情况，且不影响幂等。
+	// last_read 用 GREATEST 只进不退：否则补报一个更小的 upToID 会把游标拽回去，
+	// 之后的历史消息会重新变成「未读」，分页取新消息也会重复。
 	res := s.db.Model(&model.UserConversation{}).
 		Where(
 			"user_id = ? AND conversation_id = ? AND (last_read_message_id < ? OR unread_count > 0)",
@@ -264,7 +266,7 @@ func (s *MessageStore) MarkRead(userID, convID uint, upToID uint64) (int64, erro
 		).
 		Updates(map[string]any{
 			"unread_count":         0,
-			"last_read_message_id": upToID,
+			"last_read_message_id": gorm.Expr("GREATEST(COALESCE(last_read_message_id, 0), ?)", upToID),
 			// 已读即清掉「有人@我」：否则提示会一直挂着
 			"mention_unread": false,
 		})
