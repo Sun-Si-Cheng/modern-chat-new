@@ -219,9 +219,9 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		Forwarded:      f.Forwarded,
 		CreatedAt:      time.Now(),
 	}
-	if err := h.deps.Messages.Create(msg); err != nil {
+	if err := h.deps.Messages.CreateWithInbox(msg, memberIDs); err != nil {
 		slog.Error("ws create message", "err", err.Error(), "uid", c.UserID, "conv", f.ConvID)
-		h.sendError(c, "服务器开小差了，请稍后再试")
+		h.sendError(c, "发送失败，请稍后重试")
 		return
 	}
 	// 广播帧要带引用摘要：单条装配一次（复用批量实现，避免再写一套查询）
@@ -235,28 +235,9 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		"msg", msg.ID, "conv", msg.ConversationID, "from", msg.SenderID,
 		"type", msg.MsgType, "chars", len([]rune(msg.Content)))
 
-	// 收件箱冗余：全员 last=新消息；新成员行在此首次创建（memberIDs 已在上方取过）
-	rows := make([]model.UserConversation, 0, len(memberIDs))
-	for _, uid := range memberIDs {
-		rows = append(rows, model.UserConversation{
-			UserID:         uid,
-			ConversationID: f.ConvID,
-			LastMessageID:  msgIDPtr(uint64(msg.ID)),
-			LastMessageAt:  &msg.CreatedAt,
-		})
-	}
-	if err := h.deps.Messages.UpsertInbox(rows); err != nil {
-		slog.Error("ws upsert inbox", "err", err.Error())
-	}
-	if err := h.deps.Messages.BumpUnread(f.ConvID, c.UserID, uint64(msg.ID)); err != nil {
-		slog.Error("ws bump unread", "err", err.Error())
-	}
-	// 被 @ 的人即使把会话设成免打扰，也要看到「有人@我」
-	if len(msg.Mentions) > 0 {
-		if err := h.deps.Messages.MarkMention(f.ConvID, msg.Mentions); err != nil {
-			slog.Error("ws mark mention", "err", err.Error())
-		}
-	}
+	// 收件箱 last、未读 +1、@ 标记已与消息本体在同一事务内提交；
+	// 之前在这里分开写且失败只记日志，会出现消息已入库、列表/未读没更新
+	// 甚至事务失败后仍然广播的永久不一致。
 
 	// fan-out：message 帧；非发送者额外 conv_change
 	mf := messageFrame(msg, f.ClientMsgID)

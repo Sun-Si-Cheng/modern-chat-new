@@ -152,10 +152,14 @@ func (s *MessageStore) AttachReply(rows []model.Message) error {
 // MarkMention 把这些用户的收件箱标记为「有未读 @我」。
 // 免打扰的会话也靠它显示「有人@我」，所以不能只靠未读数。
 func (s *MessageStore) MarkMention(convID uint, userIDs []uint) error {
+	return markMention(s.db, convID, userIDs)
+}
+
+func markMention(db *gorm.DB, convID uint, userIDs []uint) error {
 	if len(userIDs) == 0 {
 		return nil
 	}
-	return s.db.Model(&model.UserConversation{}).
+	return db.Model(&model.UserConversation{}).
 		Where("conversation_id = ? AND user_id IN ?", convID, userIDs).
 		UpdateColumn("mention_unread", true).Error
 }
@@ -178,14 +182,49 @@ func (s *MessageStore) MarkRecalled(id uint) (bool, time.Time, error) {
 	return res.RowsAffected > 0, now, res.Error
 }
 
+// CreateWithInbox 在一个事务里完成「写消息 + 全员收件箱 last/时间推进 +
+// 未读 +1 + @ 标记」。任一步失败整体回滚，调用方不再广播——
+// 否则会出现消息已入库、收件箱/未读没更新的永久不一致。
+func (s *MessageStore) CreateWithInbox(m *model.Message, memberIDs []uint) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+		rows := make([]model.UserConversation, 0, len(memberIDs))
+		for _, uid := range memberIDs {
+			id := uint64(m.ID)
+			rows = append(rows, model.UserConversation{
+				UserID:         uid,
+				ConversationID: m.ConversationID,
+				LastMessageID:  &id,
+				LastMessageAt:  &m.CreatedAt,
+			})
+		}
+		if err := upsertInbox(tx, rows); err != nil {
+			return err
+		}
+		if err := bumpUnread(tx, m.ConversationID, m.SenderID, uint64(m.ID)); err != nil {
+			return err
+		}
+		return markMention(tx, m.ConversationID, m.Mentions)
+	})
+}
+
 // UpsertInbox 批量更新收件箱行的 last_message_*（新成员行不存在则插入，unread 保持初始值）。
-// 修复缺陷：并发/乱序消息会让较小的 last_message_id 覆盖较大的值，导致会话列表排序
-// 回退、预览显示旧消息。这里用 GREATEST 保证 last_message_id 与 last_message_at 只增不减。
+// 用 GREATEST 保证 last_message_id 与 last_message_at 只增不减，避免并发/乱序消息
+// 让较小值覆盖较大值，导致列表排序回退、预览显示旧消息。
 func (s *MessageStore) UpsertInbox(rows []model.UserConversation) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	return s.db.Clauses(clause.OnConflict{
+	return upsertInbox(s.db, rows)
+}
+
+func upsertInbox(db *gorm.DB, rows []model.UserConversation) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			// 外层再 COALESCE 一次：新值为 NULL 时 GREATEST 会得到 NULL，
@@ -203,7 +242,11 @@ func (s *MessageStore) UpsertInbox(rows []model.UserConversation) error {
 // （upsert 先写入了更大的 id 时该条件不成立）。改为「该用户尚未读到这条消息」
 // 的语义条件：last_read_message_id < msgID；未读只增不减，重复执行也不会回退。
 func (s *MessageStore) BumpUnread(convID, senderID uint, msgID uint64) error {
-	return s.db.Model(&model.UserConversation{}).
+	return bumpUnread(s.db, convID, senderID, msgID)
+}
+
+func bumpUnread(db *gorm.DB, convID, senderID uint, msgID uint64) error {
+	return db.Model(&model.UserConversation{}).
 		Where("conversation_id = ? AND user_id <> ? AND last_read_message_id < ?", convID, senderID, msgID).
 		UpdateColumn("unread_count", gorm.Expr("unread_count + 1")).Error
 }
