@@ -26,7 +26,6 @@ web/.eslintcache
 *.key
 *.crt
 *.p12
-.env.example
 
 # ===== 构建产物与二进制 =====
 *.exe

@@ -95,7 +95,14 @@ ask()   { # ask "提示" "默认值" -> 回显到 REPLY
   else
     printf "${C_B}?%s${C_0}: " "$prompt" >&2
   fi
-  read -r REPLY
+  # 支持 curl ... | bash 管道运行：stdin 是脚本流，交互输入必须从终端（/dev/tty）读
+  if [ -t 0 ]; then
+    read -r REPLY
+  elif read -r REPLY </dev/tty 2>/dev/null; then
+    :
+  else
+    REPLY=""   # 无终端（纯自动化）：全部取默认值
+  fi
   REPLY="${REPLY:-$def}"
 }
 

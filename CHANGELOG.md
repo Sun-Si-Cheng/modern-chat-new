@@ -21,6 +21,7 @@
 
 ### 修复
 
+- **补齐 `server/.env.example`**：运维手册 §3.3 手工部署引用了 `cp server/.env.example server/.env` 但文件一直缺失，手工部署者在第 3 步就会卡住。已补齐（与 `config.go` 全部环境变量一一对应，含在线更新 `RELEASE_API_URL` / `RELEASE_DL_URL` 注释示例）；同时修复 `.gitignore` 中自相矛盾的规则（第 24 行 `!.env.example` 放行后又被第 29 行重新忽略，导致示例文件永远进不了仓库）。
 - **通知中心一直显示「加载中」**：`notify.mentions` / `notify.empty` 的中文文案里 `@` 未按 vue-i18n 语法转义成 `{'@'}`，整条消息编译失败、抽屉渲染抛错，loading 结束后 DOM 仍停在「加载中」。已转义并补浏览器回归验证。
 
 
