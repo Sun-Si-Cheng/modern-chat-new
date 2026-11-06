@@ -10,6 +10,7 @@
 
 ### 修复
 
+- **插件 URL 安装的 SSRF DNS rebinding（中等）**：`plugin.Fetch` 先 `LookupIP` 校验、再交给 `http.Client` 重新解析并连接，攻击者可让两次解析返回不同地址（校验时公网、连接时内网）。现在校验与连接都在自定义 `DialContext` 内完成：解析后直接拨号已校验的 IP，重定向的每一跳同样受控；并显式禁用环境代理。保留段补上 `100.64.0.0/10`（CGNAT）、`192.0.0.0/24`、`198.18.0.0/15`、`240.0.0.0/4`、文档网段、NAT64 `64:ff9b::/96` 及 IPv4-mapped 地址。
 - **「退出所有设备」不踢已连 WS 连接，且多数上行帧不复核连接状态（中等）**：`LogoutOthers` 只把 `token_version+1`，已建立的 WebSocket 仍缓存旧 tv，可继续收发；`Dispatch` 里也只有 `chat` 帧复核封禁/tv，`typing/read/recall/edit/reaction/delivered/ping` 全部绕过。现在：①「退出所有设备」与邮箱重置密码成功后主动 `KickUser` 断开全部连接；②`Dispatch` 在路由任何帧之前统一复核封禁与 `token_version`，失败回 error 帧并断开。握手/接口契约不变（帧格式不变，仅新增 `kicked` 断开行为）。
 - **单条消息长度上限与列宽不一致（中等）**：后台允许把「单条消息长度」调到 5000 字符，但 `messages.content` 是 `VARCHAR(1000)`——严格模式下发长消息报 1406、非严格模式静默截断。迁移 `0023` 把列扩为 `TEXT`（5000 个多字节字符约 15KB，远低于 64KB 上限），GORM 模型同步改为 `type:text`。**升级需执行迁移 0023**，回滚为 `VARCHAR(1000)` 会截断超长消息，回滚前先备份。
 - **`/uploads` 未鉴权、可列目录、公开缓存一年（严重）**：上传目录原先对所有匿名请求开放，Gin 的 `StaticFS` 还会列出目录内容，私人图片/语音/视频可被枚举；响应携带 `public, max-age=31536000, immutable`，会长期留在代理/共享缓存。现在：① 目录一律 404（`onlyFilesFS`）；② 缓存改为 `private, max-age=3600`；③ 读取必须登录——`Auth` 中间件在已认证响应里顺带下发同源 `HttpOnly` cookie，`/uploads` 同时接受 `Authorization` 与 cookie，历史消息里的旧 URL 无需迁移即可继续打开；④ 维护模式下与 API 一样受控（管理员可访问）。**取舍与限制**：未做逐会话成员校验（文件 URL 不含会话信息，需新增文件归属映射表），登录用户知道 URL 仍可读取；使用 S3 对象存储时，文件由桶策略/CDN 控制，不在本中间件范围内。
