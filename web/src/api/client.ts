@@ -31,6 +31,16 @@ export function setToken(token: string) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
+/**
+ * 401 处理钩子：由 auth store 注册，用来同步清掉 Pinia 里的 token/user。
+ * 只清 localStorage 会让内存中的 store 仍是「已登录」，路由守卫与页面状态会失真。
+ */
+let unauthorizedHandler: (() => void) | null = null
+
+export function onUnauthorized(fn: () => void) {
+  unauthorizedHandler = fn
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
@@ -108,6 +118,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     // token 失效/被封禁：清登录态回登录页
     if (res.status === 401) {
       setToken('')
+      unauthorizedHandler?.()
       redirectToLogin()
       throw new ApiError(401, '登录已失效，请重新登录')
     }
@@ -147,6 +158,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
 
     if (res.status === 401) {
       setToken('')
+      unauthorizedHandler?.()
       redirectToLogin()
       throw new ApiError(401, '登录已失效，请重新登录')
     }
@@ -161,6 +173,44 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
     return data as T
   }
   return withTimeout(run(), UPLOAD_TIMEOUT, '上传超时，请稍后重试', ctrl)
+}
+
+/**
+ * 非 JSON 封装的请求（插件代码下载、octet-stream 上传、按 URL 安装）。
+ * 这些路径原先直接裸调 fetch：没有超时（代理挂住时永久 pending），
+ * 也没有 401 处理。这里与 request() 共用超时/鉴权/401 逻辑。
+ */
+export async function rawFetch(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT,
+): Promise<Response> {
+  const token = getToken()
+  const ctrl = new AbortController()
+  const run = async (): Promise<Response> => {
+    let res: Response
+    try {
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+      const extra = init.headers as Record<string, string> | undefined
+      if (extra) Object.assign(headers, extra)
+      res = await fetch(path, {
+        ...init,
+        headers,
+        signal: ctrl.signal,
+      })
+    } catch (e) {
+      const aborted = (e as Error)?.name === 'AbortError'
+      throw new ApiError(0, aborted ? '请求超时，请稍后重试' : '网络连接失败，请检查网络后重试')
+    }
+    if (res.status === 401) {
+      setToken('')
+      unauthorizedHandler?.()
+      redirectToLogin()
+      throw new ApiError(401, '登录已失效，请重新登录')
+    }
+    return res
+  }
+  return withTimeout(run(), timeoutMs, '请求超时，请稍后重试', ctrl)
 }
 
 export const http = {

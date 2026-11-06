@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { ApiError } from '@/api/client'
+import { ApiError, onUnauthorized } from '@/api/client'
 
 import { authApi } from '@/api'
 import { getToken, setToken } from '@/api/client'
@@ -10,6 +10,14 @@ import type { User } from '@/types/proto'
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(getToken())
   const user = ref<User | null>(null)
+
+  /** 会话结束回调：WS 断开、插件宿主停止等副作用由使用方注册，避免 store 之间循环依赖 */
+  const sessionEndHandlers = new Set<() => void>()
+
+  function onSessionEnd(fn: () => void) {
+    sessionEndHandlers.add(fn)
+    return () => sessionEndHandlers.delete(fn)
+  }
 
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
@@ -67,7 +75,14 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     setToken('')
+    // 让 WS、插件宿主等订阅方随登录态一起收尾，避免「已登出但连接还在收消息」
+    for (const fn of sessionEndHandlers) fn()
   }
+
+  // 401 由 api/client 统一捕获：同步清掉内存态，否则 store 里仍是「已登录」
+  onUnauthorized(() => {
+    logout()
+  })
 
   return {
     token,
@@ -81,5 +96,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     updateMe,
     logout,
+    onSessionEnd,
   }
 })

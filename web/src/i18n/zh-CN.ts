@@ -138,6 +138,8 @@ export default {
     previewSticker: '[表情]',
     previewVideo: '[视频]',
     reconnecting: '网络已断开，正在重连…',
+    bootFailed: '加载会话失败，请检查网络或稍后重试',
+    retryBoot: '重新加载',
     announcement: '群公告',
     expand: '展开',
     collapse: '收起',

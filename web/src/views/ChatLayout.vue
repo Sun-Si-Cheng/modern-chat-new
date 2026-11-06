@@ -150,12 +150,34 @@ function openAddFriend() {
 // WS 连接生命周期（挂载连接、卸载断开、上行出口绑定）
 useWebSocket()
 
-onMounted(async () => {
+/** 首屏引导失败（/api/me 网络错误 / 5xx / 超时），需要给用户可重试入口 */
+const bootError = ref(false)
+let listenersBound = false
+
+/** 帧监听与全局快捷键只绑定一次，重试引导不会重复注册 */
+function bindGlobalListeners() {
+  if (listenersBound) return
+  listenersBound = true
+  offAnnouncement = ws.onFrame(onAnnouncementFrame)
+  offNotify = ws.onFrame(onMessageNotify)
+  window.addEventListener('keydown', onKeydown)
+}
+
+async function bootstrap() {
   if (!auth.token) {
     await router.push('/login')
     return
   }
-  await auth.fetchMe()
+  bootError.value = false
+  try {
+    await auth.fetchMe()
+  } catch (e) {
+    // 非 401 失败（断网 / 502 / 超时）：fetchMe 会直接 throw。若放在 onMounted 里，
+    // 后面的会话列表、通知监听、插件宿主都不会初始化，页面会停在半死状态且只能刷新
+    console.warn('[chat] bootstrap failed:', e)
+    bootError.value = true
+    return
+  }
   if (!auth.user) {
     await router.push('/login')
     return
@@ -176,10 +198,16 @@ onMounted(async () => {
     pluginDrawerVisible.value = true
     void router.replace({ path: '/chat' })
   }
-  offAnnouncement = ws.onFrame(onAnnouncementFrame)
-  offNotify = ws.onFrame(onMessageNotify)
-  window.addEventListener('keydown', onKeydown)
+  bindGlobalListeners()
+}
+
+onMounted(() => {
+  void bootstrap()
 })
+
+function retryBoot() {
+  void bootstrap()
+}
 
 // 离开聊天页（登出 / 切到设置或后台 / 被踢）：停掉插件宿主并卸载 iframe 与监听器
 onUnmounted(() => {
@@ -191,6 +219,7 @@ onUnmounted(() => {
   pluginsStore.reset()
   favoritesStore.reset()
   window.removeEventListener('keydown', onKeydown)
+  listenersBound = false
 })
 </script>
 
@@ -199,6 +228,14 @@ onUnmounted(() => {
     <!-- 断线提示：重连成功即消失；期间消息会进失败态，可直接点「重发」 -->
     <div v-if="offline" class="mc-layout__offline" role="status">
       {{ t('chat.reconnecting') }}
+    </div>
+
+    <!-- 首屏引导失败（网络/服务端异常）：给可重试入口，避免停在半死页面只能刷新 -->
+    <div v-if="bootError" class="mc-layout__boot-error" role="alert">
+      <span>{{ t('chat.bootFailed') }}</span>
+      <UiButton size="small" theme="primary" variant="outline" @click="retryBoot">
+        {{ t('chat.retryBoot') }}
+      </UiButton>
     </div>
 
     <AppRail
@@ -367,6 +404,25 @@ onUnmounted(() => {
   white-space: nowrap;
   box-shadow: var(--mc-elev-2);
   pointer-events: none;
+}
+
+/* 首屏引导失败：顶部居中的常驻提示，带重试按钮 */
+.mc-layout__boot-error {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  transform: translateX(-50%);
+  padding: 5px 6px 5px 14px;
+  border-radius: 999px;
+  background: var(--td-error-color, #d54941);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: var(--mc-elev-2);
 }
 
 /* 抽屉遮罩：点击空白处收起 */

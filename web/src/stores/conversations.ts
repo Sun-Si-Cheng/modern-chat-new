@@ -98,6 +98,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (currentConvId.value === convId) currentConvId.value = null
     delete messagesByConv[convId]
     delete hasMoreByConv[convId]
+    delete loadedFirstPageByConv[convId]
     lastReportedReadByConv.delete(convId)
   }
 
@@ -106,6 +107,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     const r = await convApi.clear(convId)
     messagesByConv[convId] = []
     hasMoreByConv[convId] = false
+    loadedFirstPageByConv[convId] = true
     lastReportedReadByConv.delete(convId)
     const c = conversations.value.find((x) => x.id === convId)
     if (c) {
@@ -157,6 +159,12 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
   const loadingMessages = ref(false)
   const hasMoreByConv = reactive<Record<number, boolean>>({})
+  /**
+   * 是否已真正拉取过首屏历史。
+   * 不能再用 messagesByConv 是否存在来判断：会话在未打开时收到实时消息，
+   * 也会为该会话建立数组，导致点开会话时跳过历史拉取、看起来「历史没了」。
+   */
+  const loadedFirstPageByConv = reactive<Record<number, boolean>>({})
   /** convId -> userId -> typing 过期时间戳 */
   const typingByConv = reactive<Record<number, Record<number, number>>>({})
   /** convId -> userId -> 已读到的消息 id */
@@ -215,12 +223,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (editingMessage.value && editingMessage.value.conversationId !== convId) {
       editingMessage.value = null
     }
-    if (!messagesByConv[convId]) {
+    if (!loadedFirstPageByConv[convId]) {
       loadingMessages.value = true
       try {
         const page = await convApi.messages(convId)
-        messagesByConv[convId] = (page.messages ?? []).slice().reverse()
+        // 必须走合并而不是整表赋值：await 期间 WS 可能已把新消息推入该会话，
+        // 直接覆盖会让刚收到的消息从当前视图消失（直到重新打开会话）
         hasMoreByConv[convId] = page.hasMore
+        loadedFirstPageByConv[convId] = true
+        mergeServerPage(convId, (page.messages ?? []).slice().reverse())
       } catch (e) {
         // 会话已失效（被踢 / 已退群）或网络异常：回退选择，避免停在空白会话
         console.warn('[conv] open failed:', e)
@@ -344,9 +355,12 @@ export const useConversationsStore = defineStore('conversations', () => {
       conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, maxId)
     }
     if (maxId > 0 && maxId !== lastReportedReadByConv.get(convId)) {
-      lastReportedReadByConv.set(convId, maxId)
-      sendFrame({ type: 'read', convId, upToId: maxId })
-      readByConv[convId] = { ...readByConv[convId], [auth.user?.id ?? 0]: maxId }
+      // 只有帧真正发出去才记水位：SendFrame 返回 false 时（WS 未连接）帧会被丢弃，
+      // 若先记水位，之后重连 resync 也不会再补发，服务端未读永远清不掉
+      if (sendFrame({ type: 'read', convId, upToId: maxId })) {
+        lastReportedReadByConv.set(convId, maxId)
+        readByConv[convId] = { ...readByConv[convId], [auth.user?.id ?? 0]: maxId }
+      }
     }
   }
 
@@ -555,7 +569,32 @@ export const useConversationsStore = defineStore('conversations', () => {
     mergeServerPage(convId, (page.messages ?? []).slice().reverse(), page.hasMore)
   }
 
-  /** 把服务端返回的消息合并进本地列表（按 id 去重，按 clientMsgId 确认本地 pending） */
+  /** 单个会话本地缓存上限：只保留最新 N 条，避免长时间使用后内存无限增长 */
+  const MAX_CACHED_MESSAGES = 800
+
+  /** 归一化顺序：已落库消息按 id 升序，未落库的 pending（id<0）固定在末尾 */
+  function sortMessages(list: Message[]) {
+    list.sort((a, b) => {
+      const aServer = a.id > 0
+      const bServer = b.id > 0
+      if (aServer && bServer) return a.id - b.id
+      if (aServer !== bServer) return aServer ? -1 : 1
+      return 0
+    })
+  }
+
+  /** 裁剪缓存并返回是否发生了裁剪（保留最新 MAX_CACHED_MESSAGES 条） */
+  function trimMessages(list: Message[]): boolean {
+    if (list.length <= MAX_CACHED_MESSAGES) return false
+    list.splice(0, list.length - MAX_CACHED_MESSAGES)
+    return true
+  }
+
+  /**
+   * 把服务端返回的消息合并进本地列表（按 id 去重，按 clientMsgId 确认本地 pending）。
+   * 合并后统一按 id 排序：catchUp 从已读游标往后拉到的缺口消息 id 可能小于
+   * 已加载的最新页，直接 append 会把旧消息排到新消息之后，聊天记录看起来错乱。
+   */
   function mergeServerPage(convId: number, incoming: Message[], hasMore?: boolean) {
     const list = (messagesByConv[convId] ??= [])
     const knownIds = new Set(list.map((m) => m.id))
@@ -576,7 +615,10 @@ export const useConversationsStore = defineStore('conversations', () => {
         list.push(m)
       }
     }
-    if (hasMore !== undefined && list.length) hasMoreByConv[convId] = hasMore
+    sortMessages(list)
+    const trimmed = trimMessages(list)
+    // 裁剪过说明本地已丢弃更早的消息，hasMore 必须保持 true 才能继续上翻
+    if (hasMore !== undefined && list.length) hasMoreByConv[convId] = trimmed ? true : hasMore
   }
 
   /**
@@ -697,8 +739,13 @@ export const useConversationsStore = defineStore('conversations', () => {
         if (frame.userId === auth.user?.id) {
           const conv = conversations.value.find((c) => c.id === frame.convId)
           if (conv) {
-            conv.unreadCount = 0
-            conv.mentionUnread = false
+            // 其他端可能只读到更早的位置：只有读到的位置覆盖了本端最新消息时才清未读，
+            // 否则会误清掉本端尚未看到的消息（刷新后红点又回来）
+            const latest = conv.lastMessageId ?? 0
+            if (latest === 0 || frame.upToId >= latest) {
+              conv.unreadCount = 0
+              conv.mentionUnread = false
+            }
             conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, frame.upToId)
           }
         }
@@ -809,6 +856,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
       if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
       else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
+      trimMessages(list)
       // 发送者本端不会收到「纯新消息」的 conv_change，列表摘要只能在这里更新；
       // 漏更新会出现「消息已发出，但会话列表的预览与时间还是上一条」。
       const sentConv = conversations.value.find((c) => c.id === convId)
@@ -839,6 +887,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       forwarded: frame.forwarded,
       createdAt: frame.createdAt,
       })
+    trimMessages(list)
 
     const conv = conversations.value.find((c) => c.id === convId)
     // 只有「当前会话 + 页面可见 + 用户贴着最新消息」才自动已读：
@@ -867,6 +916,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     filter.value = 'all'
     editingMessage.value = null
     for (const k of Object.keys(messagesByConv)) delete messagesByConv[Number(k)]
+    for (const k of Object.keys(hasMoreByConv)) delete hasMoreByConv[Number(k)]
+    for (const k of Object.keys(loadedFirstPageByConv)) delete loadedFirstPageByConv[Number(k)]
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
     for (const k of Object.keys(readByConv)) delete readByConv[Number(k)]
     for (const k of Object.keys(drafts)) delete drafts[Number(k)]

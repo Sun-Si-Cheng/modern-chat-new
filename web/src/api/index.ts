@@ -1,4 +1,4 @@
-import { ApiError, http } from './client'
+import { ApiError, http, rawFetch } from './client'
 import type {
   AuthPayload,
   Conversation,
@@ -244,38 +244,39 @@ export const pluginApi = {
   active: () => http.get<Plugin[]>('/plugins/active'),
   /** 下发插件 JS 代码（文本） */
   code: async (id: number): Promise<string> => {
-    const token = localStorage.getItem('mc_token') ?? ''
-    const res = await fetch(`/api/plugins/${id}/code`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await rawFetch(`/api/plugins/${id}/code`)
     if (!res.ok) return ''
     return res.text()
   },
   upload: (file: File) => {
-    const token = localStorage.getItem('mc_token') ?? ''
     // .ts / .mts 交给服务端用 esbuild 转译；其余按 JS 原样入库
     const lang = /\.m?ts$/i.test(file.name) ? 'ts' : 'js'
-    return fetch(`/api/plugins/upload?lang=${lang}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
-      body: file,
-    }).then(async (res) => {
+    return rawFetch(
+      `/api/plugins/upload?lang=${lang}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      },
+      // 插件包可能较大：给上传留更长的超时，但仍要能超时退出
+      60_000,
+    ).then(async (res) => {
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : '上传失败')
+      if (!res.ok) throw new ApiError(res.status, typeof data.error === 'string' ? data.error : '上传失败')
       return { plugin: data as unknown as Plugin, updated: res.headers.get('X-Plugin-Updated') === 'true' }
     })
   },
   /** URL 安装 / 升级（同名覆盖由服务端处理，updated 由响应头标记） */
-  fromUrl: (url: string) => {
-    const token = localStorage.getItem('mc_token') ?? ''
-    return fetch('/api/plugins/from-url', {
+  fromUrl: (url: string) =>
+    rawFetch('/api/plugins/from-url', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     }).then(async (res) => {
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
       if (!res.ok) throw new ApiError(res.status, typeof data.error === 'string' ? data.error : '安装失败')
       return { plugin: data as unknown as Plugin, updated: res.headers.get('X-Plugin-Updated') === 'true' }
-    })
-  },
+    }),
   setEnabled: (id: number, enabled: boolean) => http.patch<Plugin>(`/plugins/${id}`, { enabled }),
   remove: (id: number) => http.delete<{ ok: true }>(`/plugins/${id}`),
 }

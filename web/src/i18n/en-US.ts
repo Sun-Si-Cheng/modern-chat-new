@@ -138,6 +138,8 @@ export default {
     previewSticker: '[Sticker]',
     previewVideo: '[Video]',
     reconnecting: 'Connection lost, reconnecting…',
+    bootFailed: 'Failed to load conversations. Check your network and try again.',
+    retryBoot: 'Reload',
     announcement: 'Announcement',
     expand: 'Expand',
     collapse: 'Collapse',

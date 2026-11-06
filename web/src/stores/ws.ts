@@ -51,9 +51,14 @@ export const useWsStore = defineStore('ws', () => {
     closedByUser = false
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
 
-    socket = new WebSocket(wsUrl())
+    const ws = new WebSocket(wsUrl())
+    socket = ws
 
-    socket.onopen = () => {
+    // 每个回调都先判断自己是否仍是当前连接：快速切页时旧 socket 处于 CLOSING，
+    // connect() 会新建一条；旧连接的 onclose 若继续改状态，会把已连上的新连接
+    // 标成「已断开」，断线横幅将永远不消失（且会再排一次无意义的重连）
+    ws.onopen = () => {
+      if (ws !== socket) return
       connected.value = true
       reconnectDelay = 1000
       startHeartbeat()
@@ -62,7 +67,8 @@ export const useWsStore = defineStore('ws', () => {
       hasConnected.value = true
     }
 
-    socket.onmessage = (ev) => {
+    ws.onmessage = (ev) => {
+      if (ws !== socket) return
       let frame: ServerFrame
       try {
         frame = JSON.parse(ev.data as string) as ServerFrame
@@ -72,7 +78,8 @@ export const useWsStore = defineStore('ws', () => {
       handleFrame(frame)
     }
 
-    socket.onclose = () => {
+    ws.onclose = () => {
+      if (ws !== socket) return
       connected.value = false
       // 断开后无法再得知他人在线状态，清空避免继续显示过期的"在线"
       onlineUsers.value = new Set()
@@ -80,8 +87,9 @@ export const useWsStore = defineStore('ws', () => {
       if (!closedByUser) scheduleReconnect()
     }
 
-    socket.onerror = () => {
-      socket?.close()
+    ws.onerror = () => {
+      if (ws !== socket) return
+      ws.close()
     }
   }
 
@@ -184,8 +192,11 @@ export const useWsStore = defineStore('ws', () => {
       reconnectTimer = null
     }
     stopHeartbeat()
-    socket?.close()
+    // 先摘掉引用再关闭：旧连接的 onclose 会因 ws !== socket 直接返回，
+    // 不会覆盖新连接的状态，也不会再排重连
+    const old = socket
     socket = null
+    old?.close()
     connected.value = false
     onlineUsers.value = new Set()
   }
