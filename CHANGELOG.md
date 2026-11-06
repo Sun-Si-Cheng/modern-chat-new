@@ -6,7 +6,7 @@
 
 ---
 
-## [未发布]
+## [0.10.3] — 2026-11-06
 
 ### 新增
 
@@ -222,7 +222,7 @@
 
 ---
 
-[未发布]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.2...HEAD
+[0.10.3]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.2...v0.10.3
 [0.10.2]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.1...v0.10.2
 [0.10.1]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.0...v0.10.1
 [0.10.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.9.0...v0.10.0
