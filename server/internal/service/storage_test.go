@@ -2,9 +2,14 @@ package service
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -181,4 +186,120 @@ func TestS3OwnsAcceptsLegacyLocalUploads(t *testing.T) {
 			t.Fatalf("%s: got %v, want %v", c.url, got, c.want)
 		}
 	}
+}
+
+// roundTripImagePayload 构造头尾都不同的图片内容。
+// 前 512 字节会被 SaveStream 读去做类型嗅探，若忘记写回就会丢文件头。
+func roundTripImagePayload() []byte {
+	b := make([]byte, 1024)
+	copy(b, "\x89PNG\r\n\x1a\n")
+	for i := 8; i < len(b); i++ {
+		b[i] = byte(i)
+	}
+	return b
+}
+
+// roundTripTextPayload 纯文本内容：不触发缩略图，便于单独验证 S3 上传字节数。
+func roundTripTextPayload() []byte {
+	b := make([]byte, 1024)
+	n := copy(b, "this is a plain text payload\n")
+	for i := n; i < len(b); i++ {
+		b[i] = byte('a' + i%26)
+	}
+	return b
+}
+
+// 回归：上传内容必须逐字节原样落盘。
+// 旧实现只拷贝嗅探后的剩余部分，前 512 字节被静默丢弃，图片/视频全部损坏。
+func TestSaveStreamLocalRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewLocalStorage(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := roundTripImagePayload()
+	url, err := s.SaveStream("image", bytes.NewReader(payload), MaxImageBytes)
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	rel := strings.TrimPrefix(url, "/uploads/")
+	body, err := os.ReadFile(filepath.Join(dir, "uploads", filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !bytes.Equal(body, payload) {
+		t.Fatalf("round-trip mismatch: saved %d bytes, uploaded %d bytes", len(body), len(payload))
+	}
+}
+
+// S3 分支同样必须逐字节完整：用 httptest 伪 S3 接收 PutObject，
+// 覆盖「头部写回 + 上传长度含头」两点（不连接真实对象存储）。
+func TestSaveStreamS3RoundTrip(t *testing.T) {
+	var mu sync.Mutex
+	var puts [][]byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read put body: %v", err)
+			}
+			mu.Lock()
+			puts = append(puts, body)
+			mu.Unlock()
+			w.Header().Set("ETag", `"d41d8cd98f00b204e9800998ecf8427e"`)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s, err := newS3Storage(StorageConfig{
+		Kind:      "s3",
+		Endpoint:  srv.URL,
+		Region:    "us-east-1",
+		Bucket:    "bucket",
+		AccessKey: "ak",
+		SecretKey: "sk",
+	})
+	if err != nil {
+		t.Fatalf("new s3: %v", err)
+	}
+	payload := roundTripTextPayload()
+	if _, err := s.SaveStream("file", bytes.NewReader(payload), MaxFileBytes); err != nil {
+		t.Fatalf("save stream: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(puts) != 1 {
+		t.Fatalf("expected 1 PUT, got %d", len(puts))
+	}
+	// minio-go 默认用 SigV4 streaming（aws-chunked）上传，body 带分块签名头；
+	// 解出第一块载荷再逐字节比对，等价于服务端最终落盘的内容。
+	decoded := decodeAWSChunked(t, puts[0])
+	if !bytes.Equal(decoded, payload) {
+		t.Fatalf("round-trip mismatch: uploaded %d bytes, decoded %d bytes", len(payload), len(decoded))
+	}
+}
+
+// decodeAWSChunked 从 aws-chunked 请求体里取出第一块（<hex-size>;chunk-signature=...\r\n + data）。
+// 小文件只有一个数据块，取首块即可覆盖完整内容。
+func decodeAWSChunked(t *testing.T, body []byte) []byte {
+	t.Helper()
+	i := bytes.Index(body, []byte("\r\n"))
+	if i < 0 {
+		t.Fatalf("malformed aws-chunked body: %q", string(body[:min(len(body), 64)]))
+	}
+	sizeStr := string(body[:i])
+	if j := strings.IndexByte(sizeStr, ';'); j >= 0 {
+		sizeStr = sizeStr[:j]
+	}
+	n, err := strconv.ParseInt(sizeStr, 16, 64)
+	if err != nil {
+		t.Fatalf("malformed chunk size %q: %v", sizeStr, err)
+	}
+	start := int64(i + 2)
+	if int64(len(body)) < start+n {
+		t.Fatalf("chunk truncated: need %d bytes from %d, body %d", n, start, len(body))
+	}
+	return body[start : start+n]
 }

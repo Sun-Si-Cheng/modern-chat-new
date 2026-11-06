@@ -213,8 +213,15 @@ func (s *LocalStorage) SaveStream(kind string, r io.Reader, maxBytes int64) (str
 		_ = os.Remove(tmpName)
 	}
 
+	// 嗅探用掉的头部必须写回文件：io.ReadFull 已经把前 512 字节从 r 读走，
+	// 只拷贝剩余部分会静默丢掉文件开头（图片打不开、视频只播后半段）。
+	if _, err := tmp.Write(head); err != nil {
+		cleanup()
+		return "", err
+	}
+
 	// LimitReader 多留 1 字节：写满说明超限，而不是恰好卡线。
-	// 头部 512 字节已从 r 读走，也要计入总量，否则上限会松动 512B。
+	// 头部 512 字节已写入临时文件，也要计入总量，否则上限会松动 512B。
 	remain := maxBytes + 1 - int64(hn)
 	n, err := io.Copy(tmp, io.LimitReader(r, remain))
 	if err != nil {
@@ -345,6 +352,12 @@ func (s *S3Storage) SaveStream(kind string, r io.Reader, maxBytes int64) (string
 		_ = os.Remove(tmpName)
 	}
 
+	// 嗅探用掉的头部必须写回临时文件（否则上传内容缺前 512 字节）。
+	if _, err := tmp.Write(head); err != nil {
+		cleanup()
+		return "", err
+	}
+
 	// 与本地实现一致：头部计入总量，LimitReader 留 1 字节余量判超限
 	remain := maxBytes + 1 - int64(hn)
 	n, err := io.Copy(tmp, io.LimitReader(r, remain))
@@ -380,7 +393,8 @@ func (s *S3Storage) SaveStream(kind string, r io.Reader, maxBytes int64) (string
 		_ = os.Remove(tmpName)
 	}()
 
-	_, err = s.client.PutObject(ctx, s.bucket, key, f, n,
+	// size 用含头总长度：临时文件现在已经是完整内容，传 n 会只传后半段
+	_, err = s.client.PutObject(ctx, s.bucket, key, f, total,
 		minio.PutObjectOptions{ContentType: mimeOfExt(kind, ext)})
 	if err != nil {
 		return "", fmt.Errorf("上传到对象存储失败: %w", err)
