@@ -2,10 +2,12 @@ package service
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -32,6 +34,14 @@ const (
 	thumbJPEGQuality = 80
 	// thumbSkipEdge 原图最长边不超过该值时不生成（缩略图无收益）。
 	thumbSkipEdge = 480
+	// maxThumbPixels 允许解码的最大像素总数（宽 × 高）。
+	//
+	// 防解压炸弹：几 KB 的 PNG/WebP 头就能声明几十万像素边长，解码器会按
+	// 声明尺寸分配内存（RGBA 每像素 4 字节），未设限时一张 2 万 × 2 万的头
+	// 就能吃掉 ~1.6 GB 内存并触发 OOM。4000 万像素（约 6325×6325）足够覆盖
+	// 常见手机原图，RGBA 缓冲约 160 MB；超过则按「无法生成缩略图」跳过，
+	// 前端回退原图。
+	maxThumbPixels = 40_000_000
 )
 
 // ThumbSuffix 缩略图文件名后缀（thumbURL = 原名去扩展名 + suffix）。
@@ -45,9 +55,17 @@ func ThumbPath(p string) string {
 }
 
 // makeThumbJPEG 读取 srcPath 指向的图片并生成缩略图 JPEG 字节。
-// 返回 ok=false 表示不需要 / 无法生成（源图过小、GIF、解码失败）：
+// 返回 ok=false 表示不需要 / 无法生成（源图过小、GIF、解码失败、像素超限）：
 // 调用方直接跳过即可，前端会回退原图。
 func makeThumbJPEG(srcPath string, srcSize int64) (thumb []byte, ok bool, err error) {
+	// 解码器面对损坏/构造的图片可能 panic（标准库少数分支与 x/image 都是如此），
+	// 缩略图属于「可有可无」的派生步骤，不能让它把整个上传请求带崩。
+	defer func() {
+		if r := recover(); r != nil {
+			thumb, ok, err = nil, false, fmt.Errorf("thumbnail panic: %v", r)
+		}
+	}()
+
 	ext := strings.ToLower(filepath.Ext(srcPath))
 	if ext == ".gif" {
 		return nil, false, nil
@@ -58,6 +76,23 @@ func makeThumbJPEG(srcPath string, srcSize int64) (thumb []byte, ok bool, err er
 		return nil, false, err
 	}
 	defer func() { _ = f.Close() }()
+
+	// 先只读文件头拿尺寸：DecodeConfig 不会解像素数据，能在分配内存前拦下
+	// 解压炸弹（宽高大的图片会让 image.Decode 先按声明尺寸开缓冲）。
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		// 头都读不出来（损坏文件）：按「无缩略图」处理
+		return nil, false, nil
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 ||
+		int64(cfg.Width)*int64(cfg.Height) > maxThumbPixels {
+		slog.Warn("thumbnail skipped: image too large",
+			"file", srcPath, "width", cfg.Width, "height", cfg.Height)
+		return nil, false, nil
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, false, err
+	}
 
 	src, _, err := image.Decode(f)
 	if err != nil {

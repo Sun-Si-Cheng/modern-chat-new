@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -220,6 +221,41 @@ func (s *UserStore) CountBanned() (int64, error) {
 		Where("banned_until IS NOT NULL AND banned_until > ?", time.Now()).
 		Count(&n).Error
 	return n, err
+}
+
+// ErrLastAdmin 不允许降级最后一名站长。
+var ErrLastAdmin = errors.New("cannot demote the last admin")
+
+// SetRole 修改角色，原子地保护最后一名站长。
+//
+// 修复缺陷：原实现「先 CountByRole 再 Save」不是原子的，两个管理员同时
+// 降级对方时都看到 n=2 并各自成功，最终一个站长都不剩。这里在事务内按 id
+// 顺序 FOR UPDATE 锁住全部 admin 行：并发请求串行化，第二个会看到只剩一人。
+func (s *UserStore) SetRole(id uint, role string) (bool, error) {
+	var changed bool
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var adminIDs []uint
+		if err := tx.Raw("SELECT id FROM users WHERE role = ? ORDER BY id FOR UPDATE", "admin").
+			Scan(&adminIDs).Error; err != nil {
+			return err
+		}
+		var target model.User
+		if err := tx.First(&target, id).Error; err != nil {
+			return err
+		}
+		if target.Role == role {
+			return nil
+		}
+		if target.Role == "admin" && role != "admin" && len(adminIDs) <= 1 {
+			return ErrLastAdmin
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", id).Update("role", role).Error; err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	return changed, err
 }
 
 // CountByRole 按角色统计用户数。

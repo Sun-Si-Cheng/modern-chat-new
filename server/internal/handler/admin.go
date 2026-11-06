@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -15,7 +16,6 @@ import (
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
 )
@@ -454,20 +454,19 @@ func (h *AdminHandler) SetRole(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "changed": false})
 		return
 	}
-	if u.Role == "admin" {
-		n, err := h.users.CountByRole("admin")
-		if err != nil {
-			internal(c, err)
-			return
-		}
-		if n <= 1 {
+	// 降级判断与写入在同一事务内（行锁串行化），避免两个管理员并发降级对方
+	// 都通过「至少还有一名站长」检查，最终一个站长都不剩。
+	changed, err := h.users.SetRole(u.ID, req.Role)
+	if err != nil {
+		if errors.Is(err, store.ErrLastAdmin) {
 			fail(c, http.StatusForbidden, "至少需要保留一个站长")
 			return
 		}
-	}
-	u.Role = req.Role
-	if err := h.users.Save(u); err != nil {
 		internal(c, err)
+		return
+	}
+	if !changed {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "changed": false})
 		return
 	}
 	// 鉴权中间件每次请求都按 id 查库，角色变更立即生效，无需 token_version+1
@@ -528,63 +527,14 @@ func (h *AdminHandler) Announce(c *gin.Context) {
 		return
 	}
 
-	conv, err := h.convs.EnsureSystemConversation("系统通知")
+	conv, msg, userIDs, err := h.convs.Announce(admin.ID, content)
 	if err != nil {
+		if errors.Is(err, store.ErrNoUsers) {
+			fail(c, http.StatusBadRequest, "还没有用户")
+			return
+		}
 		internal(c, err)
 		return
-	}
-	userIDs, err := h.users.AllIDs()
-	if err != nil {
-		internal(c, err)
-		return
-	}
-	if len(userIDs) == 0 {
-		fail(c, http.StatusBadRequest, "还没有用户")
-		return
-	}
-
-	members := make([]model.ConversationMember, 0, len(userIDs))
-	for _, uid := range userIDs {
-		members = append(members, model.ConversationMember{
-			ConversationID: conv.ID,
-			UserID:         uid,
-			Role:           "member",
-		})
-	}
-	if err := h.convs.AddMembersIgnoreDuplicate(members); err != nil {
-		internal(c, err)
-		return
-	}
-
-	msg := &model.Message{
-		ConversationID: conv.ID,
-		SenderID:       admin.ID,
-		ClientMsgID:    fmt.Sprintf("ann-%d-%d", time.Now().UnixNano(), admin.ID),
-		MsgType:        "text",
-		Content:        content,
-	}
-	if err := h.msgs.Create(msg); err != nil {
-		internal(c, err)
-		return
-	}
-
-	msgID := uint64(msg.ID)
-	inbox := make([]model.UserConversation, 0, len(userIDs))
-	for _, uid := range userIDs {
-		inbox = append(inbox, model.UserConversation{
-			UserID:         uid,
-			ConversationID: conv.ID,
-			LastMessageID:  &msgID,
-			LastMessageAt:  &msg.CreatedAt,
-		})
-	}
-	if err := h.msgs.UpsertInbox(inbox); err != nil {
-		internal(c, err)
-		return
-	}
-	// 未读 +1（发送者本人除外）
-	if err := h.msgs.BumpUnread(conv.ID, admin.ID, msgID); err != nil {
-		slog.Warn("announce unread bump", "err", err.Error())
 	}
 
 	frame := gin.H{

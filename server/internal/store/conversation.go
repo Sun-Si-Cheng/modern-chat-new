@@ -852,10 +852,14 @@ func (s *ConversationStore) CountForUser(userID uint) (int64, error) {
 
 // AddMembersIgnoreDuplicate 批量加成员，已存在则跳过（公告把全站用户拉进系统会话时需要）。
 func (s *ConversationStore) AddMembersIgnoreDuplicate(rows []model.ConversationMember) error {
+	return addMembersIgnoreDuplicate(s.db, rows)
+}
+
+func addMembersIgnoreDuplicate(db *gorm.DB, rows []model.ConversationMember) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	return s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
 // systemConvType 系统通知会话（单聊=1 群聊=2）。
@@ -863,8 +867,12 @@ const systemConvType = 3
 
 // EnsureSystemConversation 取系统通知会话，不存在则创建。
 func (s *ConversationStore) EnsureSystemConversation(name string) (*model.Conversation, error) {
+	return ensureSystemConversation(s.db, name)
+}
+
+func ensureSystemConversation(db *gorm.DB, name string) (*model.Conversation, error) {
 	var c model.Conversation
-	err := s.db.Where("type = ?", systemConvType).Order("id ASC").First(&c).Error
+	err := db.Where("type = ?", systemConvType).Order("id ASC").First(&c).Error
 	if err == nil {
 		return &c, nil
 	}
@@ -872,10 +880,80 @@ func (s *ConversationStore) EnsureSystemConversation(name string) (*model.Conver
 		return nil, err
 	}
 	c = model.Conversation{Type: systemConvType, Name: &name}
-	if err := s.db.Create(&c).Error; err != nil {
+	if err := db.Create(&c).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// ErrNoUsers 全站公告时库里一个用户都没有。
+var ErrNoUsers = errors.New("no users")
+
+// Announce 全站公告：在单个事务内完成「取/建系统会话 → 补齐成员 → 写消息 →
+// 推进全员收件箱 → 未读 +1」。
+//
+// 修复缺陷：原实现是 5 次独立写入，中途失败会留下「消息已入库但成员/收件箱没更新」
+// 的永久不一致；未读 +1 失败还只打日志继续广播，前端未读数与库内状态对不上。
+// 事务化后任一步失败整体回滚，调用方不再广播。
+func (s *ConversationStore) Announce(adminID uint, content string) (*model.Conversation, *model.Message, []uint, error) {
+	var (
+		conv    *model.Conversation
+		msg     *model.Message
+		userIDs []uint
+	)
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.User{}).Order("id ASC").Pluck("id", &userIDs).Error; err != nil {
+			return err
+		}
+		if len(userIDs) == 0 {
+			return ErrNoUsers
+		}
+		c, err := ensureSystemConversation(tx, "系统通知")
+		if err != nil {
+			return err
+		}
+		conv = c
+		members := make([]model.ConversationMember, 0, len(userIDs))
+		for _, uid := range userIDs {
+			members = append(members, model.ConversationMember{
+				ConversationID: c.ID,
+				UserID:         uid,
+				Role:           "member",
+			})
+		}
+		if err := addMembersIgnoreDuplicate(tx, members); err != nil {
+			return err
+		}
+		m := &model.Message{
+			ConversationID: c.ID,
+			SenderID:       adminID,
+			ClientMsgID:    fmt.Sprintf("ann-%d-%d", time.Now().UnixNano(), adminID),
+			MsgType:        "text",
+			Content:        content,
+		}
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+		msg = m
+		msgID := uint64(m.ID)
+		rows := make([]model.UserConversation, 0, len(userIDs))
+		for _, uid := range userIDs {
+			rows = append(rows, model.UserConversation{
+				UserID:         uid,
+				ConversationID: c.ID,
+				LastMessageID:  &msgID,
+				LastMessageAt:  &m.CreatedAt,
+			})
+		}
+		if err := upsertInbox(tx, rows); err != nil {
+			return err
+		}
+		return bumpUnread(tx, c.ID, adminID, msgID)
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return conv, msg, userIDs, nil
 }
 
 // MaxGroupMembers 群成员上限（控制 fan-out 写放大）。

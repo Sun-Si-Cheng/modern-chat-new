@@ -2,6 +2,8 @@ package service
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -146,5 +148,44 @@ func TestWriteLocalThumb_CreatesFile(t *testing.T) {
 	thumb := ThumbPath(src)
 	if _, err := os.Stat(thumb); err != nil {
 		t.Fatalf("缩略图文件不存在: %v", err)
+	}
+}
+
+func writePNGChunk(buf *bytes.Buffer, typ string, data []byte) {
+	buf.WriteString(typ)
+	buf.Write(data)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(data)
+	_ = binary.Write(buf, binary.BigEndian, crc.Sum32())
+}
+
+// TestMakeThumbJPEG_SkipsDecompressionBomb 构造只含合法 PNG 头的「解压炸弹」：
+// IHDR 声明 30000×30000（9 亿像素，RGBA 约 3.6 GB），实际没有任何像素数据。
+// 必须在解码前按尺寸拒绝，否则 image.Decode 会按声明尺寸分配内存。
+func TestMakeThumbJPEG_SkipsDecompressionBomb(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "bomb.png")
+
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], 30000) // width
+	binary.BigEndian.PutUint32(ihdr[4:], 30000) // height
+	ihdr[8] = 8                                 // bit depth
+	ihdr[9] = 2                                 // color type: truecolor
+	writePNGChunk(&buf, "IHDR", ihdr)
+	writePNGChunk(&buf, "IEND", nil)
+
+	if err := os.WriteFile(p, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	thumb, ok, err := makeThumbJPEG(p, int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("像素超限属于「跳过」，不应返回错误: %v", err)
+	}
+	if ok || len(thumb) != 0 {
+		t.Fatal("解压炸弹不应生成缩略图")
 	}
 }
