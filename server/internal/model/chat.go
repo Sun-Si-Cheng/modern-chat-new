@@ -43,7 +43,8 @@ type Message struct {
 	SenderID    uint   `gorm:"index:idx_messages_sender" json:"senderId"`
 	ClientMsgID string `gorm:"size:36;uniqueIndex:idx_conv_clientmsg,priority:2" json:"clientMsgId"`
 	MsgType     string `gorm:"size:32;default:text" json:"msgType"`
-	Content     string `gorm:"size:1000" json:"content"`
+	// Content TEXT：后台允许单条消息最长 5000 字符，VARCHAR(1000) 会报 1406 或静默截断
+	Content     string `gorm:"type:text" json:"content"`
 	IsRecalled  bool   `json:"isRecalled"`
 	// RecalledAt 撤回时间。前端据此显示「XXX 撤回了一条消息」并在 3 分钟后把
 	// 这条提示从聊天记录里移除；为 NULL 表示历史遗留的撤回消息（无时间信息）。
