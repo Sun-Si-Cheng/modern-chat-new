@@ -20,9 +20,18 @@ func (s *PushStore) Upsert(sub *model.PushSubscription) error {
 	}).Create(sub).Error
 }
 
-// Remove 删除某个端点（用户关闭推送或端点已失效）。
+// Remove 删除某个端点（端点已失效时由发送侧清理，不区分用户）。
 func (s *PushStore) Remove(endpoint string) error {
 	return s.db.Where("endpoint = ?", endpoint).Delete(&model.PushSubscription{}).Error
+}
+
+// RemoveForUser 删除某用户自己的订阅端点（关闭推送）。
+//
+// 修复缺陷：原删除接口只按 endpoint 删，任何登录用户只要知道别人的
+// endpoint 就能替对方退订。这里按 user_id 限定，越权请求影响 0 行。
+func (s *PushStore) RemoveForUser(userID uint, endpoint string) error {
+	return s.db.Where("user_id = ? AND endpoint = ?", userID, endpoint).
+		Delete(&model.PushSubscription{}).Error
 }
 
 // ForUser 某用户的全部订阅端点。

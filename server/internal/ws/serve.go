@@ -63,7 +63,15 @@ func Serve(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	// token 优先取 query（兼容现有前端），没有时回退到登录下发的同源 cookie。
+	// 走 cookie 可避免 token 出现在反向代理 / 访问日志的 URL 里；
+	// query 方式继续保留，不改变现有握手契约。
 	token := r.URL.Query().Get("token")
+	if token == "" {
+		if ck, err := r.Cookie(middleware.AuthCookieName); err == nil {
+			token = ck.Value
+		}
+	}
 	if token == "" {
 		http.Error(w, `{"error":"登录已失效，请重新登录"}`, http.StatusUnauthorized)
 		return

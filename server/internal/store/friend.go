@@ -2,6 +2,7 @@ package store
 
 import (
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 )
@@ -12,6 +13,18 @@ type FriendStore struct{ db *gorm.DB }
 func NewFriendStore(db *gorm.DB) *FriendStore { return &FriendStore{db: db} }
 
 func (s *FriendStore) Create(f *model.Friend) error { return s.db.Create(f).Error }
+
+// EnsureAccepted 确保 a→b 这条关系存在且 status=1（同意好友申请时用）。
+//
+// (user_id, friend_id) 上有唯一索引：双方互发申请时，反向那条可能已经是
+// status=0，直接插入会撞唯一索引；这里用 upsert 把已有行改成已通过。
+func (s *FriendStore) EnsureAccepted(userID, friendID uint) error {
+	row := model.Friend{UserID: userID, FriendID: friendID, Status: 1}
+	return s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "friend_id"}},
+		DoUpdates: clause.Assignments(map[string]any{"status": int8(1)}),
+	}).Create(&row).Error
+}
 
 func (s *FriendStore) Save(f *model.Friend) error { return s.db.Save(f).Error }
 

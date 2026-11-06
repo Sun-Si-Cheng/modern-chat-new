@@ -204,8 +204,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if ops.RequireEmailVerify && !hasUsers {
 		slog.Info("first account skips email verification (bootstrap)")
 	}
-	if ops.RequireEmailVerify && !h.mailerReady() {
-		slog.Warn("email verification is on but SMTP is not configured; registration falls back to no verification")
+	// 站点要求邮箱验证但 SMTP 未配置/未启用时，注册必须失败而不是静默跳过：
+	// 原来的降级会让攻击者绕过「必须验证邮箱」的站点策略批量注册。
+	// 首账号豁免（上面已放行），部署者不会被锁在注册页外。
+	if ops.RequireEmailVerify && !h.mailerReady() && hasUsers {
+		slog.Warn("registration rejected: email verification required but SMTP is not configured")
+		fail(c, http.StatusServiceUnavailable, "站点要求邮箱验证但邮件服务未配置，请联系站长")
+		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)

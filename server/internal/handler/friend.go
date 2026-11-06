@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
@@ -127,6 +129,12 @@ func (h *FriendHandler) Apply(c *gin.Context) {
 
 	f := &model.Friend{UserID: me.ID, FriendID: target.ID, Status: 0}
 	if err := h.friends.Create(f); err != nil {
+		// (user_id, friend_id) 唯一索引挡住并发重复申请：对方已经收到一条，
+		// 这里按「已是好友或申请中」返回，而不是 500。
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			fail(c, http.StatusConflict, "对方已是好友或申请中")
+			return
+		}
 		internal(c, err)
 		return
 	}
@@ -172,8 +180,7 @@ func (h *FriendHandler) Handle(c *gin.Context) {
 		internal(c, err)
 		return
 	}
-	reverse := &model.Friend{UserID: me.ID, FriendID: f.UserID, Status: 1}
-	if err := h.friends.Create(reverse); err != nil {
+	if err := h.friends.EnsureAccepted(me.ID, f.UserID); err != nil {
 		internal(c, err)
 		return
 	}

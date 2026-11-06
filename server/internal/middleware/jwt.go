@@ -15,9 +15,10 @@ import (
 
 const TokenTTL = 7 * 24 * time.Hour
 
-// authCookieName 与 localStorage 里的 token 是同一个 JWT。
-// 浏览器 <img>/<video> 无法附带 Authorization 头，上传文件访问只能靠同源 cookie。
-const authCookieName = "mc_auth"
+// AuthCookieName 与 localStorage 里的 token 是同一个 JWT。
+// 浏览器 <img>/<video> 无法附带 Authorization 头，上传文件访问只能靠同源 cookie；
+// WebSocket 握手也支持用它替代 query token（避免 token 出现在代理访问日志里）。
+const AuthCookieName = "mc_auth"
 
 type userCtxKey struct{}
 
@@ -114,7 +115,7 @@ func UploadAuth(users *store.UserStore, secret string) gin.HandlerFunc {
 		token := ""
 		if h := c.GetHeader("Authorization"); strings.HasPrefix(h, "Bearer ") {
 			token = strings.TrimPrefix(h, "Bearer ")
-		} else if v, err := c.Cookie(authCookieName); err == nil {
+		} else if v, err := c.Cookie(AuthCookieName); err == nil {
 			token = v
 		}
 		if token == "" {
@@ -149,12 +150,12 @@ func UploadAuth(users *store.UserStore, secret string) gin.HandlerFunc {
 // setAuthCookie 写入与 Bearer token 相同的 HttpOnly cookie。
 // Secure 仅在 HTTPS（含反代 X-Forwarded-Proto）时开启，避免 HTTP 部署拿不到 cookie。
 func setAuthCookie(c *gin.Context, token string) {
-	if v, err := c.Cookie(authCookieName); err == nil && v == token {
+	if v, err := c.Cookie(AuthCookieName); err == nil && v == token {
 		return
 	}
 	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(authCookieName, token, int(TokenTTL.Seconds()), "/", "", secure, true)
+	c.SetCookie(AuthCookieName, token, int(TokenTTL.Seconds()), "/", "", secure, true)
 }
 
 func abort401(c *gin.Context) {

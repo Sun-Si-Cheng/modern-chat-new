@@ -73,7 +73,7 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "endpoint 不能为空")
 		return
 	}
-	if err := h.subs.Remove(endpoint); err != nil {
+	if err := h.subs.RemoveForUser(middleware.UserFrom(c).ID, endpoint); err != nil {
 		internal(c, err)
 		return
 	}

@@ -47,8 +47,8 @@ type Message struct {
 	ClientMsgID string `gorm:"size:36;uniqueIndex:idx_conv_clientmsg,priority:2" json:"clientMsgId"`
 	MsgType     string `gorm:"size:32;default:text" json:"msgType"`
 	// Content TEXT：后台允许单条消息最长 5000 字符，VARCHAR(1000) 会报 1406 或静默截断
-	Content     string `gorm:"type:text" json:"content"`
-	IsRecalled  bool   `json:"isRecalled"`
+	Content    string `gorm:"type:text" json:"content"`
+	IsRecalled bool   `json:"isRecalled"`
 	// RecalledAt 撤回时间。前端据此显示「XXX 撤回了一条消息」并在 3 分钟后把
 	// 这条提示从聊天记录里移除；为 NULL 表示历史遗留的撤回消息（无时间信息）。
 	RecalledAt *time.Time `gorm:"type:datetime(3)" json:"recalledAt"`
@@ -181,8 +181,8 @@ func (c *ConversationInvite) Valid() bool {
 // status: 0=待申请（user 申请加 friend）1=已通过 2=已拒绝。
 type Friend struct {
 	ID        uint      `gorm:"primaryKey" json:"-"`
-	UserID    uint      `gorm:"index:idx_uf,priority:1" json:"-"`
-	FriendID  uint      `gorm:"index:idx_uf,priority:2" json:"-"`
+	UserID    uint      `gorm:"index:idx_uf,priority:1;uniqueIndex:uk_friends_pair,priority:1" json:"-"`
+	FriendID  uint      `gorm:"index:idx_uf,priority:2;uniqueIndex:uk_friends_pair,priority:2" json:"-"`
 	Status    int8      `json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -257,9 +257,9 @@ type PasswordReset struct {
 // 库里只存哈希（sha256(code + email + purpose + 服务端密钥)），不存明文。
 type EmailCode struct {
 	ID        uint       `gorm:"primaryKey" json:"-"`
-	Email     string     `gorm:"size:254;not null;index" json:"-"`
+	Email     string     `gorm:"size:254;not null;uniqueIndex:uk_email_codes_email_purpose,priority:1" json:"-"`
 	CodeHash  string     `gorm:"size:64;not null" json:"-"`
-	Purpose   string     `gorm:"size:16;not null;default:register" json:"-"`
+	Purpose   string     `gorm:"size:16;not null;default:register;uniqueIndex:uk_email_codes_email_purpose,priority:2" json:"-"`
 	Attempts  int        `gorm:"not null;default:0" json:"-"`
 	ExpiresAt time.Time  `gorm:"type:datetime(3);not null" json:"-"`
 	UsedAt    *time.Time `gorm:"type:datetime(3)" json:"-"`

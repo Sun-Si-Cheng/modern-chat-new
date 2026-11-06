@@ -192,7 +192,16 @@ func main() {
 		Updater:       updater,
 	})
 
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+	// 只设读头/空闲超时，不设 ReadTimeout / WriteTimeout：
+	// WebSocket 与文件上传/下载都是长连接，整体读写超时会误杀正常会话。
+	// ReadHeaderTimeout 防 Slowloris（只发一半请求头长期占连接），
+	// IdleTimeout 回收 keep-alive 空闲连接（默认无上限）。
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
 	go func() {
 		slog.Info("server started", "port", cfg.Port, "mode", cfg.GinMode)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

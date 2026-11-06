@@ -59,6 +59,11 @@ func (s *MessageStore) AfterID(convID, viewerID uint, afterID uint64, limit int)
 		rows = rows[:limit]
 		hasMore = true
 	}
+	// 与首屏分页保持一致：补齐的消息同样要带引用摘要，否则断线重连后
+	// 增量消息里的引用块会渲染成空白，直到刷新才恢复。
+	if err := s.AttachReply(rows); err != nil {
+		return nil, false, err
+	}
 	return rows, hasMore, nil
 }
 
