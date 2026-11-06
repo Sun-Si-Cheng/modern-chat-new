@@ -324,12 +324,16 @@ watch(
     if (!c || c.type !== 2) return
     memberNamesFailed = false
     for (const k of Object.keys(memberNameCache)) delete memberNameCache[Number(k)]
-    void convStore.loadMembers(c.id, true).then((members) => {
-      for (const m of members) {
-        memberNameCache[m.userId] = m.user.nickname
-        if (m.userId === auth.user?.id) myGroupRole.value = m.role
-      }
-    })
+    void convStore
+      .loadMembers(c.id, true)
+      .then((members) => {
+        for (const m of members) {
+          memberNameCache[m.userId] = m.user.nickname
+          if (m.userId === auth.user?.id) myGroupRole.value = m.role
+        }
+      })
+      // 成员刷新失败不影响消息展示，但必须吞掉 rejection，否则控制台出现未处理异常
+      .catch(() => undefined)
   },
 )
 

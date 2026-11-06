@@ -816,7 +816,7 @@ export default {
     cache: 'Local cache',
     cacheHint: 'Static resources cached for this site. Offline assets are downloaded again after clearing.',
     cacheUsage: 'Cache used',
-    cacheUsageHint: 'PWA static assets; safe to clear',
+    cacheUsageHint: 'Approximate site storage; clearing removes the PWA static cache only',
     cachePrefs: 'Local preferences',
     cachePrefsHint: 'Language, theme, layout and background settings; never cleared',
     cacheClear: 'Clear local cache',

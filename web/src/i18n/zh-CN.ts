@@ -817,7 +817,7 @@ export default {
     cache: '本地缓存',
     cacheHint: '浏览器为本站缓存的静态资源；清空后离线访问会重新下载。',
     cacheUsage: '已用缓存',
-    cacheUsageHint: 'PWA 静态资源，可清理',
+    cacheUsageHint: '本站存储的近似占用；清理只删除 PWA 静态缓存',
     cachePrefs: '本地偏好',
     cachePrefsHint: '语言、主题、布局与背景设置，不会被清理',
     cacheClear: '清空本地缓存',

@@ -104,9 +104,15 @@ function onMessageNotify(frame: ServerFrame) {
   const conv = convStore.conversations.find((c) => c.id === frame.convId)
   if (!conv || conv.muted) return
   const name = conv.type === 1 ? (conv.peer?.nickname ?? t('app.name')) : (conv.name ?? t('app.name'))
-  showMessageNotification(name, notifyPreview(frame), () => {
-    void convStore.openConversation(frame.convId)
-  })
+  showMessageNotification(
+    name,
+    notifyPreview(frame),
+    () => {
+      void convStore.openConversation(frame.convId).catch(() => undefined)
+    },
+    // 按会话区分 tag：多个会话的新消息互不覆盖，同一会话只保留最新一条
+    `mc-conv-${frame.convId}`,
+  )
 }
 
 // 离线期间产生的公告没有 WS 帧：以系统会话最后一条消息为准补弹
@@ -196,7 +202,8 @@ async function bootstrap() {
   // 设置页的「插件」入口通过 ?panel=plugins 回到聊天页并直接打开面板
   if (route.query.panel === 'plugins') {
     pluginDrawerVisible.value = true
-    void router.replace({ path: '/chat' })
+    // 导航失败（同路由重复跳转等）不影响页面，吞掉避免未处理 rejection
+    void router.replace({ path: '/chat' }).catch(() => undefined)
   }
   bindGlobalListeners()
 }

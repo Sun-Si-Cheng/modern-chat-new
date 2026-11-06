@@ -110,11 +110,20 @@ export async function setPushEnabled(on: boolean): Promise<boolean> {
   return true
 }
 
-/** 页面不可见时弹出通知；点击后聚焦窗口并打开对应会话 */
-export function showMessageNotification(title: string, body: string, onClick: () => void) {
+/**
+ * 页面不可见时弹出通知；点击后聚焦窗口并打开对应会话。
+ * tag 按会话区分：不同会话的通知各自堆叠，同一会话的新消息只替换旧通知，
+ * 否则固定 tag 会让后来的消息把其他会话的通知顶掉（用户只能看到最后一条）。
+ */
+export function showMessageNotification(
+  title: string,
+  body: string,
+  onClick: () => void,
+  tag = 'mc-message',
+) {
   if (!notificationsEnabled() || !document.hidden) return
   try {
-    const n = new Notification(title, { body, icon: '/icon-192.png', tag: 'mc-message' })
+    const n = new Notification(title, { body, icon: '/icon-192.png', tag })
     n.onclick = () => {
       window.focus()
       onClick()

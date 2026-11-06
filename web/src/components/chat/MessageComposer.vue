@@ -112,7 +112,13 @@ onMounted(() => {
 // ===== 图片上传 =====
 
 const imageInput = ref<HTMLInputElement | null>(null)
-const uploading = ref(false)
+/**
+ * 并发上传计数而非布尔标志：图片、视频、语音可能同时上传，
+ * 用共享布尔值时先完成的那条会把 uploading 置 false，后一条仍在传就被误判为「已结束」，
+ * 按钮提前解禁、提示提前消失。
+ */
+const activeUploads = ref(0)
+const uploading = computed(() => activeUploads.value > 0)
 
 function pickImage() {
   imageInput.value?.click()
@@ -173,7 +179,7 @@ async function onImageChange(e: Event) {
     void MessagePlugin.warning(t('message.imageTooLargeMB', { mb: siteStore.config.maxImageMB }))
     return
   }
-  uploading.value = true
+  activeUploads.value += 1
   try {
     const payload = await compressImage(file)
     const name = payload === file ? file.name : file.name.replace(/\.\w+$/, '') + '.webp'
@@ -182,7 +188,7 @@ async function onImageChange(e: Event) {
   } catch (err) {
     void MessagePlugin.error(String(err))
   } finally {
-    uploading.value = false
+    activeUploads.value -= 1
   }
 }
 
@@ -207,14 +213,14 @@ async function onVideoChange(e: Event) {
     void MessagePlugin.warning(t('message.videoTooLargeMB', { mb: siteStore.config.maxVideoMB }))
     return
   }
-  uploading.value = true
+  activeUploads.value += 1
   try {
     const r = await mediaApi.upload('video', file, file.name || 'video.mp4')
     sendMediaMsg(convId, 'video', r.url)
   } catch (err) {
     void MessagePlugin.error(String(err))
   } finally {
-    uploading.value = false
+    activeUploads.value -= 1
   }
 }
 
@@ -373,14 +379,14 @@ async function toggleRecord() {
       void MessagePlugin.warning(t('message.recordTooShort'))
       return
     }
-    uploading.value = true
+    activeUploads.value += 1
     try {
       const r = await mediaApi.upload('audio', blob, 'voice.webm')
       sendMediaMsg(convId, 'audio', r.url)
     } catch (err) {
       void MessagePlugin.error(String(err))
     } finally {
-      uploading.value = false
+      activeUploads.value -= 1
     }
   }
 

@@ -108,12 +108,18 @@ async function onNotifyToggle(v: unknown) {
     void MessagePlugin.warning(t('settings.notifyUnsupported'))
     return
   }
-  const ok = await setNotificationsEnabled(on)
-  notifyOn.value = ok
-  if (on && !ok) {
+  try {
+    const ok = await setNotificationsEnabled(on)
+    notifyOn.value = ok
+    if (on && !ok) {
+      void MessagePlugin.error(t('settings.notifyDenied'))
+    } else {
+      void MessagePlugin.success(on ? t('settings.notifyOn') : t('settings.notifyOff'))
+    }
+  } catch {
+    // requestPermission 在部分浏览器/隐私模式下会 reject：给出明确失败提示
+    notifyOn.value = false
     void MessagePlugin.error(t('settings.notifyDenied'))
-  } else {
-    void MessagePlugin.success(on ? t('settings.notifyOn') : t('settings.notifyOff'))
   }
 }
 
