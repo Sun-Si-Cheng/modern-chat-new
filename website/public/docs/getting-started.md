@@ -131,7 +131,7 @@ curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/insta
 
 脚本自动检测服务器架构（amd64/arm64）与发行版（apt/dnf/yum），下载对应的预编译发行包——服务器**无需 Go / Node / git**，全程不编译。交互问答都有默认值，直接回车即可全自动；也可环境变量预设（`RELEASE_SOURCE=gitee|github` 选源、`RELEASE_TAG` 指定版本、`DOMAIN`/`DB_MODE` 等）。详见 [运维手册 §3.1](docs/运维手册.md)。
 
-发版流程：打 tag 后在构建机运行 `scripts/package-release.sh`，把 `dist-release/` 下的 tar.gz 与 .sha256 上传为 Release 附件（Gitee / GitHub 都可；后台图形化更新与安装脚本按 `RELEASE_SOURCE` 自动下载新版本）。
+发版流程：更新 `CHANGELOG.md` 并同步 `web/`、`website/` 的版本号后，先运行 `sh scripts/check-version.sh` 确认一致（以 CHANGELOG 最新正式版本为基准），再打 tag 并在构建机运行 `scripts/package-release.sh`，把 `dist-release/` 下的 tar.gz 与 .sha256 上传为 Release 附件（Gitee / GitHub 都可；后台图形化更新与安装脚本按 `RELEASE_SOURCE` 自动下载新版本）。
 
 ### 方式一：Docker 一键起后端（本地开发）
 

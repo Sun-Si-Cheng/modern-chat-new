@@ -189,9 +189,10 @@ RELEASE_SOURCE=gitee RELEASE_TAG=latest bash install.sh
 
 **发版流程**（发布新版本供安装 / 更新）：
 
-1. 打 tag（如 `v0.10.3`）并推送；
-2. 在构建机（需 Go + Node）运行 `scripts/package-release.sh`——产出 `dist-release/modernchat-<版本>-linux-{amd64,arm64}.tar.gz` 与对应 `.sha256`；
-3. 把这些文件上传为 Gitee / GitHub 的 Release 附件（两个平台的 tag 与附件都传，安装脚本按 `RELEASE_SOURCE` 选源）。
+1. 更新 `CHANGELOG.md` 定版，并把 `web/`、`website/` 的 `package.json` / `package-lock.json` 与官网首页 Hero 徽标对齐到同一版本；运行 `sh scripts/check-version.sh` 校验通过（基准为 CHANGELOG 最新正式版本）；
+2. 打 tag（如 `v0.10.3`）并推送；
+3. 在构建机（需 Go + Node）运行 `scripts/package-release.sh`——产出 `dist-release/modernchat-<版本>-linux-{amd64,arm64}.tar.gz` 与对应 `.sha256`；
+4. 把这些文件上传为 Gitee / GitHub 的 Release 附件（两个平台的 tag 与附件都传，安装脚本按 `RELEASE_SOURCE` 选源）。
 
 注意事项：
 

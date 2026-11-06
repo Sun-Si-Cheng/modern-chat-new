@@ -167,7 +167,7 @@ const stackBadges = [
       <div class="container hero-grid">
         <div class="hero-copy">
           <div class="hero-badges">
-            <TTag theme="primary" variant="light" size="small">v0.9.0</TTag>
+            <TTag theme="primary" variant="light" size="small">v0.10.3</TTag>
             <TTag variant="outline" size="small">Apache-2.0</TTag>
             <TTag variant="outline" size="small">{{ t('hero.badge-open') }}</TTag>
           </div>

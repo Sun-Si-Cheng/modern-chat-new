@@ -1,6 +1,6 @@
 {
   "name": "modernchat-website",
-  "version": "0.9.0",
+  "version": "0.10.3",
   "private": true,
   "type": "module",
   "description": "ModernChat 官网：落地页 / 文档站 / 插件市场",
