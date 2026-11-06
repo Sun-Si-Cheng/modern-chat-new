@@ -204,6 +204,7 @@ fi
 mkdir -p "$INSTALL_DIR"
 LOG_FILE="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"   # 日志含数据库密码，仅 root 可读
 ln -sfn "$LOG_FILE" "$LOG_DIR/install-latest.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 info "日志：$LOG_FILE"
@@ -303,7 +304,12 @@ else
   DB_USER="${DB_USER:-modernchat}"
 fi
 DB_HOST="${DB_HOST:-127.0.0.1}"; DB_PORT="${DB_PORT:-3306}"
-[ -n "${DB_PASS:-}" ] || DB_PASS="$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+# 应用数据库密码：环境变量预设 > 用户输入 > 自动生成随机密码（完成摘要里会明示）
+if [ -z "${DB_PASS:-}" ]; then
+  ask "数据库账号 ${DB_USER} 的密码（直接回车 = 自动生成随机密码）" ""
+  DB_PASS="$REPLY"
+fi
+[ -n "$DB_PASS" ] || DB_PASS="$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 save_state "PARAM_DB_ROOT_USER" "$DB_ROOT_USER"
 save_state "PARAM_DB_ROOT_PASS" "$DB_ROOT_PASS"
 save_state "PARAM_DB_USER"      "$DB_USER"
@@ -679,7 +685,14 @@ printf "${C_G}  ModernChat 部署完成！${C_0}\n"
 printf "${C_G}=============================================================${C_0}\n"
 echo "  访问地址 ： $PUBLIC_URL"
 echo "  首个账号 ： 打开上面地址直接注册，第一个注册的账号自动成为站长"
-echo "  数据库   ： $DB_NAME@$DB_HOST:$DB_PORT（用户 $DB_USER，密码在 server/.env 的 DB_DSN 里）"
+echo "  数据库   ： $DB_NAME @ $DB_HOST:$DB_PORT"
+echo "  数据库账号： $DB_USER"
+echo "  数据库密码： $DB_PASS   （已写入 $INSTALL_DIR/server/.env 的 DB_DSN，同时存于 $STATE_FILE，请妥善保管）"
+if [ "$DB_MODE" = "auto" ] && [ -z "$DB_ROOT_PASS" ]; then
+  echo "  MySQL root：本机免密（auth_socket），执行 sudo mysql 即可管理数据库"
+  echo "             如需给 root 设密码：sudo mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY '你的密码';\""
+  echo "             （root 设密码不影响本应用运行——应用用的是上面的专用账号）"
+fi
 if [ "$RUN_MODE" = "systemd" ]; then
   echo "  服务管理 ： systemctl status|restart|stop modernchat@$BACKEND_PORT"
   echo "  图形化更新： 站长后台 → 在线更新（或命令行 bash $INSTALL_DIR/scripts/update.sh）"
