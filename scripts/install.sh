@@ -342,12 +342,13 @@ info "已写入 server/.env（MIGRATE=true，首次启动自动建表）"
 
 # ============================================================================
 # 9) 常驻运行（优先 systemd；无 systemd 时降级 nohup）
+#    systemd 用模板单元 modernchat@<端口>.service：热更新时新旧实例可并存
 # ============================================================================
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
-  info "注册 systemd 服务 modernchat.service"
-  cat > /etc/systemd/system/modernchat.service <<UNIT
+  info "注册 systemd 模板单元 modernchat@.service（实例端口 $BACKEND_PORT）"
+  cat > /etc/systemd/system/modernchat@.service <<UNIT
 [Unit]
-Description=ModernChat IM server
+Description=ModernChat IM server (port %i)
 After=network.target mysql.service mysqld.service
 
 [Service]
@@ -356,7 +357,8 @@ WorkingDirectory=$INSTALL_DIR/server
 ExecStart=$INSTALL_DIR/bin/modernchat-server
 Restart=on-failure
 RestartSec=3
-# 环境变量由 server/.env 提供（godotenv 加载）；这里兜底 DATA_DIR 绝对路径
+# 端口由实例名注入（PORT=%i）；.env 里同名变量会被这个值覆盖（进程环境优先）
+Environment=PORT=%i
 Environment=DATA_DIR=$INSTALL_DIR/server/data
 LimitNOFILE=65535
 
@@ -364,8 +366,13 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable --now modernchat
+  systemctl enable --now "modernchat@$BACKEND_PORT.service"
   RUN_MODE="systemd"
+  # 热更新状态文件：BASE_PORT 固定基准，ACTIVE_PORT 当前服务端口（update.sh 维护）
+  cat > "$INSTALL_DIR/.hotupdate" <<HOT
+BASE_PORT=$BACKEND_PORT
+ACTIVE_PORT=$BACKEND_PORT
+HOT
 else
   warn "未检测到 systemd（WSL / 容器 / 老系统），降级为 nohup 后台进程"
   mkdir -p "$INSTALL_DIR/server/logs"
@@ -384,7 +391,7 @@ for i in $(seq 1 60); do
     info "后端健康检查通过"; break
   fi
   [ "$i" = "60" ] && {
-    if [ "$RUN_MODE" = "systemd" ]; then journalctl -u modernchat -n 30 --no-pager || true
+    if [ "$RUN_MODE" = "systemd" ]; then journalctl -u "modernchat@$BACKEND_PORT" -n 30 --no-pager || true
     else tail -n 30 "$INSTALL_DIR/server/logs/server.out" || true; fi
     die "后端 60s 内未就绪，上方是最近日志"
   }
@@ -451,7 +458,7 @@ server {
 
     # REST API
     location /api/ {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_pass http://modernchat_backend;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -460,7 +467,7 @@ server {
 
     # 媒体上传（multipart）：应用侧 200 MB 天花板 + 余量，nginx 不放宽会先回 413
     location /api/upload {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_pass http://modernchat_backend;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -482,6 +489,8 @@ server {
     }
 }
 NGX
+  # 在配置最前面插入 upstream 块（update.sh 热更新靠改这里的端口平滑切流）
+  sed -i "1i upstream modernchat_backend { server 127.0.0.1:$BACKEND_PORT; }" "$NGINX_TARGET"
   nginx -t || die "nginx 配置校验失败：$NGINX_TARGET"
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now nginx 2>/dev/null || true
@@ -513,7 +522,8 @@ echo "  访问地址 ： $PUBLIC_URL"
 echo "  首个账号 ： 打开上面地址直接注册，第一个注册的账号自动成为站长"
 echo "  数据库   ： $DB_NAME@$DB_HOST:$DB_PORT（用户 $DB_USER，密码在 server/.env 的 DB_DSN 里）"
 if [ "$RUN_MODE" = "systemd" ]; then
-  echo "  服务管理 ： systemctl status|restart|stop modernchat"
+  echo "  服务管理 ： systemctl status|restart|stop modernchat@$BACKEND_PORT"
+  echo "  热更新   ： bash $INSTALL_DIR/scripts/update.sh（默认不停机：新旧实例蓝绿切换）"
 else
   echo "  服务管理 ： nohup 模式（无 systemd）——停止：kill \$(cat $INSTALL_DIR/server/server.pid)；启动：cd $INSTALL_DIR/server && nohup ../bin/modernchat-server >> logs/server.out 2>&1 &"
 fi

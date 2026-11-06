@@ -8,13 +8,14 @@
  *
  * 用 Node 内置 zlib，不引入额外依赖。
  *
- * 用法：npm run compress（在 build 之后执行）
+ * 用法：npm run compress（在 build 之后执行）；也可传目录参数：
+ * node scripts/precompress.mjs dist.new（热更新构建流程压缩备用产物目录）
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 
-const DIST = path.resolve('dist')
+const DIST = path.resolve(process.argv[2] || 'dist')
 /** 只压文本资源：图片/字体本身已是压缩格式，再压反而变大 */
 const EXT = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.txt', '.xml', '.map'])
 /** 小于这个体积不值得压（省不到几百字节，反而多一次查找） */

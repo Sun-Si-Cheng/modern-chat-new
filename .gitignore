@@ -79,6 +79,11 @@ uploads/
 data/
 server/logs/
 
+# ===== 热更新状态（install.sh 生成、update.sh 维护，仅存在于部署机）=====
+.hotupdate
+web/dist.new/
+web/dist.old/
+
 # ===== 协作提交锁（多 agent 并发提交时的互斥标记，勿入库）=====
 .mc-commit.lock/
 
