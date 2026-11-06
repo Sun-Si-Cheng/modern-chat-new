@@ -78,7 +78,7 @@ modernchat-new/
 ├── deploy/                     # nginx 配置示例（裸机 / compose 两版）
 ├── website/                    # 官网（Vue 3 + Vite + TDesign）：落地页 / 文档站 / 插件市场
 ├── plugins/examples/           # 示例插件（可直接上传试用）
-├── scripts/                    # update.sh / update.ps1（Gitee 升级）+ coverage.sh / coverage.ps1（覆盖率）
+├── scripts/                    # install.sh / update.sh（一键安装与热更新升级）/ uninstall.sh / coverage.sh（覆盖率）
 ├── server/                     # Go 后端
 │   ├── cmd/server/main.go      # 入口：config → db → hub → router → 优雅停机
 │   ├── internal/
@@ -279,7 +279,7 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
 ```
 
-Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
+Windows 本地开发不走升级脚本：拉取后直接重新构建运行即可。
 
 脚本做的事：`git pull --ff-only`（本地有分叉会直接报错，不自动合并）→ `go build`（注入版本号）→ `npm ci && npm run build` → 按 `RESTART_CMD` / docker compose / systemd 依次尝试重启。
 
