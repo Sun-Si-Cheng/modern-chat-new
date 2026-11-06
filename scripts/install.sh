@@ -228,7 +228,6 @@ save_state "PARAM_DB_MODE"      "$DB_MODE"
 save_state "PARAM_DB_HOST"      "$DB_HOST"
 save_state "PARAM_DB_PORT"      "$DB_PORT"
 save_state "PARAM_DB_NAME"      "$DB_NAME"
-save_state "PARAM_MIRROR"       "$MIRROR"
 
 # 失败时提示续跑方式
 CURRENT_STAGE="(初始化)"
