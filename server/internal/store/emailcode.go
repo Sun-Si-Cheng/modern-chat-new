@@ -122,13 +122,12 @@ func (s *EmailCodeStore) Verify(email, purpose, code string) (bool, error) {
 		return res.RowsAffected > 0, nil
 	}
 
-	attempts := row.Attempts + 1
-	updates := map[string]any{"attempts": attempts}
-	if attempts >= emailCodeMaxAttempts {
-		updates["used_at"] = now
-	}
-	if err := s.db.Model(&model.EmailCode{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-		return false, err
-	}
-	return false, nil
+	// 原子累加尝试次数：并发的错误提交不会互相覆盖（原来的读-改-写会丢计数），
+	// 达到上限时同一条 UPDATE 顺带作废该码。
+	return false, s.db.Model(&model.EmailCode{}).
+		Where("id = ? AND used_at IS NULL", row.ID).
+		Updates(map[string]any{
+			"attempts": gorm.Expr("attempts + 1"),
+			"used_at":  gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE used_at END", emailCodeMaxAttempts, now),
+		}).Error
 }

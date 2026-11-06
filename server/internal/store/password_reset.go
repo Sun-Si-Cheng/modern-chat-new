@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -29,11 +30,24 @@ func (s *PasswordResetStore) Valid(token string) (*model.PasswordReset, error) {
 	return &pr, nil
 }
 
-// Use 在同一事务内标记令牌已用并执行业务（写新密码 + tv+1）。
+// ErrResetTokenUsed 令牌已被使用/已过期：并发提交同一链接时只有一个成功。
+var ErrResetTokenUsed = errors.New("password reset token already used")
+
+// Use 原子地核销令牌并执行业务（写新密码 + tv+1）。
+//
+// 修复缺陷：原实现直接 `Update("used", true)`，不检查令牌是否仍然有效，
+// 两个并发请求拿着同一个链接都能通过 Valid 并各自改密码（TOCTOU）。
+// 现在在事务里做条件更新，RowsAffected=0 即说明已被另一请求核销。
 func (s *PasswordResetStore) Use(pr *model.PasswordReset, fn func(tx *gorm.DB) error) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(pr).Update("used", true).Error; err != nil {
-			return err
+		res := tx.Model(&model.PasswordReset{}).
+			Where("id = ? AND used = ? AND expires_at > ?", pr.ID, false, time.Now()).
+			Update("used", true)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrResetTokenUsed
 		}
 		return fn(tx)
 	})

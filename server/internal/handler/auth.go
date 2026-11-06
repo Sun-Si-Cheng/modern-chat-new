@@ -433,6 +433,10 @@ func (h *AuthHandler) Reset(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, store.ErrResetTokenUsed) {
+			fail(c, http.StatusBadRequest, "重置链接已失效，请重新申请")
+			return
+		}
 		internal(c, err)
 		return
 	}

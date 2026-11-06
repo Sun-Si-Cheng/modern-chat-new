@@ -10,6 +10,7 @@
 
 ### 修复
 
+- **密码重置令牌 TOCTOU、验证码尝试计数非原子（中等）**：`PasswordResetStore.Use` 只做 `Update("used", true)`，不校验令牌是否仍有效，两个并发请求拿同一链接都能改密码；邮箱验证码失败次数是「读-改-写」，并发错误提交会丢计数、5 次上限可被绕过。现在令牌核销改为事务内条件更新（`used=false AND expires_at>now`），`RowsAffected=0` 返回 `ErrResetTokenUsed`，接口回 400「重置链接已失效」；验证码改为单条原子 UPDATE（`attempts = attempts + 1`，达到上限同时写 `used_at`）。
 - **Web Push 无并发上限、无超时、endpoint 可任意填（中等）**：`webpush-go` 默认使用无超时的 `http.Client`，端点不响应会长期占用连接；大群群发时每个收件人一个 goroutine、无限并发外连；订阅接口只检查了 `https://` 前缀，endpoint 可被填成内网地址（服务端 SSRF）。现在：① 推送客户端固定 10s 超时；② 全局最多 16 个并发推送，满了直接丢弃（消息本身已在库中）；③ endpoint 必须是 https、无 userinfo、域名属于主流浏览器推送网关（FCM / Mozilla / WNS / Apple），订阅接口与发送侧共用同一校验。**注意**：自建/私有推送网关不在白名单内，如需支持需在 `service.pushEndpointHosts` 增加域名。
 - **发消息多步写入无事务、失败仍广播（中等）**：`Create / UpsertInbox / BumpUnread / MarkMention` 各用独立连接，失败只 `slog` 后继续 fan-out，会造成「消息已入库但收件箱 last/未读没更新」「客户端收到消息却对不上库」。现在 `MessageStore.CreateWithInbox` 用一个事务提交全部四步，任一步失败整体回滚并通过 error 帧告知客户端，不再广播。
 - **并发创建单聊会生成重复会话（中等）**：单聊创建原为「查重 → 建会话 → 加成员 → 初始化收件箱」四步且无事务、无唯一约束，双击或双方同时发起时可能各建一个会话，之后消息/未读分裂到两条会话。现在新增 `conversations.direct_key`（`小ID:大ID`）唯一索引，`EnsureSingle` 把查重、建会话、加成员、收件箱初始化包进同一事务；并发插入时只有一个成功，失败方回滚后复用已有会话。**升级需执行迁移 0024**；存量单聊 `direct_key` 保持 NULL（不影响现有数据，新会话才开始写入）。
