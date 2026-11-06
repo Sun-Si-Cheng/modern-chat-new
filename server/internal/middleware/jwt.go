@@ -141,6 +141,9 @@ func UploadAuth(users *store.UserStore, secret string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "账号已被封禁"})
 			return
 		}
+		// 用 Authorization 头访问文件的客户端（下载器 / 旧前端）也补发 cookie，
+		// 下次 <img>/<video> 直接加载同源地址时即可带上。
+		setAuthCookie(c, token)
 		c.Set("user", u)
 		c.Set("uid", u.ID)
 		c.Next()
@@ -153,9 +156,35 @@ func setAuthCookie(c *gin.Context, token string) {
 	if v, err := c.Cookie(AuthCookieName); err == nil && v == token {
 		return
 	}
+	SetAuthCookie(c.Writer, c.Request, token)
+}
+
+// SetAuthCookie 写入登录 cookie（gin 之外的场景：WS 握手、登录/注册响应）。
+// 每次带 Authorization 的已登录请求也会经 Auth 中间件补发一次，
+// 因此存量用户（localStorage 有 token、浏览器无 cookie）在升级后
+// 第一次调用任意已登录接口就会自动获得 cookie，无需重新登录。
+func SetAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	if token == "" {
+		return
+	}
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     AuthCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(TokenTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// ClearAuthCookie 清除登录 cookie（主动退出登录时调用）。
+// 只清 localStorage 的话 cookie 仍有效，退出后 7 天内 /uploads 仍能被同浏览器访问。
+func ClearAuthCookie(c *gin.Context) {
 	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(AuthCookieName, token, int(TokenTTL.Seconds()), "/", "", secure, true)
+	c.SetCookie(AuthCookieName, "", -1, "/", "", secure, true)
 }
 
 func abort401(c *gin.Context) {

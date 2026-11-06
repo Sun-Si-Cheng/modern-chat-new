@@ -72,6 +72,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    // mc_auth 是 HttpOnly cookie，JS 无法删除；请后端下发过期 Set-Cookie。
+    // 不这样做的话，退出登录后同一浏览器在 cookie 有效期内仍能直接访问 /uploads。
+    // keepalive 保证页面跳转 / 刷新过程中请求也能发出，失败不影响本地登出。
+    void fetch('/api/auth/logout', { method: 'POST', keepalive: true }).catch(() => undefined)
     token.value = ''
     user.value = null
     setToken('')

@@ -100,6 +100,10 @@ func Serve(
 		return
 	}
 
+	// cookie 回授：已登录的旧客户端（localStorage 有 token、浏览器还没有 mc_auth）
+	// 在重连时即可拿到 cookie，此后 <img>/<video> 加载 /uploads 不再 401。
+	middleware.SetAuthCookie(w, r, token)
+
 	up := upgraderFor(allowedOrigins)
 	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {

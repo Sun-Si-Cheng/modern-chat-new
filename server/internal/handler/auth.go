@@ -249,6 +249,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 登录/注册响应就把 cookie 种下：用户登录后立刻能看到历史图片，
+	// 不必等下一次已登录接口调用（Auth 中间件会补发，这里提前一步）。
+	middleware.SetAuthCookie(c.Writer, c.Request, token)
 	slog.Info("user registered", "uid", u.ID, "role", u.Role)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
 }
@@ -345,6 +348,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	middleware.SetAuthCookie(c.Writer, c.Request, token)
 	slog.Info("user login", "uid", u.ID)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
 }
@@ -517,6 +521,14 @@ func (h *AuthHandler) EmailCode(c *gin.Context) {
 	}
 	slog.Info("email verify code sent", "email", email, "ip", c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{"ok": true, "cooldownSeconds": int(store.EmailCodeCooldown.Seconds())})
+}
+
+// Logout 清除登录 cookie。
+// token 由客户端 localStorage 持有（前端同时清掉）；cookie 是 HttpOnly，JS 删不掉，
+// 必须由服务端下发过期 Set-Cookie。不鉴权：token 已过期时也应能清。
+func (h *AuthHandler) Logout(c *gin.Context) {
+	middleware.ClearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // Me 当前用户（Auth 后）。

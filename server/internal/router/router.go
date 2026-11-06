@@ -166,6 +166,9 @@ func New(d Deps) *gin.Engine {
 	authLimit := middleware.RateLimit(d.AuthLimiter, middleware.KeyByIP)
 	// login 不挂维护中间件：必须给管理员留一条登录进来关掉维护模式的路
 	api.POST("/auth/login", authLimit, authH.Login)
+	// 清登录 cookie（HttpOnly，前端无法自行删除）。放在未登录组，
+	// 维护模式下也要能调用；不鉴权，token 已失效时同样允许清理。
+	api.POST("/auth/logout", authH.Logout)
 	api.POST("/auth/register", authLimit, middleware.Maintenance(settings), authH.Register)
 	api.POST("/auth/forgot", authLimit, middleware.Maintenance(settings), authH.Forgot)
 	api.POST("/auth/reset", authLimit, middleware.Maintenance(settings), authH.Reset)
