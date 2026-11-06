@@ -1294,7 +1294,8 @@ func (h *ConversationHandler) initInboxes(convID uint, userIDs ...uint) error {
 		row := model.UserConversation{UserID: uid, ConversationID: convID}
 		if latestID > 0 {
 			row.LastMessageID = &latestID
-			row.LastMessageAt = latestAt
+			at := latestAt
+			row.LastMessageAt = &at
 			row.LastReadMessageID = latestID
 		}
 		rows = append(rows, row)

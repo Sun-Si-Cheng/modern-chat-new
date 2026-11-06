@@ -226,7 +226,9 @@ func (s *ConversationStore) LatestMessageID(convID uint) (uint64, error) {
 // LatestVisibleMessage 会话当前最新可见消息的 id 与时间。
 // 新成员加入 / 注册自动入群时用它初始化收件箱预览：不做的话列表里会显示
 // 「暂无消息」，而打开会话又能看到历史，二者自相矛盾。
-func (s *ConversationStore) LatestVisibleMessage(convID uint) (uint64, *time.Time, error) {
+// 返回值 time 为零值表示会话暂无可见消息（id 同时为 0），不存在成功却返回
+// nil 指针的情况；调用方仅在 id > 0 时才使用该时间。
+func (s *ConversationStore) LatestVisibleMessage(convID uint) (uint64, time.Time, error) {
 	var row struct {
 		ID        uint64
 		CreatedAt time.Time
@@ -238,10 +240,9 @@ func (s *ConversationStore) LatestVisibleMessage(convID uint) (uint64, *time.Tim
 		Limit(1).
 		Scan(&row).Error
 	if err != nil || row.ID == 0 {
-		return 0, nil, err
+		return 0, time.Time{}, err
 	}
-	at := row.CreatedAt
-	return row.ID, &at, nil
+	return row.ID, row.CreatedAt, nil
 }
 
 // SetMuteAll 群全员禁言开关。

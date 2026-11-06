@@ -266,7 +266,8 @@ func (h *AuthHandler) joinDefaultGroup(userID uint) {
 	row := model.UserConversation{UserID: userID, ConversationID: conv.ID}
 	if latestID, latestAt, err := h.convs.LatestVisibleMessage(conv.ID); err == nil && latestID > 0 {
 		row.LastMessageID = &latestID
-		row.LastMessageAt = latestAt
+		at := latestAt
+		row.LastMessageAt = &at
 		row.LastReadMessageID = latestID
 	}
 	if err := h.msgs.UpsertInbox([]model.UserConversation{row}); err != nil {
