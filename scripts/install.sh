@@ -333,6 +333,10 @@ stage_done db && ! [ "$FORCE" = "1" ] && { skip_stage "数据库" db; } || {
   mysql_exec() {
     if [ -n "$DB_ROOT_PASS" ]; then
       mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS" --protocol=TCP "$@"
+    elif [ "$DB_HOST" = "127.0.0.1" ] || [ "$DB_HOST" = "localhost" ]; then
+      # auth_socket / 免密 root 只认 Unix socket；预检（mysql -uroot）走 socket 能过，
+      # 这里强制 TCP 会导致 ERROR 1698 Access denied —— 必须同样走 socket
+      mysql -u"$DB_ROOT_USER" "$@"
     else
       mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_ROOT_USER" --protocol=TCP "$@"
     fi
