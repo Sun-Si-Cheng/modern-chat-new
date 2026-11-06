@@ -108,6 +108,14 @@ ask()   { # ask "提示" "默认值" -> 回显到 REPLY
 
 [ "$(id -u)" -eq 0 ] || die "请用 root 运行（或 sudo bash install.sh）。宝塔用户可在面板【终端】里执行。"
 
+# --force 等价于 FORCE=1（其余免交互项均为环境变量预设，见头部注释）
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    *) die "未知参数：$arg（免交互请用环境变量预设，用法见脚本头部注释）" ;;
+  esac
+done
+
 # ---------------- 系统识别 ----------------
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -183,7 +191,8 @@ printf "${C_B}        ModernChat 一键安装（发行版下载 → 部署）${C
 printf "${C_B}=============================================================${C_0}\n\n"
 
 if [ -f "$STATE_FILE" ] && grep -q "^STAGE_release=done$" "$STATE_FILE" 2>/dev/null; then
-  info "检测到上次安装进度，已完成阶段将自动跳过（--force 可全部重跑）"
+  info "检测到上次安装进度，已完成阶段将自动跳过"
+  info "            只重跑某阶段：sed -i '/^STAGE_阶段名=done$/d' $STATE_FILE 后重新运行；全部重跑：FORCE=1 bash install.sh（--force）"
 fi
 
 [ -n "$INSTALL_DIR" ] || { ask "安装目录" "/opt/modernchat"; INSTALL_DIR="$REPLY"; }
@@ -219,6 +228,11 @@ save_state() { # save_state <key> <value>
 }
 stage_done() { grep -q "^STAGE_$1=done$" "$STATE_FILE" 2>/dev/null; }
 mark_stage() { save_state "STAGE_$1" "done"; }
+skip_stage() { # skip_stage <显示名> <阶段键>：跳过时必须告诉用户怎么重跑
+  info "跳过已完成阶段：$1"
+  info "            只重跑该阶段：sed -i '/^STAGE_$2=done$/d' $STATE_FILE 后重新运行本命令"
+  info "            全部重跑：FORCE=1 bash install.sh（或 bash install.sh --force）"
+}
 
 # 把交互答案持久化（断点续跑时不再重复询问；含密码，权限 600）
 save_state "PARAM_INSTALL_DIR"  "$INSTALL_DIR"
@@ -280,7 +294,7 @@ stage_deps() {
   fi
   [ -n "$MYSQL_CLI" ] || die "本机没有 mysql 客户端。请在宝塔面板安装 MySQL 8.0，或把 DB_MODE 设为 external 填已有实例"
 }
-stage_done deps && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：环境安装"; } || stage_deps
+stage_done deps && ! [ "$FORCE" = "1" ] && { skip_stage "环境安装" deps; } || stage_deps
 mark_stage deps
 
 # ============================================================================
@@ -315,7 +329,7 @@ save_state "PARAM_DB_ROOT_PASS" "$DB_ROOT_PASS"
 save_state "PARAM_DB_USER"      "$DB_USER"
 save_state "PARAM_DB_PASS"      "$DB_PASS"
 
-stage_done db && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：数据库"; } || {
+stage_done db && ! [ "$FORCE" = "1" ] && { skip_stage "数据库" db; } || {
   mysql_exec() {
     if [ -n "$DB_ROOT_PASS" ]; then
       mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS" --protocol=TCP "$@"
@@ -343,7 +357,7 @@ mark_stage db
 # 阶段 3：下载发行包（GitHub / Gitee Release，含前端/后端/迁移/部署脚本）
 # ============================================================================
 CURRENT_STAGE="下载发行版(release)"
-stage_done release && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：下载发行版"; } || {
+stage_done release && ! [ "$FORCE" = "1" ] && { skip_stage "下载发行版" release; } || {
   # 解析版本：latest → 查 Release API；指定 tag 直接用
   if [ "$RELEASE_TAG" = "latest" ]; then
     info "查询最新 Release：$RELEASE_API_URL"
@@ -403,7 +417,7 @@ if [ -z "${PUBLIC_URL:-}" ]; then
   save_state "PARAM_PUBLIC_URL" "$PUBLIC_URL"
 fi
 
-stage_done config && ! [ "$FORCE" = "1" ] && [ -f server/.env ] && { info "跳过已完成阶段：配置"; } || {
+stage_done config && ! [ "$FORCE" = "1" ] && [ -f server/.env ] && { skip_stage "配置" config; } || {
   cat > server/.env <<ENV
 # 由 scripts/install.sh 生成（$(date '+%F %T')）。修改后需 systemctl restart modernchat@<端口>
 PORT=$BACKEND_PORT
@@ -437,7 +451,7 @@ mark_stage config
 # ============================================================================
 CURRENT_STAGE="服务(service)"
 RUN_MODE="${RUN_MODE:-}"
-stage_done service && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：常驻服务"; } || {
+stage_done service && ! [ "$FORCE" = "1" ] && { skip_stage "常驻服务" service; } || {
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     info "注册 systemd 模板单元 modernchat@.service（实例端口 $BACKEND_PORT）"
     cat > /etc/systemd/system/modernchat@.service <<UNIT
@@ -494,7 +508,7 @@ mark_stage service
 # 阶段 7：nginx（自动适配面板路径；reload 用探测到的二进制）
 # ============================================================================
 CURRENT_STAGE="nginx"
-stage_done nginx && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：nginx"; } || {
+stage_done nginx && ! [ "$FORCE" = "1" ] && { skip_stage "nginx" nginx; } || {
   # --- 探测 nginx 二进制与 vhost 目录（宝塔 / 1Panel / OpenResty / 标准） ---
   NGINX_BIN="${NGINX_BIN:-}"
   PANEL_HINT=""

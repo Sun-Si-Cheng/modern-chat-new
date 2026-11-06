@@ -23,6 +23,7 @@
 ### 修复
 
 - **补齐 `server/.env.example`**：运维手册 §3.3 手工部署引用了 `cp server/.env.example server/.env` 但文件一直缺失，手工部署者在第 3 步就会卡住。已补齐（与 `config.go` 全部环境变量一一对应，含在线更新 `RELEASE_API_URL` / `RELEASE_DL_URL` 注释示例）；同时修复 `.gitignore` 中自相矛盾的规则（第 24 行 `!.env.example` 放行后又被第 29 行重新忽略，导致示例文件永远进不了仓库）。
+- **install.sh 跳过提示与 --force 参数**：脚本头部注释与进度提示一直宣称 `--force` 可全部重跑，但从未解析该参数（实际只有 `FORCE=1` 生效），已补上参数解析；所有「跳过已完成阶段」提示现在同时说明重跑方法——只重跑该阶段（删除 state 文件中对应 `STAGE_` 行）或全部重跑（`--force` / `FORCE=1`），不再让用户只看到"跳过了"却不知道怎么重来。
 - **install.sh 因未定义变量中断安装**：`set -u` 模式下引用了旧版"自动装 Go/Node"时代残留的 `$MIRROR` 变量（该机制已随发行版模式移除），全新安装在数据库问答后必然报 `MIRROR: unbound variable` 中止，走不到下载发行包阶段。已删除残留的状态记录行。：`notify.mentions` / `notify.empty` 的中文文案里 `@` 未按 vue-i18n 语法转义成 `{'@'}`，整条消息编译失败、抽屉渲染抛错，loading 结束后 DOM 仍停在「加载中」。已转义并补浏览器回归验证。
 
 
