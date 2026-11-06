@@ -318,6 +318,7 @@ gzip on;          # 没有预压缩文件时实时压缩兜底
 - **旧式单端口部署自动迁移**：检测到旧的 `modernchat.service`（install.sh v1）会自动改写为模板单元并写入 `.hotupdate`，本次升级即走热更新。
 - `--cold` 强制走旧式 `systemctl restart`（有数秒中断，WS 全部重连）。
 - **Docker Compose 部署暂不支持热更新**：`docker compose up -d --build` 会重建容器，有秒级中断（前端断线重连机制兜底，消息不丢）。
+- **Docker 构建的版本号**：`docker compose` 把环境变量 `VERSION` / `COMMIT` / `BUILD_TIME` 作为 build args 传给 `server/Dockerfile`（未设置时回退 `dev` / `unknown`）；容器内 `curl http://127.0.0.1:8080/api/version` 可核对。
 - `--no-restart`：只构建并原子替换产物。运行中的老进程继续跑老版本，下次执行 `update.sh`（不带参数）时再完成切换。
 
 脚本会：拉取 Gitee → 构建后端（注入版本号）→ 构建前端 → 切换/重启服务。也可手工执行：

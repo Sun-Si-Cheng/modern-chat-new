@@ -142,6 +142,15 @@ cd web && npm install && npm run dev   # 前端 :5173
 
 需要自定义密钥时修改 `docker-compose.yml` 中的 `JWT_SECRET`（如 `openssl rand -hex 32`）。
 
+镜像构建时通过 build args 注入 `VERSION` / `COMMIT` / `BUILD_TIME`（`/api/version` 可查）；不传则回退 `dev` / `unknown`，构建上下文没有 `.git` 也不会失败。带版本构建并核对：
+
+```bash
+VERSION=$(git describe --tags --always) COMMIT=$(git rev-parse --short HEAD) \
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+curl http://127.0.0.1:8080/api/version
+# 直接构建镜像：docker build --build-arg VERSION=v0.10.3 -t modernchat-server ./server
+```
+
 ### 方式二：手动运行
 
 ```bash

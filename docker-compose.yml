@@ -7,6 +7,11 @@
 # - 首次启动 MIGRATE=true 会执行 server/migrations 建表
 # - JWT_SECRET 请换成自己的随机串（openssl rand -hex 32）
 # - 前端已构建时，可把 web/dist 挂到 nginx 容器，见文末注释
+# - 版本注入：VERSION / COMMIT / BUILD_TIME 作为 build args 传给 server/Dockerfile，
+#   未设置时回退 dev / unknown（构建上下文没有 .git 也不影响构建）。构建机有 git 时：
+#     VERSION=$(git describe --tags --always) COMMIT=$(git rev-parse --short HEAD) \
+#     BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+#   核对：curl http://127.0.0.1:8080/api/version
 
 services:
   mysql:
@@ -31,7 +36,13 @@ services:
       retries: 20
 
   server:
-    build: ./server
+    build:
+      context: ./server
+      args:
+        # 构建上下文没有 .git：版本由环境变量传入，未设置时回退 dev / unknown
+        VERSION: "${VERSION:-dev}"
+        COMMIT: "${COMMIT:-unknown}"
+        BUILD_TIME: "${BUILD_TIME:-unknown}"
     container_name: modernchat-server
     restart: unless-stopped
     depends_on:

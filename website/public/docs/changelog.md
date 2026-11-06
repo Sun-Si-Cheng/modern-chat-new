@@ -16,6 +16,7 @@
 - **新成员加入群后列表显示「暂无消息」**：`initInboxes` 只插入空收件箱行，没有同步当前最新消息；而打开会话又能看到历史。现在主动加入 / 被邀请 / 注册自动进公共群时都写入最新消息预览与时间，并把 `last_read` 推到最新（不追溯历史未读）。
 - **`FRONTEND_URL` 全为空白项时启动后找回密码 panic**：形如 `FRONTEND_URL=","` 或全空格时解析结果为空，WS Origin 白名单拒绝所有浏览器来源，且 `Forgot` 取 `FrontendURLs[0]` 会越界。现在启动阶段直接报错并提示至少配置一个来源（附单元测试）。
 - **发版版本号漂移**：`web/package.json` / `web/package-lock.json` 停在 `0.10.2`，官网 `website/package.json`、`package-lock.json` 与首页 Hero 徽标停在 `0.9.0`，与 CHANGELOG 已定版的 `0.10.3` 不一致。已统一对齐为 `0.10.3`；新增 `scripts/check-version.sh`（以 CHANGELOG 最新正式版本为基准核对各包版本与官网徽标，并提示最新 git tag），发版流程说明已补进 README 与运维手册。
+- **Docker 镜像版本号恒为 `dev`**：`server/Dockerfile` 构建时只传 `-s -w`，未注入 ldflags，`docker compose` 下 `/api/version` 永远返回 `dev`。现新增 `VERSION` / `COMMIT` / `BUILD_TIME` 三个 build arg（`docker-compose.yml` 已接好，未设置时回退 `dev` / `unknown`），构建上下文没有 `.git` 也能按需传入，不需要为了版本号挂载仓库元数据。
 
 ### 文档
 
