@@ -41,7 +41,7 @@ export const useSiteStore = defineStore('site', () => {
       const changed = (Object.keys(next) as Array<keyof SiteConfig>).some((k) => next[k] !== prev[k])
       if (changed) config.value = next
       loaded.value = true
-      document.title = next.name
+      // 标题统一由 App.vue 维护（要叠加未读数，这里直接写会被 30 秒轮询覆盖）
     } catch {
       // 保持上一次的值：拉取失败不能误判成「维护结束」把用户放进去
     }

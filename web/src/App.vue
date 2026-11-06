@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { ConfigProvider as TConfigProvider } from 'tdesign-vue-next'
 import type { GlobalConfigProvider } from 'tdesign-vue-next'
 import enConfig from 'tdesign-vue-next/es/locale/en_US'
@@ -8,12 +8,14 @@ import { useRoute } from 'vue-router'
 
 import MaintenanceView from '@/views/MaintenanceView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useConversationsStore } from '@/stores/conversations'
 import { usePrefsStore } from '@/stores/prefs'
 import { useSiteStore } from '@/stores/site'
 
 const prefs = usePrefsStore()
 const site = useSiteStore()
 const auth = useAuthStore()
+const conv = useConversationsStore()
 const route = useRoute()
 
 let pollTimer: ReturnType<typeof setInterval> | undefined
@@ -50,6 +52,20 @@ const inMaintenance = computed(
     auth.user?.role !== 'admin' &&
     route.path !== '/login',
 )
+
+// 浏览器标签页标题：聊天页未读时加 `(N)` 前缀，切走后恢复站点名。
+// 免打扰会话不计入——标题是给用户看的提醒，要尊重免打扰。
+const unreadBadge = computed(() =>
+  conv.conversations.reduce((sum, c) => sum + (c.muted ? 0 : c.unreadCount), 0),
+)
+const docTitle = computed(() => {
+  const base = site.config.name || 'ModernChat'
+  if (route.path !== '/chat' || unreadBadge.value <= 0) return base
+  const n = unreadBadge.value > 99 ? '99+' : String(unreadBadge.value)
+  return `(${n}) ${base}`
+})
+
+watch(docTitle, (v) => (document.title = v), { immediate: true })
 
 // TDesign 组件内部文案（分页、空态等）跟随界面语言。
 // locale 包内的数组是只读字面量类型，与 GlobalConfigProvider 的可变类型不完全一致，此处按约定断言。

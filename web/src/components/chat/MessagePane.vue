@@ -34,6 +34,8 @@ const { t, te } = useAppI18n()
 
 const scrollerRef = ref<{ $el: HTMLElement } | null>(null)
 const stickToBottom = ref(true)
+/** 上翻历史期间收到的新消息数（仅用于「N 条新消息」提示，不参与未读计算） */
+const unseenCount = ref(0)
 
 const conv = computed(() => convStore.currentConv)
 const messages = computed(() => convStore.currentMessages)
@@ -126,10 +128,22 @@ function fmtTime(ts: string): string {
 function onScroll() {
   const el = scrollerRef.value?.$el as HTMLElement | undefined
   if (!el) return
-  stickToBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 80
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80
+  stickToBottom.value = atBottom
+  // 回到末尾即视为已看过这些新消息；未读数由 markRead 统一走服务端
+  if (atBottom) unseenCount.value = 0
   if (el.scrollTop < 40 && conv.value && convStore.hasMoreByConv[conv.value.id] && !convStore.loadingMessages) {
     void convStore.loadMore(conv.value.id)
   }
+}
+
+/** 回到底部：清掉提示、恢复自动已读，并等虚拟列表实测高度后滚到底 */
+function jumpToBottom() {
+  unseenCount.value = 0
+  stickToBottom.value = true
+  convStore.setAutoReadPaused(false)
+  if (conv.value) convStore.markRead(conv.value.id)
+  scrollToBottom()
 }
 
 function scrollToBottom() {
@@ -148,12 +162,39 @@ function scrollToBottom() {
   })
 }
 
-watch(
-  () => messages.value.length,
-  () => {
-    if (stickToBottom.value) scrollToBottom()
-  },
-)
+// 用「最后一条已落库消息 id」判断新消息：上翻加载历史是前置插入，末条 id 不变，
+// 不会被误算成新消息；id 回退（切会话 / 清空）同样不计数。
+const lastMessageId = computed(() => {
+  const list = messages.value
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const m = list[i]
+    if (m && m.id > 0) return m.id
+  }
+  return 0
+})
+
+watch(lastMessageId, (id, prev) => {
+  if (id === prev) return
+  const last = messages.value[messages.value.length - 1]
+  // 切会话时新旧会话的末条 id 可能恰好变大，先确认属于当前会话
+  if (!last || last.conversationId !== conv.value?.id) return
+  // 清空 / 切换导致回退：交给会话 watcher 重置
+  if (id < prev) return
+
+  // 自己发的消息：即使正在上翻历史也跳回底部，否则发出去的内容看不见
+  if (last.senderId === auth.user?.id) {
+    unseenCount.value = 0
+    stickToBottom.value = true
+    scrollToBottom()
+    return
+  }
+  if (stickToBottom.value) {
+    unseenCount.value = 0
+    scrollToBottom()
+    return
+  }
+  unseenCount.value = Math.min(999, unseenCount.value + 1)
+})
 
 // 贴在底部 = 用户在读最新消息；上翻历史时暂停自动已读，回到末尾再补偿
 watch(
@@ -169,11 +210,20 @@ watch(
   () => conv.value?.id,
   (id) => {
     stickToBottom.value = true
+    unseenCount.value = 0
     scrollToBottom()
     if (id !== undefined) host.notifyConvOpen(id)
   },
   { immediate: true },
 )
+
+/** 离开末尾就显示入口；有新消息时显示条数，否则只是「回到底部」 */
+const showJumpToBottom = computed(() => !!conv.value && !stickToBottom.value)
+const jumpLabel = computed(() => {
+  if (unseenCount.value <= 0) return t('message.backToBottom')
+  if (unseenCount.value > 99) return t('message.newMessagesMany')
+  return t('message.newMessages', { n: unseenCount.value })
+})
 
 /** 从后台标签页切回：此时才把当前会话的新消息标为已读 */
 function onVisibilityChange() {
@@ -1093,8 +1143,8 @@ const senderName = (m: Message) => {
       </UiButton>
     </div>
 
+    <div v-if="conv && (messages.length || convStore.loadingMessages)" class="mc-msgpane__feed">
     <DynamicScroller
-      v-if="conv && (messages.length || convStore.loadingMessages)"
       ref="scrollerRef"
       class="mc-msgpane__list"
       :items="displayItems"
@@ -1323,6 +1373,28 @@ const senderName = (m: Message) => {
         </template>
     </DynamicScroller>
 
+      <!-- 上翻历史 / 有新消息：给一个明确的回到底部入口，不打断阅读 -->
+      <Transition name="mc-jump">
+        <button
+          v-if="showJumpToBottom"
+          type="button"
+          class="mc-msgpane__jump"
+          @click="jumpToBottom"
+        >
+          <span>{{ jumpLabel }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 5v14m0 0 6-6m-6 6-6-6"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </Transition>
+    </div>
+
     <!-- 新会话 / 空会话：给一个明确的开始提示，而不是一片空白 -->
     <div v-else-if="conv" class="mc-msgpane__empty">
       <span class="mc-msgpane__empty-icon" aria-hidden="true"><ChatIcon /></span>
@@ -1510,6 +1582,65 @@ const senderName = (m: Message) => {
   flex: 1;
   min-height: 0;
   padding: 16px 20px;
+}
+
+/* 消息流容器：为右下角「回到底部」提供定位上下文，不改变列表本身的 flex 行为 */
+.mc-msgpane__feed {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-msgpane__jump {
+  position: absolute;
+  right: 20px;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-pill);
+  background: var(--mc-material);
+  backdrop-filter: var(--mc-blur);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: var(--mc-fs-sm);
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow: var(--mc-elev-2);
+  transition:
+    background-color var(--mc-dur-instant) var(--mc-ease-out),
+    transform var(--mc-dur-instant) var(--mc-ease-out);
+}
+
+.mc-msgpane__jump:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.mc-msgpane__jump:active {
+  transform: scale(0.97);
+}
+
+.mc-msgpane__jump:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: 2px;
+}
+
+.mc-jump-enter-active,
+.mc-jump-leave-active {
+  transition:
+    opacity var(--mc-dur-base) var(--mc-ease-out),
+    transform var(--mc-dur-base) var(--mc-ease-out);
+}
+
+.mc-jump-enter-from,
+.mc-jump-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }
 
 .mc-msgpane__loading {
