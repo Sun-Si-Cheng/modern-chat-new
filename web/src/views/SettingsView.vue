@@ -2,6 +2,7 @@
 import UiSlider from '@/components/ui/UiSlider.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -18,6 +19,15 @@ import {
   setNotificationsEnabled,
   setPushEnabled,
 } from '@/composables/notifications'
+import {
+  applyCacheLimit,
+  clearStaticCache,
+  formatBytes,
+  getCacheLimitMB,
+  measureLocalCache,
+  setCacheLimitMB,
+  type LocalCacheUsage,
+} from '@/composables/localCache'
 import { authApi, systemApi, type VersionInfo } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
@@ -38,6 +48,73 @@ const { t, te } = useAppI18n()
 // ===== 桌面通知 =====
 const notifyOn = ref(notificationsEnabled())
 const notifySupported = notificationsSupported()
+
+// ===== 本地缓存 =====
+const cacheUsage = ref<LocalCacheUsage | null>(null)
+const cacheBusy = ref(false)
+const cacheLimit = ref(getCacheLimitMB())
+const cacheLimitOptions = computed(() => [
+  ...[10, 20, 50, 100].map((mb) => ({ label: t('settings.cacheLimitMB', { mb }), value: mb })),
+  { label: t('settings.cacheUnlimited'), value: 0 },
+])
+
+async function refreshCacheUsage() {
+  try {
+    cacheUsage.value = await measureLocalCache()
+  } catch {
+    cacheUsage.value = null
+  }
+}
+
+/** 打开设置页时统计一次，并按用户设置的上限清理静态缓存 */
+async function initCache() {
+  try {
+    const usage = await measureLocalCache()
+    const cleared = await applyCacheLimit(cacheLimit.value, usage.cacheBytes)
+    cacheUsage.value = cleared ? await measureLocalCache() : usage
+  } catch {
+    cacheUsage.value = null
+  }
+}
+
+async function onCacheLimitChange(v: unknown) {
+  const mb = Number(v)
+  if (!Number.isFinite(mb) || mb < 0) return
+  cacheLimit.value = mb
+  setCacheLimitMB(mb)
+  cacheBusy.value = true
+  try {
+    const usage = await measureLocalCache()
+    const cleared = await applyCacheLimit(mb, usage.cacheBytes)
+    cacheUsage.value = cleared ? await measureLocalCache() : usage
+    if (cleared) void MessagePlugin.info(t('settings.cacheAutoCleared'))
+  } catch {
+    /* 统计失败不阻断设置保存 */
+  } finally {
+    cacheBusy.value = false
+  }
+}
+
+function confirmClearCache() {
+  const dialog = DialogPlugin.confirm({
+    header: t('settings.cacheClearConfirmTitle'),
+    body: t('settings.cacheClearConfirmBody'),
+    theme: 'warning',
+    onConfirm: async () => {
+      dialog.destroy()
+      cacheBusy.value = true
+      try {
+        await clearStaticCache()
+        await refreshCacheUsage()
+        void MessagePlugin.success(t('settings.cacheCleared'))
+      } catch {
+        void MessagePlugin.error(t('settings.cacheClearFailed'))
+      } finally {
+        cacheBusy.value = false
+      }
+    },
+  })
+}
 
 // ===== 离线推送（Web Push）=====
 const pushOn = ref(pushEnabled())
@@ -81,6 +158,7 @@ async function onNotifyToggle(v: unknown) {
 // 直接打开/刷新设置页时不会经过聊天页的初始化，auth.user 为空 →
 // 账号卡片会误显示「登录后可修改昵称与邮箱」。这里自行补一次资料拉取。
 onMounted(async () => {
+  void initCache()
   if (!auth.token || auth.user) return
   try {
     await auth.fetchMe()
@@ -487,6 +565,58 @@ function goBack() {
         </UiButton>
       </section>
 
+      <!-- 本地缓存 -->
+      <section class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.cache') }}</h2>
+        <p class="settings-card__hint text-placeholder">{{ t('settings.cacheHint') }}</p>
+
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.cacheUsage') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.cacheUsageHint') }}</span>
+          </div>
+          <span class="settings-row__value num">
+            {{ cacheUsage ? formatBytes(cacheUsage.cacheBytes) : '—' }}
+          </span>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.cachePrefs') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.cachePrefsHint') }}</span>
+          </div>
+          <span class="settings-row__value num">
+            {{ cacheUsage ? formatBytes(cacheUsage.localStorageBytes) : '—' }}
+          </span>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.cacheLimit') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.cacheLimitHint') }}</span>
+          </div>
+          <div class="settings-cache-limit">
+            <UiSelect
+              :model-value="cacheLimit"
+              :options="cacheLimitOptions"
+              size="small"
+              :disabled="cacheBusy"
+              @change="onCacheLimitChange"
+            />
+          </div>
+        </div>
+
+        <div class="settings-row settings-row--last">
+          <div class="settings-row__text">
+            <span class="settings-row__label">{{ t('settings.cacheClear') }}</span>
+            <span class="settings-row__hint text-placeholder">{{ t('settings.cacheClearHint') }}</span>
+          </div>
+          <UiButton variant="outline" size="small" :loading="cacheBusy" @click="confirmClearCache">
+            {{ t('settings.cacheClear') }}
+          </UiButton>
+        </div>
+      </section>
+
       <!-- 插件 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.plugins') }}</h2>
@@ -650,6 +780,12 @@ function goBack() {
   margin-top: 14px;
 }
 
+/* 本地缓存：上限选择器固定宽度，避免把左侧说明挤成多行 */
+.settings-cache-limit {
+  width: 150px;
+  flex-shrink: 0;
+}
+
 /* 分段控件 */
 .settings-seg {
   display: inline-flex;
@@ -762,6 +898,10 @@ function goBack() {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+  }
+
+  .settings-cache-limit {
+    width: 100%;
   }
 }
 </style>
