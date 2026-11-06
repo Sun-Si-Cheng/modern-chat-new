@@ -42,8 +42,27 @@ function cacheSupported(): boolean {
   return typeof caches !== 'undefined'
 }
 
-async function measureCacheStorage(): Promise<number> {
+/**
+ * 静态缓存字节数。
+ *
+ * 优先用 `navigator.storage.estimate()`：一次调用就能拿到 origin 总占用，
+ * 减去 localStorage 即为 Cache Storage 的近似大小。旧实现遍历每个缓存条目
+ * 并 `blob()` 读一遍，缓存多时会让设置页卡住、选择器长时间不可用。
+ * estimate 不可用时才回退到逐条统计。
+ */
+async function measureCacheStorage(localStorageBytes: number): Promise<number> {
   if (!cacheSupported()) return 0
+  try {
+    if (navigator.storage?.estimate) {
+      const { usage } = await navigator.storage.estimate()
+      if (typeof usage === 'number') {
+        return Math.max(0, usage - localStorageBytes)
+      }
+    }
+  } catch {
+    /* 隐私模式等场景不可用：走回退 */
+  }
+
   let total = 0
   try {
     for (const name of await caches.keys()) {
@@ -76,9 +95,10 @@ function measureLocalStorage(): number {
 }
 
 export async function measureLocalCache(): Promise<LocalCacheUsage> {
+  const localStorageBytes = measureLocalStorage()
   return {
-    cacheBytes: await measureCacheStorage(),
-    localStorageBytes: measureLocalStorage(),
+    cacheBytes: await measureCacheStorage(localStorageBytes),
+    localStorageBytes,
   }
 }
 
@@ -94,7 +114,7 @@ export async function clearStaticCache(): Promise<void> {
  */
 export async function applyCacheLimit(limitMB: number, cacheBytes?: number): Promise<boolean> {
   if (limitMB <= 0 || !cacheSupported()) return false
-  const bytes = cacheBytes ?? (await measureCacheStorage())
+  const bytes = cacheBytes ?? (await measureCacheStorage(measureLocalStorage()))
   if (bytes <= limitMB * 1024 * 1024) return false
   await clearStaticCache()
   return true

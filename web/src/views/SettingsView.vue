@@ -80,9 +80,9 @@ async function initCache() {
 async function onCacheLimitChange(v: unknown) {
   const mb = Number(v)
   if (!Number.isFinite(mb) || mb < 0) return
+  // 先落值：即使后面的统计/清理失败，用户的选择也不会丢
   cacheLimit.value = mb
   setCacheLimitMB(mb)
-  cacheBusy.value = true
   try {
     const usage = await measureLocalCache()
     const cleared = await applyCacheLimit(mb, usage.cacheBytes)
@@ -90,8 +90,6 @@ async function onCacheLimitChange(v: unknown) {
     if (cleared) void MessagePlugin.info(t('settings.cacheAutoCleared'))
   } catch {
     /* 统计失败不阻断设置保存 */
-  } finally {
-    cacheBusy.value = false
   }
 }
 
@@ -600,7 +598,6 @@ function goBack() {
               :model-value="cacheLimit"
               :options="cacheLimitOptions"
               size="small"
-              :disabled="cacheBusy"
               @change="onCacheLimitChange"
             />
           </div>
