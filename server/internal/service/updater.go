@@ -1,6 +1,8 @@
 package service
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -313,7 +315,9 @@ func (u *Updater) runReleaseUpdate() {
 			}
 		}
 		if !valid {
-			u.log("    （sha256 附件内容异常，跳过校验）")
+			// 附件异常不能当成「跳过校验」继续替换产物：否则哈希失败却仍更新，
+			// defer 还会把 phase 置为 done，形成「假成功」。
+			u.fail("sha256 附件内容异常（下载可能被劫持或镜像返回了 HTML）")
 			return
 		}
 		f, err := os.Open(archive)
@@ -338,10 +342,9 @@ func (u *Updater) runReleaseUpdate() {
 	u.phase = "swapping"
 	u.mu.Unlock()
 
-	// 解压到临时目录
+	// 解压到临时目录（Go 内解压并逐条校验路径，杜绝 tar 的 ../ 或绝对路径穿越）
 	extract := filepath.Join(tmp, "extract")
-	if out, err := u.run(context.Background(), tmp, "tar", "-xzf", archive, "-C", extract); err != nil {
-		_ = out
+	if err := extractTarGz(archive, extract); err != nil {
 		u.fail("解压失败：%v", err)
 		return
 	}
@@ -366,6 +369,93 @@ func (u *Updater) runReleaseUpdate() {
 		_, _ = u.run(ctx, u.rootDir, "systemctl", "restart", "modernchat@"+u.port+".service")
 		// restart 会停掉本进程；走到这里说明 restart 失败（罕见），进程继续跑旧版本
 	}()
+}
+
+// maxExtractBytes 解压总量上限：防止压缩炸弹把磁盘写满。
+const maxExtractBytes = 1 << 30 // 1 GB
+
+// extractTarGz 解压发行包，逐条校验目标路径必须落在 dest 内。
+//
+// 修复缺陷：原实现直接调用外部 `tar -xzf`，恶意/损坏包里的 `../` 或绝对路径
+// 可以写到安装目录之外；链接条目也可能被后续写入利用再次越界。这里拒绝
+// 越界路径、拒绝符号/硬链接，并限制总解压体积。
+func extractTarGz(archive, dest string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gz.Close() }()
+
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	tr := tar.NewReader(gz)
+	var total int64
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		name := filepath.Clean(hdr.Name)
+		if name == "." {
+			continue
+		}
+		// 绝对路径在 Linux 与 Windows 的表现不同（如 "/tmp/x" 在 Windows 不算 IsAbs），
+		// 这里同时检查两种分隔符与卷名，避免校验被平台差异绕过。
+		if strings.HasPrefix(hdr.Name, "/") || strings.HasPrefix(hdr.Name, `\`) ||
+			filepath.IsAbs(name) || filepath.VolumeName(name) != "" ||
+			name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("压缩包包含越界路径 %q", hdr.Name)
+		}
+		target := filepath.Join(dest, name)
+		rel, err := filepath.Rel(dest, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("压缩包包含越界路径 %q", hdr.Name)
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if hdr.Size < 0 || total+hdr.Size > maxExtractBytes {
+				return fmt.Errorf("压缩包解压体积超过上限")
+			}
+			total += hdr.Size
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(hdr.Mode) & 0o777
+			if mode == 0 {
+				mode = 0o644
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, io.LimitReader(tr, hdr.Size)); err != nil {
+				_ = out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+		case tar.TypeSymlink, tar.TypeLink:
+			return fmt.Errorf("压缩包包含链接条目 %q，已拒绝", hdr.Name)
+		default:
+			// 设备文件/命名管道等一律跳过
+		}
+	}
 }
 
 // replaceProduct 用解压出的发行包内容替换安装目录中的产物。
