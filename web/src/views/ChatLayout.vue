@@ -123,6 +123,11 @@ watch(
 const showDetail = computed(() => !!convStore.currentConv)
 /** 是否有抽屉处于展开状态（决定遮罩显示与 Esc 行为） */
 const hasOpenDrawer = computed(() => layout.opened.group || layout.opened.conv || layout.opened.detail)
+/**
+ * 断线提示：只在此前成功连过之后才显示，避免首屏「连接中」闪一条黄条。
+ * 断线期间消息发不出去（会自动进失败态并可重发），先让用户知道是网络问题。
+ */
+const offline = computed(() => ws.hasConnected && !ws.connected)
 
 /** Esc 收起当前展开的抽屉 */
 function onKeydown(e: KeyboardEvent) {
@@ -191,6 +196,11 @@ onUnmounted(() => {
 
 <template>
   <div class="mc-layout" :style="layout.vars" :class="{ 'has-conv': !!convStore.currentConv }">
+    <!-- 断线提示：重连成功即消失；期间消息会进失败态，可直接点「重发」 -->
+    <div v-if="offline" class="mc-layout__offline" role="status">
+      {{ t('chat.reconnecting') }}
+    </div>
+
     <AppRail
       v-model:view="paneView"
       @open-favorites="favoriteDrawerVisible = true"
@@ -339,6 +349,24 @@ onUnmounted(() => {
   display: flex;
   flex-shrink: 0;
   min-height: 0;
+}
+
+/* 断线提示：浮在顶部居中，重连后自动消失 */
+.mc-layout__offline {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--td-warning-color, #ed9e20);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: var(--mc-elev-2);
+  pointer-events: none;
 }
 
 /* 抽屉遮罩：点击空白处收起 */
@@ -527,6 +555,15 @@ onUnmounted(() => {
 
 /* 手机：第二栏与消息区互斥显示；图标栏保留 */
 @media (max-width: 768px) {
+  /* 详情抽屉按视口收窄：280px 在 360px 屏上会顶满，留一点主区可见（点空白可关闭） */
+  .mc-layout > .mc-pane--right.is-drawer {
+    width: min(88vw, 320px);
+  }
+
+  .mc-layout > .mc-pane--right.is-drawer :deep(.mc-detail) {
+    width: 100%;
+  }
+
   /* 抽屉形态不作互斥：用户主动展开时要能看到（否则点了入口像没反应） */
   .mc-layout.has-conv :deep(.mc-sidebar:not(.is-drawer)) {
     display: none;

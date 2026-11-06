@@ -25,8 +25,11 @@ export const useWsStore = defineStore('ws', () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectDelay = 1000
   let closedByUser = false
-  /** 是否成功建立过连接：用于区分首连与重连（重连后需补数据） */
-  let hasConnected = false
+  /**
+   * 是否成功建立过连接：用于区分首连与重连（重连后需补数据），
+   * 界面也据此决定要不要显示「连接已断开」提示（首连中不闪）。
+   */
+  const hasConnected = ref(false)
 
   /** 旁路帧监听（插件宿主等），不参与状态机 */
   const frameListeners = new Set<(frame: ServerFrame) => void>()
@@ -53,8 +56,8 @@ export const useWsStore = defineStore('ws', () => {
       reconnectDelay = 1000
       startHeartbeat()
       // 重连：断线期间的消息不会补发帧，必须重新对齐服务端状态
-      if (hasConnected) void conversations.resync()
-      hasConnected = true
+      if (hasConnected.value) void conversations.resync()
+      hasConnected.value = true
     }
 
     socket.onmessage = (ev) => {
@@ -157,7 +160,7 @@ export const useWsStore = defineStore('ws', () => {
 
   function disconnect() {
     closedByUser = true
-    hasConnected = false
+    hasConnected.value = false
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
@@ -173,5 +176,14 @@ export const useWsStore = defineStore('ws', () => {
     onlineUsers.value = new Set()
   }
 
-  return { connected, onlineUsers, connect, send, disconnect, onFrame, resetPresence }
+  return {
+    connected,
+    hasConnected,
+    onlineUsers,
+    connect,
+    send,
+    disconnect,
+    onFrame,
+    resetPresence,
+  }
 })

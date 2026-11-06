@@ -137,6 +137,7 @@ export default {
     previewVoice: '[Voice]',
     previewSticker: '[Sticker]',
     previewVideo: '[Video]',
+    reconnecting: 'Connection lost, reconnecting…',
     announcement: 'Announcement',
     expand: 'Expand',
     collapse: 'Collapse',

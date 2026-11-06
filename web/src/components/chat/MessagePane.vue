@@ -188,6 +188,17 @@ function onPaneKeydown(e: KeyboardEvent) {
     // 抽屉形态且收起时先展开（不要用 toggle，避免已展开时被关掉）
     if (layout.panes.detail.drawer && !layout.opened.detail) layout.open('detail')
     layout.requestDetailSearch()
+    return
+  }
+  // Esc 关闭转发选择框 / 举报浮层：它们盖在最上层且原来不响应键盘，键盘用户会被困住
+  if (e.key === 'Escape' && (forwardSource.value || mergeSourceIds.value)) {
+    e.preventDefault()
+    closeForwardPicker()
+    return
+  }
+  if (e.key === 'Escape' && reportTarget.value) {
+    e.preventDefault()
+    reportTarget.value = null
   }
 }
 
@@ -453,6 +464,15 @@ function closeForwardPicker() {
 
 /** 待选择目标会话的消息；非 null 时弹出会话选择框 */
 const forwardSource = ref<Message | null>(null)
+const forwardPanelRef = ref<HTMLElement | null>(null)
+
+// 浮层打开时把焦点移入：否则键盘用户要 Tab 穿过多层节点才能真正选目标
+watch(
+  () => forwardSource.value || mergeSourceIds.value,
+  (open) => {
+    if (open) void nextTick(() => forwardPanelRef.value?.focus())
+  },
+)
 
 const forwardTargets = computed(() =>
   // type=3 是系统公告会话，不能往里转发
@@ -881,6 +901,12 @@ function messageStatus(m: Message): string {
   return t('message.sent')
 }
 
+/** 失败消息重发：复用 store 的 resend（重置 pending 并重新发帧） */
+function retrySend(m: Message) {
+  if (!m.failed) return
+  convStore.resend(m)
+}
+
 // ===== 正在输入 =====
 
 const typingNames = computed(() => {
@@ -1256,7 +1282,17 @@ const senderName = (m: Message) => {
                 </div>
 
                 <div class="mc-msg__meta text-placeholder num">
-                  <template v-if="senderOf(item.msg) && conv?.type === 1">
+                  <!-- 发送失败：所有会话类型都给重试入口（原来只有单聊显示了文字，群里连提示都没有） -->
+                  <button
+                    v-if="item.msg.failed"
+                    type="button"
+                    class="mc-msg__retry"
+                    :aria-label="t('message.resend')"
+                    @click.stop="retrySend(item.msg)"
+                  >
+                    {{ t('message.sendFailed') }} · {{ t('message.resend') }}
+                  </button>
+                  <template v-else-if="senderOf(item.msg) && conv?.type === 1">
                     {{ messageStatus(item.msg) }} ·
                   </template>
                   {{ fmtTime(item.msg.createdAt) }}
@@ -1307,7 +1343,13 @@ const senderName = (m: Message) => {
         class="mc-forward"
         @click.self="closeForwardPicker"
       >
-        <div class="mc-forward__panel" role="dialog" aria-modal="true">
+        <div
+          ref="forwardPanelRef"
+          class="mc-forward__panel"
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+        >
           <div class="mc-forward__head">
             <span>{{ mergeSourceIds ? t('message.mergeForward') : t('message.forwardTitle') }}</span>
             <button
@@ -1593,6 +1635,30 @@ const senderName = (m: Message) => {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* 手机：竖屏视频按视口宽度走，别在窄屏里只占 62% */
+@media (max-width: 768px) {
+  .mc-msg__video {
+    width: min(70vw, 260px);
+  }
+}
+
+/* 发送失败的重发入口：低调但可点，不用另起一行 */
+.mc-msg__retry {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--td-error-color);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mc-msg__retry:hover {
+  color: var(--td-error-color);
+  text-decoration-thickness: 2px;
 }
 
 /* 表情：不套气泡背景，透明贴图 */

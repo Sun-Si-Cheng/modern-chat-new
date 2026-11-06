@@ -137,6 +137,7 @@ export default {
     previewVoice: '[语音]',
     previewSticker: '[表情]',
     previewVideo: '[视频]',
+    reconnecting: '网络已断开，正在重连…',
     announcement: '群公告',
     expand: '展开',
     collapse: '收起',
