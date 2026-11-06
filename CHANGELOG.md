@@ -10,6 +10,7 @@
 
 ### 新增
 
+- **安装/卸载体系完善**：① 全程日志——安装镜像到 `/var/log/modernchat/install-*.log`、更新到仓库 `logs/update-*.log`（均带 latest 软链）；② 断点续跑——安装失败后重跑同一命令自动跳过已完成阶段、参数不再重复询问（进度存 `/var/lib/modernchat/install-state`，600 权限），`FORCE=1` 全部重跑；③ 面板路径适配——自动探测宝塔（`/www/server/panel/vhost/nginx`）/ 1Panel / OpenResty 的 nginx 二进制与 vhost 目录并直接写配置 reload，识别不到时可手动指定；④ 完整卸载 `scripts/uninstall.sh`——停服务删单元、只删带生成标记的 nginx 配置、数据库与安装目录默认保留需确认，支持 `AUTO_CONFIRM` / `PURGE_DB` / `DELETE_FILES` 免交互。
 - **热更新（升级不停机）**：`scripts/update.sh` 默认蓝绿双实例切换——新二进制原子替换（修复直接覆盖运行中文件会 `ETXTBSH` 的问题）、新实例起备用端口并通过健康检查、nginx upstream 平滑切流、老实例优雅停机，在线用户自动重连并增量补齐消息；任何一步失败自动回滚到老实例。install.sh 部署改为 `modernchat@<端口>` 模板单元；旧式单端口部署升级时自动迁移。前端产物同样原子交换（构建到 `dist.new`）。`--cold` 可强制旧式重启。
 - **一键安装脚本（宝塔面板风格）**：全新 Linux 服务器一条命令完成部署——环境自检补装（Go 1.26 / Node 22 / MySQL 8 / nginx，国内镜像可切官方源）→ 从 Gitee 拉最新代码 → 本地编译前后端 → 自动建库建号（已有实例填连接信息即可）→ 生成 `JWT_SECRET` 与 `server/.env` → systemd 常驻 + nginx 配置（静态托管 / `/api` 反代 / `/ws` 升级）→ 输出可直接访问的站点地址（域名优先，无域名用公网 IP:端口）。支持 `INSTALL_DIR` / `DOMAIN` / `DB_MODE` 等环境变量免交互。用法见运维手册 §3.1。
 - **设置页本地缓存管理**：显示 PWA 静态缓存与本地偏好占用，支持一键清空静态缓存；保留登录状态与外观偏好。

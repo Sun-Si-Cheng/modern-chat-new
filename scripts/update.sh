@@ -35,10 +35,21 @@ done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# ---------------- 更新日志 ----------------
+LOG_DIR="$ROOT/logs"; mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/update-$(date +%Y%m%d-%H%M%S).log"
+touch "$LOG_FILE"; ln -sfn "$LOG_FILE" "$LOG_DIR/update-latest.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+info "日志：$LOG_FILE"
+
 MODULE="gitee.com/Sun-Si-Cheng/modern-chat-new/server"
 HOTSTATE="$ROOT/.hotupdate"          # BASE_PORT / ACTIVE_PORT（install.sh 生成，update.sh 维护）
 NGINX_CANDIDATES=(
   /etc/nginx/conf.d/modernchat.conf
+  /www/server/panel/vhost/nginx/modernchat.conf
+  /www/server/nginx/conf/vhost/modernchat.conf
+  /opt/1panel/apps/openresty/openresty/conf/conf.d/modernchat.conf
+  /usr/local/openresty/nginx/conf/conf.d/modernchat.conf
   /etc/nginx/sites-available/modernchat.conf
 )
 BEFORE="$(git rev-parse --short HEAD)"
@@ -89,6 +100,14 @@ have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2
 
 nginx_conf_for_hot() {  # 输出可热切换的 nginx 配置路径，找不到则输出空
   local f
+  # 1) install.sh 记录的实际路径（状态文件）
+  if [ -f /var/lib/modernchat/install-state ]; then
+    f="$(sed -n 's/^PARAM_NGINX_CONF=//p' /var/lib/modernchat/install-state | head -n1)"
+    if [ -n "$f" ] && [ -f "$f" ] && grep -q "upstream modernchat_backend" "$f"; then
+      echo "$f"; return
+    fi
+  fi
+  # 2) 常见路径兜底（标准 / 宝塔 / 1Panel / OpenResty）
   for f in "${NGINX_CANDIDATES[@]}"; do
     if [ -f "$f" ] && grep -q "upstream modernchat_backend" "$f"; then
       echo "$f"; return
