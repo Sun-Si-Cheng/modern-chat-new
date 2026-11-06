@@ -123,34 +123,18 @@ func (h *ConversationHandler) CreateSingle(c *gin.Context) {
 		}
 	}
 
-	if existing, err := h.convs.SingleExists(me.ID, target.ID); err != nil {
-		internal(c, err)
-		return
-	} else if existing != nil {
-		c.JSON(http.StatusOK, h.buildSingleView(existing, target, me.ID))
-		return
-	}
-
-	conv := &model.Conversation{Type: 1}
-	if err := h.convs.Create(conv); err != nil {
+	// 查重、建会话、加成员、初始化收件箱在同一事务内完成；
+	// direct_key 唯一索引兜底并发双击/两端同时发起，只会留下一个单聊。
+	conv, created, err := h.convs.EnsureSingle(me.ID, target.ID)
+	if err != nil {
 		internal(c, err)
 		return
 	}
-	members := []model.ConversationMember{
-		{ConversationID: conv.ID, UserID: me.ID, Role: "member"},
-		{ConversationID: conv.ID, UserID: target.ID, Role: "member"},
+	if created {
+		// 通知对方刷新列表
+		notifyFor(c).ToUsers([]uint{target.ID}, convMetaFrame(conv.ID))
+		slog.Info("conversation created", "type", "single", "conv", conv.ID, "a", me.ID, "b", target.ID)
 	}
-	if err := h.convs.AddMembers(members); err != nil {
-		internal(c, err)
-		return
-	}
-	if err := h.initInboxes(conv.ID, me.ID, target.ID); err != nil {
-		internal(c, err)
-		return
-	}
-	// 通知对方刷新列表
-	notifyFor(c).ToUsers([]uint{target.ID}, convMetaFrame(conv.ID))
-	slog.Info("conversation created", "type", "single", "conv", conv.ID, "a", me.ID, "b", target.ID)
 	c.JSON(http.StatusOK, h.buildSingleView(conv, target, me.ID))
 }
 

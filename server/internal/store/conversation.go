@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -385,8 +386,12 @@ func (s *ConversationStore) MemberIDsOfConvs(convIDs []uint) ([]uint, error) {
 
 // SingleExists 查找两人已存在的 type=1 会话（单聊幂等复用）。
 func (s *ConversationStore) SingleExists(a, b uint) (*model.Conversation, error) {
+	return singleExists(s.db, a, b)
+}
+
+func singleExists(db *gorm.DB, a, b uint) (*model.Conversation, error) {
 	var c model.Conversation
-	err := s.db.Raw(`
+	err := db.Raw(`
 		SELECT c.* FROM conversations c
 		JOIN conversation_members m1 ON m1.conversation_id = c.id AND m1.user_id = ?
 		JOIN conversation_members m2 ON m2.conversation_id = c.id AND m2.user_id = ?
@@ -399,6 +404,67 @@ func (s *ConversationStore) SingleExists(a, b uint) (*model.Conversation, error)
 		return nil, nil
 	}
 	return &c, nil
+}
+
+// directKey 单聊去重键：与创建顺序无关，同一对用户始终得到同一个键。
+func directKey(a, b uint) string {
+	lo, hi := a, b
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return fmt.Sprintf("%d:%d", lo, hi)
+}
+
+// EnsureSingle 原子地取得或创建单聊，返回该会话以及是否本次新建。
+//
+// 修复缺陷：原实现「查重 → 建会话 → 加成员 → 初始化收件箱」多步无事务，
+// 两个并发请求（双击、两端同时发起）会各自创建一个单聊。现在整个流程包在
+// 事务里，并用 direct_key 唯一索引兜底：并发插入时只有一个成功，失败方
+// 回滚后重查拿到已建好的会话。
+func (s *ConversationStore) EnsureSingle(a, b uint) (*model.Conversation, bool, error) {
+	key := directKey(a, b)
+	var conv *model.Conversation
+	created := false
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		existing, err := singleExists(tx, a, b)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			conv = existing
+			return nil
+		}
+		c := &model.Conversation{Type: 1, DirectKey: &key}
+		if err := tx.Create(c).Error; err != nil {
+			return err
+		}
+		members := []model.ConversationMember{
+			{ConversationID: c.ID, UserID: a, Role: "member"},
+			{ConversationID: c.ID, UserID: b, Role: "member"},
+		}
+		if err := tx.Create(&members).Error; err != nil {
+			return err
+		}
+		// 新会话没有历史消息，收件箱行全部为默认值；DoNothing 保证可重试
+		inboxes := []model.UserConversation{
+			{UserID: a, ConversationID: c.ID},
+			{UserID: b, ConversationID: c.ID},
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&inboxes).Error; err != nil {
+			return err
+		}
+		conv = c
+		created = true
+		return nil
+	})
+	if err != nil {
+		// 唯一键冲突说明另一并发请求已建好会话：重查后直接复用
+		if existing, e := singleExists(s.db, a, b); e == nil && existing != nil {
+			return existing, false, nil
+		}
+		return nil, false, err
+	}
+	return conv, created, nil
 }
 
 // ---- 列表组装 ----

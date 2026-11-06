@@ -7,6 +7,9 @@ type Conversation struct {
 	ID   uint    `gorm:"primaryKey" json:"id"`
 	Type int8    `gorm:"not null" json:"type"`
 	Name *string `gorm:"size:30" json:"name,omitempty"`
+	// DirectKey 单聊去重键（"小ID:大ID"）；群聊为 NULL。
+	// 唯一索引保证并发创建同一对用户时只会留下一个会话（MySQL 唯一索引允许多个 NULL）。
+	DirectKey *string `gorm:"size:64;uniqueIndex:idx_conversations_direct_key" json:"-"`
 	// Avatar 群头像地址（图片上传接口返回的 URL）；空表示使用默认头像
 	Avatar string `gorm:"size:255" json:"avatar,omitempty"`
 	// MuteAll 全员禁言：群主/管理员不受影响
