@@ -341,10 +341,11 @@ chmod 600 server/.env
 info "已写入 server/.env（MIGRATE=true，首次启动自动建表）"
 
 # ============================================================================
-# 9) systemd 常驻
+# 9) 常驻运行（优先 systemd；无 systemd 时降级 nohup）
 # ============================================================================
-info "注册 systemd 服务 modernchat.service"
-cat > /etc/systemd/system/modernchat.service <<UNIT
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+  info "注册 systemd 服务 modernchat.service"
+  cat > /etc/systemd/system/modernchat.service <<UNIT
 [Unit]
 Description=ModernChat IM server
 After=network.target mysql.service mysqld.service
@@ -362,8 +363,19 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 UNIT
-systemctl daemon-reload
-systemctl enable --now modernchat
+  systemctl daemon-reload
+  systemctl enable --now modernchat
+  RUN_MODE="systemd"
+else
+  warn "未检测到 systemd（WSL / 容器 / 老系统），降级为 nohup 后台进程"
+  mkdir -p "$INSTALL_DIR/server/logs"
+  cd "$INSTALL_DIR/server"
+  nohup "$INSTALL_DIR/bin/modernchat-server" >> logs/server.out 2>&1 &
+  echo $! > "$INSTALL_DIR/server/server.pid"
+  cd - >/dev/null
+  RUN_MODE="nohup"
+  warn "重启机器后需手动启动：cd $INSTALL_DIR/server && nohup ../bin/modernchat-server >> logs/server.out 2>&1 &"
+fi
 
 # 等待健康检查（迁移 45 张表需要一点时间）
 info "等待后端启动（含首次建表）…"
@@ -371,7 +383,11 @@ for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null 2>&1; then
     info "后端健康检查通过"; break
   fi
-  [ "$i" = "60" ] && { journalctl -u modernchat -n 30 --no-pager || true; die "后端 60s 内未就绪，上方是最近日志"; }
+  [ "$i" = "60" ] && {
+    if [ "$RUN_MODE" = "systemd" ]; then journalctl -u modernchat -n 30 --no-pager || true
+    else tail -n 30 "$INSTALL_DIR/server/logs/server.out" || true; fi
+    die "后端 60s 内未就绪，上方是最近日志"
+  }
   sleep 1
 done
 
@@ -442,6 +458,16 @@ server {
         client_max_body_size 2m;
     }
 
+    # 媒体上传（multipart）：应用侧 200 MB 天花板 + 余量，nginx 不放宽会先回 413
+    location /api/upload {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        client_max_body_size 210m;
+        proxy_request_buffering off;
+    }
+
     # WebSocket（/ws：握手 + 升级；关闭访问日志防令牌泄露）
     location /ws {
         access_log off;
@@ -486,7 +512,11 @@ printf "${C_G}=============================================================${C_0
 echo "  访问地址 ： $PUBLIC_URL"
 echo "  首个账号 ： 打开上面地址直接注册，第一个注册的账号自动成为站长"
 echo "  数据库   ： $DB_NAME@$DB_HOST:$DB_PORT（用户 $DB_USER，密码在 server/.env 的 DB_DSN 里）"
-echo "  服务管理 ： systemctl status|restart|stop modernchat"
+if [ "$RUN_MODE" = "systemd" ]; then
+  echo "  服务管理 ： systemctl status|restart|stop modernchat"
+else
+  echo "  服务管理 ： nohup 模式（无 systemd）——停止：kill \$(cat $INSTALL_DIR/server/server.pid)；启动：cd $INSTALL_DIR/server && nohup ../bin/modernchat-server >> logs/server.out 2>&1 &"
+fi
 echo "  升级     ： bash $INSTALL_DIR/scripts/update.sh"
 echo "  后台地址 ： $PUBLIC_URL/admin（用站长账号登录后可见）"
 echo
