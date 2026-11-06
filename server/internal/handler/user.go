@@ -42,6 +42,9 @@ func (h *UserHandler) LogoutOthers(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// 仅 bump token_version 不会影响已建立的 WS 连接（它们只缓存握手时的 tv），
+	// 必须显式踢掉，否则旧连接可以继续收发消息直到自然断开。
+	notifyFor(c).KickUser(me.ID, "已退出所有设备，请重新登录")
 	slog.Info("logout all devices", "uid", me.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

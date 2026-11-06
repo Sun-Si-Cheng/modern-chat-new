@@ -36,11 +36,18 @@ type clientFrame struct {
 	Action string `json:"action"`
 }
 
-// Dispatch 上行帧路由：非成员一律 error 帧。
+// Dispatch 上行帧路由：先复核连接状态，再按类型分发。
+//
+// 修复缺陷：此前只有 chat 帧做封禁 / token_version 复核，被封禁或强制下线的
+// 用户仍可用 typing/read/recall/edit/reaction/delivered 等帧继续写库与广播。
+// 现在所有上行帧（含 ping）都先走连接级复核，失败即回 error 帧并断开。
 func (h *Hub) Dispatch(c *Client, data []byte) {
 	var f clientFrame
 	if err := json.Unmarshal(data, &f); err != nil {
 		h.sendError(c, "帧格式错误")
+		return
+	}
+	if !h.checkConnState(c, f.ConvID) {
 		return
 	}
 	switch f.Type {
@@ -68,13 +75,6 @@ func (h *Hub) Dispatch(c *Client, data []byte) {
 // handleChat 发消息链路（§9.1）。
 func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	if h.deps == nil {
-		return
-	}
-	// 修复缺陷：握手时校验过封禁/TokenVersion，但连接建立后 admin 封禁或
-	// 重置密码（tv+1）不会作用于既有连接 —— 被处理过的用户只要忽略 kicked
-	// 帧就能继续发消息、写库与 fan-out。这里在落库前做一次连接级复核：
-	// 任一不通过则回 error 帧并 requestKick() 断开，与 REST 侧 401 行为一致。
-	if !h.checkConnState(c, f.ConvID) {
 		return
 	}
 	// 限流：每用户 20 条/分

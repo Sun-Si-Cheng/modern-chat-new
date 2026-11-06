@@ -437,6 +437,8 @@ func (h *AuthHandler) Reset(c *gin.Context) {
 		return
 	}
 	slog.Info("password reset", "uid", u.ID)
+	// 密码重置后旧连接仍缓存着握手时的 tv，必须主动断开（否则可继续收发）。
+	notifyFor(c).KickUser(u.ID, "密码已被重置，请重新登录")
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
