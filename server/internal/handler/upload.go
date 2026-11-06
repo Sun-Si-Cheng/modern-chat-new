@@ -48,6 +48,9 @@ func (h *UploadHandler) limits() (image, audio, file, video int64) {
 //  1. WS 帧走 JSON + base64，体积会膨胀 33%，且阻塞同连接上的其它帧；
 //  2. 上传能拿到真实的进度与失败重试，失败不影响会话；
 //  3. 消息里只存 URL，历史消息读取是纯文本，列表加载不会拖大。
+//
+// 实现是**流式**的：multipart 分段直接交给存储层边读边写，文件不整块进内存。
+// 视频上限可调到 100 MB，整块 ReadAll 意味着每个并发上传都在内存里常驻一份文件。
 func (h *UploadHandler) Upload(c *gin.Context) {
 	me := middleware.UserFrom(c)
 	if me == nil {
@@ -74,13 +77,12 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		maxBytes = videoMax
 	}
 
-	// 防止超大请求把内存打满：在读取前按当前配置卡住
+	// 防止超大请求把内存打满：在读取前按当前配置卡住（含 multipart 边框开销）
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+(1<<20))
 
-	file, err := c.FormFile("file")
+	mr, err := c.Request.MultipartReader()
 	if err != nil {
-		// 超限时 FormFile 返回的是 MaxBytesError，直接说「文件过大」比
-		// 「缺少文件字段 file」有用得多
+		// MaxBytesReader 超限时 MultipartReader 也会失败：优先说「文件过大」
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			fail(c, http.StatusRequestEntityTooLarge,
@@ -90,51 +92,113 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "缺少文件字段 file")
 		return
 	}
-	if file.Size > maxBytes {
-		fail(c, http.StatusRequestEntityTooLarge,
-			fmt.Sprintf("文件过大（%s 上限 %d MB）", kind, maxBytes>>20))
-		return
-	}
 
-	f, err := file.Open()
-	if err != nil {
-		internal(c, err)
+	var part io.Reader
+	var partCloser io.Closer
+	found := false
+	for {
+		p, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				fail(c, http.StatusRequestEntityTooLarge,
+					fmt.Sprintf("文件过大（%s 上限 %d MB）", kind, maxBytes>>20))
+				return
+			}
+			fail(c, http.StatusBadRequest, "读取上传内容失败")
+			return
+		}
+		if p.FormName() == "file" {
+			part, partCloser = p, p
+			found = true
+			break
+		}
+	}
+	if !found {
+		fail(c, http.StatusBadRequest, "缺少文件字段 file")
 		return
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if partCloser != nil {
+			_ = partCloser.Close()
+		}
+	}()
 
-	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-	if err != nil {
-		fail(c, http.StatusBadRequest, "读取文件失败")
-		return
-	}
-	if int64(len(data)) > maxBytes {
-		fail(c, http.StatusRequestEntityTooLarge, "文件过大")
-		return
-	}
+	// 统计写入字节数（配额累加与响应体都要用）
+	cr := &countingReader{r: part}
 
 	// 本地存储总配额：0 表示不限制。对象存储无法在本地统计用量，跳过。
+	// 用缓存值做预检（写入期间别人也可能写，最终以管理员后台统计为准）。
 	if quotaMB := h.ops().MaxStorageMB; quotaMB > 0 {
 		if rooter, ok := h.storage.(interface{ Root() string }); ok {
-			_, used, err := service.DirUsage(rooter.Root())
-			if err == nil && used+int64(len(data)) > int64(quotaMB)<<20 {
+			used, err := service.CachedDirUsage(rooter.Root())
+			if err != nil {
+				internal(c, err)
+				return
+			}
+			if used >= int64(quotaMB)<<20 {
 				fail(c, http.StatusInsufficientStorage, "存储空间已满，请联系管理员清理")
 				return
 			}
 		}
 	}
 
-	url, err := h.storage.Save(kind, data, maxBytes)
+	var url string
+	if fs, ok := h.storage.(service.FileStreamSaver); ok {
+		// 流式：不整块进内存
+		url, err = fs.SaveStream(kind, cr, maxBytes)
+	} else {
+		// 兜底：存储实现未升级到流式接口时走旧路径
+		var data []byte
+		data, err = io.ReadAll(io.LimitReader(cr, maxBytes+1))
+		if err == nil && int64(len(data)) > maxBytes {
+			err = fmt.Errorf("文件超过 %d MB", maxBytes>>20)
+		}
+		if err == nil {
+			url, err = h.storage.Save(kind, data, maxBytes)
+		}
+	}
 	if err != nil {
-		// Save 的错误是"类型不支持/超过限制"这类客户端问题
-		fail(c, http.StatusBadRequest, err.Error())
+		var tooLarge *http.MaxBytesError
+		// MaxBytesReader 在请求体整体超限时触发
+		if errors.As(err, &tooLarge) {
+			fail(c, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("文件过大（%s 上限 %d MB）", kind, maxBytes>>20))
+			return
+		}
+		if strings.Contains(err.Error(), "超过") || strings.Contains(err.Error(), "文件为空") ||
+			strings.Contains(err.Error(), "不支持的文件格式") || strings.Contains(err.Error(), "不支持的文件类型") {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		internal(c, err)
 		return
 	}
 
-	slog.Info("file uploaded", "uid", me.ID, "kind", kind, "bytes", len(data), "url", url)
+	// 配额缓存增量：下次上传不必重扫全目录
+	if rooter, ok := h.storage.(interface{ Root() string }); ok {
+		service.AddQuotaDelta(rooter.Root(), cr.n)
+	}
+
+	slog.Info("file uploaded", "uid", me.ID, "kind", kind, "bytes", cr.n, "url", url)
 	c.JSON(http.StatusOK, gin.H{
 		"url":  url,
-		"size": len(data),
+		"size": cr.n,
 		"kind": kind,
 	})
+}
+
+// countingReader 统计经过的字节数。
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }

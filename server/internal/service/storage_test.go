@@ -1,6 +1,12 @@
 package service
 
-import "testing"
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // 浏览器录音的容器常被 http.DetectContentType 判成 video/* 或 application/ogg，
 // 语音上传必须仍能识别出音频扩展名，否则用户发语音会被直接拒掉。
@@ -104,6 +110,56 @@ func TestMimeOfExtDistinguishesWebm(t *testing.T) {
 	}
 	if got := mimeOfExt("video", ".mp4"); got != "video/mp4" {
 		t.Fatalf("mp4: got %q", got)
+	}
+}
+
+// 流式保存：类型嗅探、大小上限、空文件与配额增量都要成立。
+// 这是上传接口的主路径（文件不整块进内存），坏了影响所有媒体上传。
+func TestSaveStreamLocal(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewLocalStorage(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte("x"), 100)...)
+	url, err := s.SaveStream("image", bytes.NewReader(png), MaxImageBytes)
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if !strings.HasSuffix(url, ".png") || !strings.HasPrefix(url, "/uploads/") {
+		t.Fatalf("unexpected url %q", url)
+	}
+
+	// 超限：maxBytes=4，png 头就有 8 字节
+	if _, err := s.SaveStream("image", bytes.NewReader(png), 4); err == nil {
+		t.Fatal("oversize stream should be rejected")
+	}
+
+	// 空文件
+	if _, err := s.SaveStream("image", bytes.NewReader(nil), 8); err == nil {
+		t.Fatal("empty stream should be rejected")
+	}
+
+	// 伪装成 png 的 html：嗅探按文件头判，必须拒绝
+	html := []byte("<!doctype html><script>alert(1)</script>")
+	if _, err := s.SaveStream("image", bytes.NewReader(html), 1<<20); err == nil {
+		t.Fatal("html disguised as image should be rejected")
+	}
+
+	// 落盘的文件确实存在，且配额缓存能通过 DirUsage 查到它
+	rel := strings.TrimPrefix(url, "/uploads/")
+	if _, err := os.Stat(filepath.Join(dir, "uploads", filepath.FromSlash(rel))); err != nil {
+		t.Fatalf("saved file missing: %v", err)
+	}
+	if _, err := CachedDirUsage(filepath.Join(dir, "uploads")); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := CachedDirUsage(filepath.Join(dir, "uploads"))
+	AddQuotaDelta(filepath.Join(dir, "uploads"), 500)
+	after, _ := CachedDirUsage(filepath.Join(dir, "uploads"))
+	if after != before+500 {
+		t.Fatalf("quota delta not applied: %d -> %d", before, after)
 	}
 }
 
