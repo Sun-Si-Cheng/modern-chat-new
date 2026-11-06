@@ -6,6 +6,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import type { ClientFrame, ServerFrame } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useConversationsStore } from './conversations'
+import { useFriendsStore } from './friends'
 
 const HEARTBEAT_INTERVAL = 25_000
 const MAX_RECONNECT_DELAY = 30_000
@@ -14,6 +15,7 @@ const MAX_RECONNECT_DELAY = 30_000
 export const useWsStore = defineStore('ws', () => {
   const auth = useAuthStore()
   const conversations = useConversationsStore()
+  const friends = useFriendsStore()
 
   const connected = ref(false)
   /** 在线用户 id 集合（含自己） */
@@ -96,6 +98,22 @@ export const useWsStore = defineStore('ws', () => {
         if (frame.online) onlineUsers.value.add(frame.userId)
         else onlineUsers.value.delete(frame.userId)
         break
+      case 'user_change': {
+        // 昵称 / 头像变更：好友列表、会话 peer、群成员与本人其他端就地更新。
+        // 服务端一直会广播该帧（含本人多端），此前前端没有分支处理，
+        // 导致文档里承诺的「实时同步」实际要刷新页面才生效。
+        conversations.applyUserProfile(frame)
+        friends.applyUserProfile(frame)
+        if (auth.user && auth.user.id === frame.userId) {
+          auth.user = {
+            ...auth.user,
+            nickname: frame.nickname,
+            avatar: frame.avatar,
+            avatarColor: frame.avatarColor,
+          }
+        }
+        break
+      }
       case 'kicked': {
         // 封禁/失效强制下线
         closedByUser = true

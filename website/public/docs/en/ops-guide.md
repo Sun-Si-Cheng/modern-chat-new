@@ -87,10 +87,9 @@ curl http://127.0.0.1:8080/api/version
 ## 4. Upgrading Versions
 
 ```bash
-# Linux / macOS
+# Linux / macOS / Git Bash
 ./scripts/update.sh
-# Windows
-.\scripts\update.ps1
+# Windows native: build manually (see below) or run the script under WSL
 ```
 
 The script: pulls Gitee → builds the backend (version injected) → builds the frontend → restarts. Manual equivalent:
@@ -179,7 +178,7 @@ The system offers no username recovery. The admin resets that user's password in
 `/admin` requires `role=admin`. Only the **first registered account** is admin. If the admin account is lost, the only fix is flipping `users.role` to `admin` in the DB.
 
 **Q9: Integration tests all SKIP yet show ok**
-When integration tests can't reach MySQL they `t.Skip`, and `go test` still reports `ok` for skips — a **false green**. Correct approach: set `DB_DSN` to a test database (create it first: `CREATE DATABASE modernchat_test`), and use `scripts/coverage.ps1` / `coverage.sh`, which detect skips and warn.
+When integration tests can't reach MySQL they `t.Skip`, and `go test` still reports `ok` for skips — a **false green**. Correct approach: set `DB_DSN` to a test database (create it first: `CREATE DATABASE modernchat_test`), and use `scripts/coverage.sh`, which detects skips and warns.
 
 **Q10: Pages still old after upgrade**
 If nginx caches static assets, check whether `dist/assets` filename hashes changed; hard refresh the browser (Ctrl+F5). The frontend is pure static — restarting the backend doesn't refresh pages.

@@ -37,9 +37,8 @@ A **frontend-backend separated, plugin-first** web chat platform. Out of the box
 - UI: Chinese/English switch, light/dark/system theme (preferences persisted locally)
 
 **Out of scope (v2)**
-- Voice/video, emoji reactions, @mentions, message forwarding, message search
-- Group admins (roles beyond owner), group muting, group announcements
-- Plugin marketplace (manual install only this phase), multi-device read sync
+- Video calls, chat-record card forwarding (multi-message merge is one text), image multi-select, voice waveform/seek, default emoji-reaction entry (implemented but disabled)
+- Plugin marketplace (manual install only this phase)
 - Horizontal scaling (single instance this phase, see §9)
 
 ---
@@ -115,7 +114,8 @@ modernchat-new/
 ├── docs/                   设计文档.md 后端需求规格.md
 ├── deploy/                 nginx.conf.example (bare metal)  nginx.compose.conf (containers)
 ├── plugins/examples/       weather.plugin.js (example plugin)
-├── scripts/                update.sh update.ps1 (upgrade from Gitee)
+├── website/                Marketing site / docs / plugin marketplace
+├── scripts/                install.sh / package-release.sh / update.sh / update-release.sh / uninstall.sh / coverage.sh
 ├── docker-compose.yml      MySQL + backend one-command environment
 ├── server/
 │   ├── go.mod  .env.example  Dockerfile
@@ -309,6 +309,10 @@ type ServerFrame =
   | { type:"typing"; convId:number; userId:number }
   | { type:"presence"; userId:number; online:boolean }
   | { type:"user_change"; userId:number; nickname:string; avatar:string; avatarColor:string }
+  | { type:"message_update"; id:number; convId:number; content:string; editedAt:string }
+  | { type:"reaction"; messageId:number; convId:number; emoji:string; before?:string; userId:number; action:"set"|"remove" }
+  | { type:"message_delivered"; messageId:number; convId:number; userId:number }
+  | { type:"message_admin_deleted"; messageId:number; convId:number }
   | { type:"conv_change"; convId:number }
   | { type:"kicked"; reason:string }
   | { type:"pong" } | { type:"error"; reason:string };
@@ -397,7 +401,7 @@ When a plugin wants to show UI, it sends a **UI description JSON** to the host, 
 - Local one-command environment: `docker-compose.yml` (MySQL 8 + backend, first start runs `MIGRATE=true` to create tables).
 - Production creates tables with versioned SQL from `migrations/`, not AutoMigrate.
 - Production must set `JWT_SECRET` (release mode refuses to start without it) and `FRONTEND_URL` (WS Origin whitelist + password-recovery links).
-- **Upgrades**: `scripts/update.sh` (Linux) / `update.ps1` (Windows) pulls from Gitee → rebuilds frontend & backend → restarts; verify with `GET /api/version` or the admin console. The app intentionally exposes no "trigger git pull" API (that would turn an admin account into an RCE entry).
+- **Upgrades**: `scripts/update.sh` auto-detects the install mode — release deployments download and verify the latest package, source deployments `git pull` and build locally; both default to blue-green hot swap. Verify with `GET /api/version` or the admin console. The admin "online update" tab is restricted to systemd installs, writes an audit entry, and can be disabled with `WEB_UPDATE=false`.
 - Config (DB DSN, JWT_SECRET, SMTP) goes through environment variables, never committed.
 
 ## 11. Local Run

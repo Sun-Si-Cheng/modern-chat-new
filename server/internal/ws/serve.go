@@ -18,7 +18,12 @@ const (
 	pongWait   = 60 * time.Second // 读超时（客户端 25s 心跳，服务端协议 ping 兜底）
 	pingPeriod = 50 * time.Second
 	sendBuffer = 256
-	maxMsgSize = 4096 // 上行帧上限
+	// maxMsgSize 上行帧上限（字节）。必须大于「后台可配的最大消息长度」的字节数：
+	// chat.maxMessageLength 上限为 5000 个字符，UTF-8 下最多约 20 KB（4 字节/字符），
+	// 再加上 clientMsgId、引用、mentions 等 JSON 开销。原来固定 4096 字节时，
+	// 管理员把长度调到几千后，合法长消息会触发 gorilla 的 read limit 直接断连，
+	// 用户连 error 帧都收不到。64 KB 留足余量，不做无上限放大。
+	maxMsgSize = 64 * 1024
 )
 
 // upgraderFor 构造带 Origin 白名单的升级器：

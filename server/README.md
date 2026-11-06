@@ -46,6 +46,12 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `LOG_RETAIN_DAYS` | 日志保留天数，默认 **15**；超期文件自动删除 |
 | `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` | 可选。配置后限流走 Redis 共享配额（支持多实例）；**连接失败自动降级为内存限流并打 WARN 日志**，不影响启动 |
 | `SMTP_*` | 可选；留空时找回密码链接打印到日志。端口 `465` 走隐式 TLS（QQ/163 推荐）、`587` 走 STARTTLS；QQ/163 需用 **SMTP 授权码**，且 `SMTP_FROM` 必须与 `SMTP_USER` 一致 |
+| `DATA_DIR` | 上传文件目录（默认 `data`），图片 / 语音 / 视频 / 群文件落 `DATA_DIR/uploads/年/月/` |
+| `TRUSTED_PROXIES` | 可信反代网段（默认 `127.0.0.1,::1`）；显式空串 = 不信任任何代理 |
+| `METRICS_TOKEN` | 非空时 `/api/metrics` 需 Bearer |
+| `BACKUP_DIR` / `BACKUP_INTERVAL_HOURS` / `BACKUP_RETAIN` / `MYSQLDUMP_PATH` | 数据库备份目录 / 自动间隔（0=关闭）/ 保留份数 / mysqldump 路径 |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（可选），两项密钥都配置才启用 |
+| `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | 站长后台在线更新开关与发行版更新源（install.sh 写入） |
 
 ## 日志
 
@@ -107,11 +113,7 @@ go vet ./... && gofmt -l .             # 静态检查
 ### 覆盖率（单测 + 集成合并）
 
 ```bash
-# Windows（在 server/ 目录）
-$env:DB_DSN = 'root:密码@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local'
-..\scripts\coverage.ps1
-
-# Linux / macOS
+# Linux / macOS / Git Bash（在 server/ 目录）
 DB_DSN='root:密码@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local' ../scripts/coverage.sh
 
 # HTML 报告
@@ -131,14 +133,17 @@ cmd/server/main.go        入口：config → db → hub → router → 优雅�
 internal/config           环境变量解析
 internal/version          构建版本（ldflags 注入）
 internal/model            GORM 模型 + 响应视图（ConversationView / PluginView 等）
-internal/store            数据访问（user/friend/conversation/message/plugin/password_reset）
-                          + migrations 执行器（RunMigrations）
-internal/handler          HTTP（auth/user/friend/conversation/plugin/admin/health/version）
-internal/middleware       logger / jwt / ban / admin / limiter
-internal/plugin           manifest 解析校验 + URL 拉取（SSRF：逐跳公网 IP 校验）
-internal/ws               hub(64 分片) / serve(握手+读写 pump) / dispatch(上行帧) / presence
-internal/service          mailer（SMTP 可选，缺省打日志）
-migrations/               版本化 SQL（0001_init.up/down）
+internal/store            数据访问（user/friend/conversation/message/moderation/plugin/setting/push…）
+                          + migrations 执行器（RunMigrations）+ secretbox（AES-GCM）+ Redis
+internal/handler          HTTP（auth/user/friend/conversation/moderation/plugin/admin/
+                          admin_settings/upload/file/sticker/push/ops/site/health/version）
+internal/middleware       logger / jwt / ban / admin / limiter / maintenance / guard
+internal/plugin           manifest 解析校验 + esbuild TS 转译 + URL 拉取（SSRF：逐跳公网 IP 校验）
+internal/ws               hub(64 分片) / serve(握手+读写 pump，上行 64KB) / dispatch(上行帧) / presence
+internal/service          mailer / storage（本地+S3）/ thumbnail / push / backup / updater
+internal/logx metrics     日志轮转 / Prometheus 指标
+internal/router           全部路由与中间件装配
+migrations/               版本化 SQL（0001_init … 0022_message_fulltext）
 test/                     集成测试（//go:build integration）
 Dockerfile                多阶段构建（含 migrations）
 ```

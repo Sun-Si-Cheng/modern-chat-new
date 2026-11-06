@@ -334,7 +334,9 @@ func (u *Updater) runReleaseUpdate() {
 		u.log("    （无 .sha256 附件，跳过校验）")
 	}
 
-	u.mu.Lock(); u.phase = "swapping"; u.mu.Unlock()
+	u.mu.Lock()
+	u.phase = "swapping"
+	u.mu.Unlock()
 
 	// 解压到临时目录
 	extract := filepath.Join(tmp, "extract")
@@ -352,7 +354,9 @@ func (u *Updater) runReleaseUpdate() {
 	}
 
 	// 重启
-	u.mu.Lock(); u.phase = "restarting"; u.mu.Unlock()
+	u.mu.Lock()
+	u.phase = "restarting"
+	u.mu.Unlock()
 	u.log("%s", fmt.Sprintf("==> 重启实例 modernchat@%s（优雅停机，客户端自动重连）", u.port))
 	u.log("%s", "==> 更新完成，新版本："+tag)
 	go func() {
@@ -540,7 +544,9 @@ func (u *Updater) runSourceUpdate() {
 		u.fail("git pull 失败：%s", tail(out, err))
 		return
 	}
-	u.mu.Lock(); u.phase = "building"; u.mu.Unlock()
+	u.mu.Lock()
+	u.phase = "building"
+	u.mu.Unlock()
 
 	// 2) 后端：构建到临时名再 mv 原子替换（老进程继续用老 inode）
 	ver, _ := u.gitOutput(root, "describe", "--tags", "--always")
@@ -586,7 +592,9 @@ func (u *Updater) runSourceUpdate() {
 		u.fail("前端构建失败：%s", tail(out, err))
 		return
 	}
-	u.mu.Lock(); u.phase = "swapping"; u.mu.Unlock()
+	u.mu.Lock()
+	u.phase = "swapping"
+	u.mu.Unlock()
 	if err := swapDist(webDir); err != nil {
 		u.fail("前端产物切换失败：%v", err)
 		return
@@ -594,7 +602,9 @@ func (u *Updater) runSourceUpdate() {
 
 	// 4) 自重启：systemd restart 当前端口实例。SIGTERM 触发优雅停机，
 	//    在线客户端断线自动重连；本进程随后退出，由 systemd 拉起新二进制。
-	u.mu.Lock(); u.phase = "restarting"; u.mu.Unlock()
+	u.mu.Lock()
+	u.phase = "restarting"
+	u.mu.Unlock()
 	u.log("%s", fmt.Sprintf("==> 重启实例 modernchat@%s（优雅停机，客户端自动重连）", u.port))
 	u.log("%s", "==> 更新完成，新版本："+ver+" ("+commit+")")
 	go func() {

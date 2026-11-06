@@ -17,19 +17,19 @@
 | 用户 | 当前用户资料、改昵称 / 邮箱、用户搜索 |
 | 好友 | 搜索申请 / 同意 / 拒绝 / 删除；收到申请列表 |
 | 会话 | 单聊（幂等复用）/ 群聊（建 / 搜 / 加 / 退）、群管理（改群名 / 踢人 / 转让）、会话列表（最后消息 + 未读） |
-| 消息 | 历史游标分页、发送（WS）、2 分钟撤回、已读回执、"正在输入"、在线状态 |
+| 消息 | 历史游标分页、发送（WS）、撤回（默认 2 分钟，后台可配 0–60）、5 分钟内编辑（仅文本）、已读回执、"正在输入"、在线状态、消息内容搜索（会话内 / 全局） |
 | 实时 | WebSocket 管道（心跳、重连容错、fan-out、presence） |
 | 插件 | 上传 / URL 安装（SSRF 防护）、启停 / 卸载、代码下发、全局下架 |
 | 站长 | 用户分页列表、封禁 / 解封 / 重置密码 |
 | 运维 | 健康检查 `/api/health`、版本 `/api/version`、结构化日志、三档限流、一键升级脚本 |
 
-**接口类型**：REST（JSON，前缀 `/api`）+ WebSocket（`/ws`）。无文件存储（头像为取色），无第三方依赖（SMTP 可选）。
+**接口类型**：REST（JSON，前缀 `/api`）+ WebSocket（`/ws`）。文件存储可选本地磁盘或 S3 兼容对象存储（图片 / 语音 / 视频 / 群文件）；头像为用户上传的 data URL，未上传时按 id 取色生成。无第三方依赖（SMTP / Redis 可选）。
 
 ## 2. 技术栈与版本
 
 | 项 | 要求 |
 |---|---|
-| Go | **1.22+**（建议 1.23.x） |
+| Go | **1.26+**（`go.mod` 为 `go 1.26.0`，依赖链要求） |
 | HTTP | `github.com/gin-gonic/gin` v1.10+ |
 | WS | `github.com/gorilla/websocket` v1.5+ |
 | ORM | `gorm.io/gorm` v1.25+ + `gorm.io/driver/mysql` v1.5+ |
@@ -54,15 +54,25 @@
 User            { id, username, nickname, avatarColor, avatar?, email?, role:"user"|"admin",
                   bannedUntil?, banReason? }            // email/banned 仅返回本人或 admin
 User 摘要        { id, username, nickname, avatarColor, avatar? }
-Conversation    { id, type:1|2, name(群名,单聊 null), peer(单聊对方摘要,群聊 null),
-                  ownerId, memberCount, lastMessageId, lastMessageAt, lastMessagePreview, unreadCount }
-ConversationMember { userId, role:"owner"|"member", joinedAt, user:User摘要 }
-Message         { id, conversationId, senderId, clientMsgId, msgType, content, isRecalled, createdAt }
+Conversation    { id, type:1|2|3, name(群名,单聊 null), avatar?, peer(单聊对方摘要,群聊 null),
+                  ownerId, memberCount, lastMessageId, lastMessageAt, lastMessagePreview,
+                  lastMessageType, lastReadMessageId, unreadCount, pinned, muted, archived?,
+                  muteAll?, mentionUnread, announcement, announcementAt, announcementBy }
+                  // type=3 为系统公告会话，不在会话列表展示
+                  // lastMessageType：最后一条消息的类型，媒体与撤回由前端换占位文案
+                  // （image/audio/sticker/video 显示对应占位；撤回为 "recalled" 且 preview 为空串）
+ConversationMember { userId, role:"owner"|"admin"|"member", mutedUntil?, joinedAt, user:User摘要 }
+Message         { id, conversationId, senderId, clientMsgId, msgType, content, isRecalled, recalledAt, editedAt,
+                  replyToId?, replyTo?, mentions?, forwarded?, reactions?, adminDeletedAt?, createdAt }
+                // recalledAt：服务端撤回时间（RFC3339），WS 的 recall 广播帧也带同名字段；
+                // 客户端据此把撤回提示显示 3 分钟后移除，跨刷新/跨设备一致。
+                // editedAt：编辑时间（RFC3339），NULL 表示从未编辑；WS 的 message_update 广播帧带同名字段。
 FriendItem      { id(关系记录id), friend:User摘要, status:0|1|2, createdAt }
 FriendRequestItem { id(申请记录id), from:User摘要, createdAt }
 Plugin          { id, name, version, description, permissions:string[], allowedHosts:string[],
                   enabled, globalDisabled, installedBy, createdAt }
 VersionInfo     { version, commit, buildTime }
+SearchHit       { messageId, conversationId, convType, convName, senderId, senderNickname, msgType, content, createdAt }
 AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, createdAt }  // 按 name 聚合
 ```
 
@@ -70,12 +80,15 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 
 | 方法 路径 | 请求体 / Query | 成功响应 |
 |---|---|---|
-| POST `/api/auth/register` | `{username, password, nickname}` | `{token, user}`（首个注册者 role=admin） |
+| POST `/api/auth/register` | `{username, password, nickname, inviteCode?, email?, emailCode?}` | `{token, user}`（首个注册者 role=admin）。受维护模式（503）、注册开关（403）、邀请码（400）、邮箱验证（400/409/422）约束；邀请码核销失败自动退还名额。开启邮箱验证时 `email`+`emailCode` 必填，验证码核销失败返回 422「验证码错误或已过期」 |
+| POST `/api/auth/email-code` | `{email}` | `{ok:true, cooldownSeconds}`；未开启邮箱验证→400，邮箱已绑定→409，SMTP 不可用→503；同邮箱 60 秒冷却（冷却期内仍 200，返回剩余秒数） |
 | POST `/api/auth/login` | `{username, password}` | `{token, user}` |
 | POST `/api/auth/forgot` | `{email}` | `{ok:true}`（无此邮箱也返回成功；开发期打印重置链接到日志） |
 | POST `/api/auth/reset` | `{token, newPassword}` | `{ok:true}`；`token_version+1` 全端失效 |
 | GET `/api/me` | — | `User`（含 email） |
-| PATCH `/api/me` | `{nickname?, email?, avatar?}`（改 email 后 email_verified=false；avatar 为 `data:image/(png\|jpeg\|webp);base64,…`，前端压至 256×256，服务端校验前缀与 ≤256KB，空串清除） | 更新后 `User` |
+| PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`。**换绑邮箱必须带 `emailCode`**（发往新邮箱、核销通过才落库并置 `email_verified=true`；空串 `email` 表示解绑、不需要验证）；邮箱未变化时不改动验证状态；SMTP 未配置时换绑返回 400。avatar 为 `data:image/(png\|jpeg\|webp);base64,…`，前端压至 256×256，服务端校验前缀与 ≤256KB，空串清除 | 更新后 `User` |
+| POST `/api/me/email-code` | `{email}`（新邮箱） | `{ok:true, cooldownSeconds}`；与当前邮箱相同→400，被他人占用→409，SMTP 不可用→503；每用户 5 次/分，同邮箱 60 秒冷却 |
+| POST `/api/me/logout-others` | — | `{ok:true}`；`token_version+1`，所有旧 JWT 失效（WS 连接在下一次上行时被复核断开） |
 | GET `/api/users/search` | `?kw=`（≤50） | `User摘要[]`（不含 email，≤20 条） |
 | GET `/api/friends` | — | `FriendItem[]`（已通过的好友；同意后双向记录按对方去重，每人一条） |
 | GET `/api/friends/requests` | — | `FriendRequestItem[]`（status=0 且指向我） |
@@ -86,29 +99,84 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | GET `/api/conversations/search` | `?kw=` | `Conversation[]`（type=2 群名模糊，≤20 条） |
 | POST `/api/conversations/single` | `{toUserId}`（须为好友） | `Conversation`；先查双人 type=1 会话有则复用 |
 | POST `/api/conversations/group` | `{name}` | `Conversation`（创建者 owner 自动入群） |
-| GET `/api/conversations/:id/messages` | `?beforeId=&limit=`（limit 默认 30，≤50） | `{messages: Message[]（按 id 降序）, hasMore: bool}` |
+| GET `/api/conversations/:id/messages` | `?beforeId=&afterId=&limit=`（limit 默认 30，≤50；带 `afterId` 时升序增量补齐，limit≤200） | `{messages: Message[]（beforeId=降序 / afterId=升序）, hasMore: bool}` |
+| DELETE `/api/conversations/:id/messages/:messageId` | — | `{ok:true}`；仅自己删除，写 `message_deletions`，对方仍可见 |
 | GET `/api/conversations/:id/members` | — | `ConversationMember[]`（须为成员） |
 | POST `/api/conversations/:id/join` | — | `{ok:true}`（type=2；已在群→409） |
+| POST `/api/conversations/:id/invite` | `{userIds:number[]}` | `{ok:true, added}`；只能邀请自己的好友，最多 50 人；整批超限→422 |
+| POST `/api/conversations/:id/invite-link` | `{expiresDays:0-30}` | `{token, path, expiresAt?}`；任意成员可生成，0=永久 |
+| GET `/api/invite/:token` | — | `{convId,name,avatar,memberCount}`；**免登录** |
+| POST `/api/invite/:token/join` | — | `{ok:true, convId, alreadyMember?}` |
 | POST `/api/conversations/:id/leave` | — | `{ok:true}`（群主不可退→422） |
-| POST `/api/conversations/:id/read` | `{upToId}` | `{ok:true}`；清未读、写 last_read_message_id、向在线成员推 `read` 帧 |
+| DELETE `/api/conversations/:id` | — | `{ok:true}`；只删自己的收件箱行，不退出群、不删消息 |
+| POST `/api/conversations/:id/clear` | `{upToId?}` | `{ok:true, clearedBeforeId}`；清空我的记录（消息本体保留） |
+| POST `/api/conversations/:id/read` | `{upToId}` | `{ok:true}`；清未读与 `mention_unread`、写 last_read_message_id、向在线成员推 `read` 帧 |
+| PATCH `/api/conversations/:id/prefs` | `{pinned?:bool, muted?:bool, archived?:bool}`（至少一项） | `{ok:true, pinned, muted, archived}`；**个人设置**，只影响调用者自己的收件箱行；不传表示不改 |
+| PUT `/api/conversations/:id/announcement` | `{content}`（≤500 字，空串=撤销） | `{ok:true}`；仅群主、仅 `type=2`；变更后向全员推 `conv_change` |
+| GET `/api/conversations/:id/files` | — | `ConversationFile[]`（`{id,conversationId,uploaderId,uploaderName,name,url,size,createdAt}`，新→旧，≤100，空为 `[]`） |
+| POST `/api/conversations/:id/files` | `{name(1-120), url, size}` | `ConversationFile`；`url` 必须属于本站存储 |
+| DELETE `/api/files/:id` | — | `{ok:true}`；上传者本人或群主 |
+| GET `/api/stickers` | — | `Sticker[]`（`{id,url,createdAt}`，空为 `[]`） |
+| POST `/api/stickers` | `{url}` | `Sticker`；同一 URL 幂等；上限 200；URL 必须属于本站存储 |
+| DELETE `/api/stickers/:id` | — | `{ok:true}`；只能删自己的 |
 | PATCH `/api/conversations/:id` | `{name}` | `{ok:true}`（仅群主） |
-| POST `/api/conversations/:id/kick` | `{userId}` | `{ok:true}`（仅群主；不能踢自己/踢群主→422） |
+| PUT `/api/conversations/:id/avatar` | `{avatar}`（空串=恢复默认） | `{ok:true}`；群主 / 管理员；URL 必须属于本站存储 |
+| POST `/api/conversations/:id/kick` | `{userId}` | `{ok:true}`（群主 / 管理员；不能踢自己 / 群主 / 其他管理员→403/422） |
+| POST `/api/conversations/:id/admin` | `{userId, admin:boolean}` | `{ok:true}`；仅群主，不能调整群主 |
+| POST `/api/conversations/:id/mute` | `{userId, minutes:0-43200}` | `{ok:true, mutedUntil?}`；群主 / 管理员；0=解除；不能禁言群主 / 其他管理员 |
+| POST `/api/conversations/:id/mute-all` | `{muted:boolean}` | `{ok:true}`；群主 / 管理员；全员禁言后群主与管理员仍可发言 |
 | POST `/api/conversations/:id/transfer` | `{userId}`（须为成员） | `{ok:true}`；双方 role 互换 |
+| POST `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart `file`（图片 ≤8 MB / 语音 ≤5 MB / 表情 ≤2 MB / 群文件 ≤20 MB / **视频 ≤30 MB，均后台可配**） | `{kind, size, url}`；**按文件头判定真实类型**（伪装扩展名 → 400）；**流式处理**（multipart 分段直接交给存储层，文件不整块进内存）；每用户 10 次/分限流。`kind=image` 时额外生成 ≤480px 的 JPEG 缩略图（`_t.jpg`，GIF / 过小图 / 解码失败跳过；透明图垫白底），响应形状不变——前端按约定从 `url` 派生缩略图地址，缺失时回退原图 |
+| GET `/uploads/<年>/<月>/<文件名>` | — | 静态文件（仅本地存储）；`Cache-Control: public, max-age=31536000, immutable` |
+| GET `/api/favorites` | `?limit=1..200`（默认 100） | `FavoriteItem[]`（按收藏时间倒序）；**空时返回 `[]` 而非 `null`** |
+| POST `/api/messages/:messageId/favorite` | — | `{ok:true}`；须为该消息所在会话的成员；幂等 |
+| DELETE `/api/messages/:messageId/favorite` | — | `{ok:true}` |
+| GET `/api/search/messages` | `?kw=（1–50 字符）&convId=&limit=（1–100，默认 30）` | `SearchHit[]`（空为 `[]`）。`convId` 传了=会话内搜索（须为成员），省略=全局搜索（只搜本人已加入的会话）；**≥2 字符关键词走 FULLTEXT ngram 短语匹配**（迁移 `0022`，启动时幂等兜底建索引），单字符与索引异常回退 LIKE；已撤回、管理员删除、本人删除的消息不计入，按 id 倒序；单聊 `convName` 用对方昵称补全 |
+| GET `/api/users/:id/block` | — | `{blocked:boolean}`；查询我是否拉黑了该用户 |
+| POST `/api/users/:id/block` | — | `{ok:true}`；幂等；不能拉黑自己 |
+| DELETE `/api/users/:id/block` | — | `{ok:true}` |
+| POST `/api/messages/:messageId/report` | `{reason:1-200 字}` | `{ok:true, duplicate?:boolean}`；须为会话成员；已撤回→422 |
+| POST `/api/messages/:messageId/admin-delete` | — | `{ok:true, duplicate?:boolean}`；站点管理员或该群群主 / 管理员；广播 `message_admin_deleted` |
+| GET `/api/push/key` | — | `{enabled:boolean, key:string}`；未配置 VAPID 时 `enabled=false` |
+| POST `/api/push/subscribe` | `{endpoint,p256dh,auth}` | `{ok:true}` |
+| DELETE `/api/push/subscribe` | `?endpoint=` | `{ok:true}` |
 | GET `/api/plugins` | — | `Plugin[]`（installedBy=me，按 createdAt 降序） |
 | GET `/api/plugins/active` | — | `Plugin[]`（enabled=1 且 global_disabled=0） |
 | GET `/api/plugins/:id/code` | — | `text/javascript` 源码（须本人已安装；global_disabled→403） |
-| POST `/api/plugins/upload` | body = JS 文件字节流（`Content-Type: application/octet-stream`，≤1MB） | `Plugin`（默认 enabled=false）；命中"本人同名"时为升级覆盖，响应头 `X-Plugin-Updated: true` |
+| POST `/api/plugins/upload` | body = 插件文件字节流（`Content-Type: application/octet-stream`，≤1MB）；`?lang=ts\|js` 指定语言，缺省按源码特征判断 | `Plugin`（默认 enabled=false）；命中"本人同名"时为升级覆盖，响应头 `X-Plugin-Updated: true` |
 | POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前执行 §6 SSRF 检查；同名升级语义同上 |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | 更新后 `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
-| GET `/api/admin/users` | `?page=&pageSize=`（默认 1/20） | `{users: AdminUserRow[], total, page, pageSize}`；AdminUserRow = User + `createdAt` |
+| GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
+| GET `/api/admin/users` | `?page=&pageSize=&kw=&role=&status=`（`kw` 匹配用户名/昵称，`role`=user\|admin，`status`=active\|banned） | `{users: AdminUserRow[], total, page, pageSize}`；AdminUserRow = User + `createdAt` |
+| GET `/api/admin/users/:id` | — | `{user: AdminUserRow, stats:{conversations,messages,plugins}, online}` |
+| POST `/api/admin/users/:id/kick` | — | `{ok:true, wasOnline}`；仅断开连接，不封禁（用户可立即重新登录） |
 | POST `/api/admin/users/:id/ban` | `{days:0-3650, reason?}`（0=永久） | `{ok:true}`；tv+1 并向其全部连接推 `kicked` |
 | POST `/api/admin/users/:id/unban` | — | `{ok:true}` |
 | POST `/api/admin/users/:id/reset-password` | — | `{newPassword}`（随机 12 位；tv+1 强制下线） |
 | GET `/api/admin/plugins` | `?page=&pageSize=` | `{plugins: AdminPluginRow[], total, page, pageSize}`；**按 name 聚合**：`{name, version, installCount, enabledCount, globalDisabled, createdAt}` |
 | POST `/api/admin/plugins/global-disable` | `{name, disabled:boolean}` | `{ok:true, affected}`；更新该 name 全部安装记录，立即对所有用户生效 |
+| POST `/api/admin/plugins/purge` | `{name, userId?:0}` | `{ok:true, affected}`；**物理删除**该 name 的安装记录（`userId=0` 表示所有用户）；无记录返回 404 |
+| POST `/api/admin/users/:id/role` | `{role:\"user\"\|\"admin\"}` | `{ok:true, changed}`；降级最后一个站长返回 403；角色变更即时生效（鉴权中间件每次查库） |
+| POST `/api/admin/announce` | `{content}`（1-1000 字） | `{ok:true, convId, messageId, recipients}`；写入系统会话（`conversations.type=3`）并 WS 推送给全部用户 |
+| GET `/api/admin/audits` | `?page=&pageSize=` | `{audits: AdminAudit[], total, page, pageSize}`；`AdminAudit = {id, adminId, action, targetType, targetId, targetName, detail, ip, createdAt}`，倒序 |
+| GET `/api/site` | **免登录** | `{name, allowRegister, maintenanceMode, maintenanceMessage, requireInviteCode, requireEmail, requireEmailVerify, maxMessageLength, recallMinutes, maxGroupMembers, maxImageMB, maxAudioMB, maxFileMB, maxVideoMB}`；只含可公开字段，维护模式下也保持可用（前端维护页靠它拿文案）。`requireEmail` = 注册是否必填邮箱（开关开启即 true，首账号也是）；`requireEmailVerify` = 是否还需要验证码（开关 && SMTP 可用 && 已有账号，首账号豁免）。两者都是**实际生效值** |
+| GET `/api/admin/settings` | — | `{smtp, redis, storage, site:{name,allowRegister,maintenanceMode,maintenanceMessage,requireInviteCode,requireEmailVerify}, chat:{maxMessageLength,recallMinutes,maxGroupMembers,blockedWords}, upload:{maxImageMB,maxAudioMB,maxFileMB,maxVideoMB,maxStorageMB}, security:{loginMaxAttempts,loginLockMinutes}, smtpEnabled, redisEnabled, storageApplied, redisNeedsRestart}`；**密钥只给 hasXxx，永不回显**；站点 / 聊天 / 上传 / 安全部分显示的是**当前真实生效值**（含默认值） |
+| PUT `/api/admin/settings` | `{smtp?, redis?, storage?, site?, chat?, upload?, security?}` | `{ok:true, redisNeedsRestart, storageApplied}`；密钥字段留空 = 不修改；SMTP 保存后热生效，Redis 需重启；站点 / 聊天 / 上传 / 安全**即时生效**；数值越界返回 400（不静默收敛）；写审计 `save_settings` |
+| GET `/api/admin/invites` | — | `InviteCode[]`（`{id,code,createdBy,creator,maxUses,uses,expiresAt,disabled,createdAt}`，新→旧） |
+| POST `/api/admin/invites` | `{maxUses:1-1000, expiresDays:0-365, count:1-20}` | `InviteCode[]`；码为 crypto/rand 12 字节 hex（24 位） |
+| POST `/api/admin/invites/:id/disable` | `{disabled}` | `{ok:true}`；停用 / 启用，不删除（保留审计线索） |
+| POST `/api/admin/settings/smtp/test` | `{to}` | `{ok:true}`；失败返回 400 且 `error` 含邮件服务器的原始错误；写审计 `test_smtp` |
+| GET `/api/admin/storage/stats` | — | `{files,bytes,referenced,orphans,orphanBytes}`；仅本地存储 |
+| POST `/api/admin/storage/gc` | `{dryRun?:boolean}` | `{ok:true,dryRun,deleted,freedBytes}`；删除未被消息 / 表情 / 群文件 / 头像引用的文件 |
+| GET `/api/admin/backups` | — | `{backups: BackupFile[], dir}`；`BackupFile = {name,size,createdAt}` |
+| POST `/api/admin/backups` | — | `{ok:true,file}`；依赖 `mysqldump`（`MYSQLDUMP_PATH`） |
+| GET `/api/admin/update/status` | — | `{available,busy,phase,lines,error?,version,commit,mode?}`；前端轮询 |
+| GET `/api/admin/update/check` | — | `{upToDate,local,remote,remoteTag,remoteMsg}` |
+| POST `/api/admin/update/start` | — | `{started:true}`；仅 systemd 部署；`WEB_UPDATE=false` 时不可用；写审计 `web_update` |
 | GET `/api/health` | 免鉴权 | `{"status":"ok"}`（Nginx/容器探活） |
 | GET `/api/version` | 免鉴权 | `{version, commit, buildTime}`（编译期 ldflags 注入；`go run` 时为 `dev/unknown`） |
+| GET `/api/metrics` | `METRICS_TOKEN` 非空时需 `Authorization: Bearer` | Prometheus 文本格式 |
 
 ### 3.3 WebSocket（`/ws`）
 
@@ -117,13 +185,22 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 - 上行帧与下行帧**字段与 `web/src/types/proto.ts` 完全一致**（`chat` 帧的 `msgType` 为 string，插件自定义类型透传存储）
 - 所有上行帧先校验"发送者是 `convId` 的成员"，否则回 `{"type":"error","reason":"..."}`
 - 发消息链路（§设计文档 9.1）：成员/封禁/限流校验 → `client_msg_id` 唯一索引幂等（重复则**回放原消息帧**）→ 写 messages → 批量 upsert user_conversations（非发送者 unread+1）→ 在线成员 fan-out `message` → 未读接收者额外推 `conv_change`
-- 撤回：仅本人、2 分钟内；若接收方 `last_read_message_id < 撤回消息 id` 则 unread-1
+- 撤回：仅本人、`chat.recallMinutes` 分钟内（后台可配，**0 = 关闭撤回**，返回「本站已关闭消息撤回」）；若接收方 `last_read_message_id < 撤回消息 id` 则 unread-1；落库同时写 `recalled_at`，广播帧 `{\"type\":\"recall\",\"messageId\",\"convId\",\"recalledAt\"}` 带上服务端时间（客户端据此把提示显示 3 分钟后移除，跨设备一致）
+- 编辑：上行 `{"type":"edit","messageId":<id>,"content":"<新正文>"}`；**仅发送者本人、创建后 5 分钟内、未撤回的 `text` 消息**可编辑，内容长度与敏感词校验同发消息；成功后写 `edited_at`，并向该会话全体成员广播 `{"type":"message_update","id":<id>,"convId":<id>,"content":"<新正文>","editedAt":"<RFC3339>"}`
+- 送达：单聊接收方收到消息后上行 `{"type":"delivered","messageId":<id>}`，服务端只转发给发送者 `{"type":"message_delivered","messageId","convId","userId"}`
+- 表情回应：上行 `{"type":"reaction","messageId","emoji","action":"set"|"remove"}`；每人每条消息最多一个表情，广播增量 `{"type":"reaction","messageId","convId","emoji","before?","userId","action"}`
+- 管理员删除：REST `POST /api/messages/:id/admin-delete` 成功后广播 `{"type":"message_admin_deleted","messageId","convId"}`，各端从聊天记录移除
+- 图片/语音/表情/视频：`chat` 帧的 `content` 必须是本站上传地址，否则回 `error` 帧并丢弃（防外链）
+- 长度：`content` 上限为 `chat.maxMessageLength`（后台可配 100–5000），超限回 `error` 帧「消息需为 1-N 个字符」；**上行帧字节上限 64 KB**（`ws/serve.go` `maxMsgSize`，需覆盖 5000 字符 UTF-8 + JSON 开销）
+- 敏感词：文本消息命中 `chat.blockedWords` 配置即拒绝（退化为 `error` 帧），编辑同样校验
+- 维护模式：非管理员握手直接 503 `{"error":"站点维护中","maintenance":true}`——REST 被挡但已有连接还能收发就等于没挡，所以握手必须一起挡
+- 引用与 @：`chat` 帧可带 `replyToId`（须同会话）与 `mentions`（群成员 id 数组）；下行 `message` 帧回带 `replyTo` 摘要与 `mentions`，接收方无需回查即可渲染引用块与高亮
 - 下线：tv 变化 / 封禁 / 站长重置密码 → 向该用户全部连接推 `{"type":"kicked","reason":"..."}` 后关闭
 - 资料变更：`PATCH /api/me` 修改昵称或头像后，向好友、同会话成员及本人其他连接推 `{"type":"user_change","userId","nickname","avatar","avatarColor"}`；前端就地更新会话列表、好友/申请列表与群成员头像，无需刷新
 
 ## 4. 数据模型与校验规则
 
-7 张表（users / conversations / conversation_members / messages / user_conversations / friends / plugins + password_resets）结构见设计文档 §5，此处只定校验与关键索引。
+全部表（users / conversations / conversation_members / messages / user_conversations / message_deletions / message_favorites / message_reactions / user_blocks / message_reports / friends / plugins / password_resets / admin_audits / system_settings / stickers / conversation_files / conversation_invites / invite_codes / login_attempts / push_subscriptions / email_codes）结构见设计文档 §5，此处只定校验与关键索引。
 
 | 字段 | 规则 |
 |---|---|
@@ -133,11 +210,31 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | email | ≤254，可空；非空时唯一 |
 | avatar_color | 服务端从 10 色板按 id 取模生成 |
 | 群名 name | 1–30 |
-| content | 1–1000 字符（按 rune 计） |
-| msg_type | ≤32，`^[a-z0-9_-]+$`；缺省 `text` |
+| content | `text`：1–`chat.maxMessageLength` 字符（按 rune 计，后台可配 100–5000，默认 1000）；`image`/`audio`/`sticker`/`video`：≤1000 字符的 URL，且必须落在 `Storage.Owns()` 认得的地址下（禁止外链） |
+| msg_type | ≤32，`^[a-z0-9_-]+$`；缺省 `text`；内置 `text`/`image`/`audio`/`sticker`/`video`，其余为插件自定义类型 |
+| 上传文件 | 图片 / 语音 / 表情 / 群文件 / 视频体积上限后台可配（默认 8 / 5 / 2 / 20 / **30** MB，视频 1–100）；**真实类型以文件头为准**（image/jpeg,png,webp,gif；audio/webm,ogg,mpeg,mp4,wav；video/mp4,webm,quicktime,x-m4v——mp4/mov 家族靠 `ftyp` brand 兜底识别，纯音频 m4a 会被拒）；文件名 128 位随机 |
+| 撤回 | 仅发送者本人、`chat.recallMinutes` 分钟内（后台可配 0–60，**0 = 关闭撤回**）；落库同时写 `recalled_at`（服务端时间），随 `recall` 帧广播 |
+| 编辑 | 仅发送者本人、消息创建后 **5 分钟内**、且未撤回的 `text` 消息；新正文长度按 `chat.maxMessageLength` 校验并检查敏感词；落库写 `edited_at`，随 `message_update` 帧广播 |
+| 注册 | 受 `site.allowRegister` 开关（关闭 → 403）与 `site.requireInviteCode`（开启 → 须携带有效邀请码，条件 UPDATE 原子核销，注册失败自动退还名额）约束；首个注册账号自动成为站长 |
+| 换绑邮箱 | 与注册验证分离：`POST /api/me/email-code` 向新邮箱发码（purpose=`change_email`），`PATCH /api/me` 核销通过才落库并把 `email_verified` 置 true。只校验唯一性就落库会让任何人抢占他人邮箱（真实主人之后注册/绑定被 409，重置链接也寄错人） |
+| 邮箱验证 | `site.requireEmailVerify`（默认开）+ SMTP 可用 + 非首个账号三者同时成立才**要求验证码**：注册须带 `email` + 6 位 `emailCode`（10 分钟有效、一次性、同邮箱 60 秒冷却、连错 5 次作废）。**邮箱本身只要开关开启就必填并落库**（首账号也保存，`email_verified=false`），否则该账号永远无法走「忘记密码」。SMTP 未配置时自动降级为不要验证码（`GET /api/site` 按生效值返回）；后台在未配 SMTP 时开启该开关会被 400 拒绝 |
+| 登录锁定 | 按 `security.loginMaxAttempts`（0 = 关闭）累计同账号失败次数，达阈值锁定 `security.loginLockMinutes` 分钟（429）；凭据正确即清零；**不泄露账号是否存在**（错误文案恒定） |
+| 收藏 | 须为消息所在会话成员；同一消息重复收藏幂等 |
+| 群人数 | `chat.maxGroupMembers`（后台可配 2–2000，默认 200）；入群容量判断与插入在同一事务内 |
+| 引用 `replyToId` | 目标消息必须存在且**属于同一会话**（否则可引用别的会话内容造成越权泄露）；摘要服务端截断 60 字 |
+| 转发 `forwarded` | 仅标记位；内容与 msgType 照搬原消息，`image/audio/sticker/video` 仍需通过「本站存储」校验 |
+| 上传 `kind` | `image`(≤8MB) / `audio`(≤5MB) / `sticker`(≤2MB) / `file`(≤20MB) / `video`(≤30MB)；**一律按文件头判真实类型**，MIME 先去 `; charset=` 再查白名单；视频容器嗅探不全时按 `ftyp` brand / Matroska magic 兜底 |
+| 群文件类型白名单 | pdf / zip(docx,xlsx,pptx 容器) / txt / json / jpeg / png / webp / gif。**不含 html 与 svg**——浏览器会当页面渲染，等于同源执行上传者的脚本 |
+| @ `mentions` | 只保留「真实成员 + 去重 + 排除发送者 + 最多 20 个」；被 @ 者收件箱 `mention_unread=1`，读后清零 |
+| 拉黑 / 举报 | 不能拉黑自己；拉黑双向拦截单聊与好友申请。举报须为会话成员，理由 1–200 字，每人每条一次，已撤回→422 |
+| 仅自己删除 | 写 `message_deletions`，只影响本人查询 / 分页 / 收藏；未读且未读到时 unread-1 |
+| 群邀请链接 | token = crypto/rand 16 字节 hex（32 位）；有效期 0–30 天（0=永久）；过期 / 撤销即 404 |
+| Web Push | 未配置 VAPID 时 `enabled=false`、所有推送静默跳过；端点 410/404 时删除订阅 |
+| 在线更新 | 仅 `role=admin`；`WEB_UPDATE=false` 整体关闭；命令与 URL 固定，不接受用户输入；每次触发写审计 `web_update` |
 | client_msg_id | UUID（≤36），索引 `(conversation_id, client_msg_id)` 唯一 |
+| messages 索引 | `conversation_id`（游标分页）、`(conversation_id, client_msg_id)` 唯一、`sender_id`（后台按发送者统计，迁移 `0021`） |
 | friends | 索引 `(user_id, friend_id)`；同对可存在两条方向相反记录 |
-| plugin 文件 | ≤1MB；manifest 为代码首个 `/* {...} */` JSON 注释或同名 `.json`：name 1–30、version `^\d+\.\d+\.\d+$`、permissions ⊆ §SDK 七项、allowed_hosts 每项合法域名（支持 `*.suffix`），≤20 项 |
+| plugin 文件 | ≤1MB；manifest 为代码首个 `/* {...} */` JSON 注释：name 1–30、version `^\d+\.\d+\.\d+$`、permissions ⊆ §SDK 十项（`message:read/send/render`、`ui:panel/actions/host/theme`、`conv:read`、`storage`、`net`）、allowedHosts 每项合法域名（支持 `*.suffix`），≤20 项。**支持 TypeScript**：`?lang=ts` 或 URL 以 `.ts` 结尾时用 esbuild 转译为 ES2020 后入库，语**法错误返回 400 并带行号**；manifest 从源码解析 |
 | 分页 | page≥1，pageSize 1–100 默认 20；limit 1–50 默认 30；beforeId/upToId 正整数 |
 | ban days | 0–3650 整数 |
 
@@ -175,10 +272,13 @@ HTTP 状态码 + `{"error": "<中文消息>"}`。消息直接展示给用户，�
 ## 7. 性能与并发
 
 - **单实例目标**：≥10,000 WS 并发在线；单消息端到端 P99 <100ms（同机）；历史分页 <20ms
-- Hub 按 `conversation_id` 64 分片锁；`userID -> []*Client` 多端在线，引用计数下线
+- **列表类接口的查询约束**：会话列表的成员数只能来自 `COUNT(*) ... GROUP BY conversation_id`（禁止物化成员行）；群搜索一次 `GROUP BY` 取全部成员数（禁止逐群 COUNT）；`/api/site` 的「是否已有账号」用 `LIMIT 1` 探测而不是 `COUNT(*)`
+- **配置读取**：`SettingStore.Ops()` 返回解析后的缓存快照（`atomic.Pointer`），`Save/Invalidate` 必须同时失效该缓存，否则配置改动不即时生效
+- **上传流式 + 配额缓存**：multipart 分段直接流到存储层（本地：临时文件 + 原子改名；S3：先落临时文件再以已知长度 PutObject）；本地配额检查走 **60s TTL 缓存 + 上传成功增量累加**，不再每次上传 `filepath.Walk` 全目录
+- Hub 按 **userID** 64 分片锁（`shards[uid%64]`）；`userID -> []*Client` 多端在线，引用计数下线。按用户分片让同一用户的多端落在同一片，每次投递只锁一片
 - 每连接 send channel 256 缓冲 + 10s 写超时，写满即断（慢消费者踢出）；读/写 pump 分离
-- 群成员上限 200（入群校验）
-- 限流（内存令牌桶，按 key 分桶）：登录/注册/找回 **每 IP 10 次/分**；发消息 **每用户 20 条/分**；插件安装 **每用户 5 次/分**
+- 群成员上限 `chat.maxGroupMembers`（2–2000，默认 200；入群事务内 `SELECT ... FOR UPDATE` 原子校验）
+- 限流（内存令牌桶或 Redis，按 key 分桶）：登录/注册/找回 **每 IP 10 次/分**；发消息 **每用户 20 条/分**；插件安装 **每用户 5 次/分**；媒体上传 **每用户 10 次/分**；换绑邮箱验证码 **每用户 5 次/分**
 - 历史分页只走 `(conversation_id, id)` 游标，**禁止 OFFSET**
 - 压缩：REST `gin-contrib/gzip`（可选）；WS `permessage-deflate` 可开关（默认关）
 
@@ -193,7 +293,7 @@ HTTP 状态码 + `{"error": "<中文消息>"}`。消息直接展示给用户，�
 - 慢查询：GORM `SlowThreshold=200ms` 记 warning
 - panic：Recover 中间件 → 500 + error 级含堆栈
 - 健康检查 `GET /api/health` 免鉴权
-- Prometheus `/metrics`：**可选**，本期不做，预留注释位即可
+- Prometheus：`GET /api/metrics` 导出路由级请求计数与在线数；`METRICS_TOKEN` 非空时需 `Authorization: Bearer <token>`
 
 ## 9. 配置与部署
 
@@ -205,20 +305,32 @@ GIN_MODE=release            # debug|release
 DB_DSN=user:pass@tcp(127.0.0.1:3306)/modernchat?charset=utf8mb4&parseTime=True&loc=Local
 JWT_SECRET=                 # ≥32 字节；release 模式缺省拒绝启动；dev 模式随机生成并告警
 FRONTEND_URL=http://localhost:5173   # 逗号分隔；WS Origin 白名单 + 找回密码链接前缀
+TRUSTED_PROXIES=127.0.0.1,::1        # 可信反代；显式空串=不信任任何代理
 LOG_LEVEL=info
+LOG_DIR=logs
+LOG_RETAIN_DAYS=15
+DATA_DIR=data               # 上传文件目录；BACKUP_DIR 默认 <DATA_DIR>/backups
 MIGRATE=false               # true 时启动执行 migrations/（生产）
 PLUGIN_MAX_SIZE=1048576
+METRICS_TOKEN=              # 非空时 /api/metrics 需 Bearer
+BACKUP_INTERVAL_HOURS=0     # 0=关闭定时备份
+BACKUP_RETAIN=7
+MYSQLDUMP_PATH=mysqldump
+WEB_UPDATE=true             # 站长后台在线更新开关
+RELEASE_API_URL=            # 发行版模式（install.sh 写入）
+RELEASE_DL_URL=
+VAPID_PUBLIC_KEY= VAPID_PRIVATE_KEY= VAPID_SUBJECT=mailto:admin@localhost
 # Redis 可选：配置后限流使用共享配额（多实例）；连接失败自动降级为内存
 REDIS_ADDR= REDIS_PASSWORD= REDIS_DB=0
-# SMTP 可选；缺省时 forgot 走日志输出
-SMTP_HOST= SMTP_PORT= SMTP_USER= SMTP_PASS= SMTP_FROM=
+# SMTP 可选；缺省时 forgot 走日志输出（release 默认不打印完整令牌）
+SMTP_HOST= SMTP_PORT= SMTP_USER= SMTP_PASS= SMTP_FROM= LOG_RESET_LINK=false
 ```
 
 - 启动：读 env（JWT/前端来源校验）→ 连 DB（重试 10 次×2s）→ `MIGRATE=true` 跑迁移否则 AutoMigrate → 起 WS Hub → 监听
 - 优雅停机：SIGTERM 后 10s 内排空 WS 写、关闭 HTTP
 - Nginx：`/api` 反代 `:8080`；`/ws` 加 `Upgrade/Connection` 头，`proxy_read_timeout ≥ 300s`（`deploy/nginx.conf.example`；容器版 `deploy/nginx.compose.conf`）
 - 一键环境：仓库根 `docker-compose.yml`（MySQL 8 + 后端，healthcheck 后启动，`MIGRATE=true`）
-- 升级：`scripts/update.sh` / `update.ps1`（拉 Gitee → 重建 → 重启）；构建注入版本供 `/api/version` 核对
+- 升级：`scripts/update.sh` 自动识别部署形态——发行版从 Release 下载校验替换、源码 `git pull` 后本地编译，默认蓝绿热更新；构建注入版本供 `/api/version` 核对
 
 ## 10. 交付内容
 
@@ -231,20 +343,23 @@ server/
 │   ├── config/            # env 解析与默认值（含 JWT/前端来源校验）
 │   ├── version/           # 构建版本（ldflags 注入，GET /api/version）
 │   ├── model/             # GORM 模型 + 响应视图
-│   ├── store/             # 数据访问 + RunMigrations（golang-migrate）
-│   ├── handler/           # HTTP（auth/user/friend/conversation/plugin/admin/health/version）
-│   ├── middleware/        # logger / jwt / ban / admin / limiter
+│   ├── store/             # 数据访问 + RunMigrations（golang-migrate）+ secretbox + Redis
+│   ├── handler/           # HTTP（auth/user/friend/conversation/moderation/plugin/admin/
+│   │                      #       admin_settings/upload/file/sticker/push/ops/site/health/version）
+│   ├── middleware/        # logger / jwt / ban / admin / limiter / maintenance / guard
 │   ├── ws/                # hub(64 分片) / serve(握手+读写 pump) / dispatch / presence
-│   ├── plugin/            # manifest 解析校验 / from-url 拉取 + SSRF 防护
-│   └── service/           # mailer（SMTP 可选）
-├── migrations/            # 0001_init.up/down.sql
+│   ├── plugin/            # manifest 解析校验 / esbuild TS 转译 / from-url 拉取 + SSRF 防护
+│   ├── service/           # mailer / storage / thumbnail / push / backup / updater
+│   ├── logx/ metrics/     # 日志轮转 / Prometheus
+│   └── router/            # 全部路由与中间件装配
+├── migrations/            # 0001_init … 0022_message_fulltext（up/down SQL）
 ├── test/                  # 集成测试（//go:build integration）
 ├── Dockerfile             # 多阶段构建（含 migrations）
 ├── .env.example
 └── README.md              # 运行手册（依赖/配置/迁移/测试/升级）
 ```
 
-仓库根的 `deploy/`（nginx 双版配置）、`scripts/`（一键升级）、`plugins/examples/`（示例插件）、`docker-compose.yml` 见根 README。
+仓库根的 `deploy/`（nginx 双版配置）、`scripts/`（install / package-release / update / uninstall / coverage）、`plugins/examples/`（示例插件）、`docker-compose.yml`、`website/`（官网）见根 README。
 
 测试与被测包同目录 `*_test.go`；跨进程集成测试加 `//go:build integration` 标签。
 
@@ -261,7 +376,7 @@ server/
 - `.env.example` 每键注释
 - `migrations/` 头部注明回滚方式
 - 用户自定义头像：`migrations/0002_user_avatar`（`users.avatar` MEDIUMTEXT，存前端压缩后的 data URL）
-- `scripts/update.sh` / `update.ps1`：一键从 Gitee 拉取升级（含 `--no-restart` 与 `RESTART_CMD`）
+- `scripts/update.sh`：自动识别发行版 / 源码部署（含 `--cold`、`--no-restart`、`RESTART_CMD`）
 
 ### 10.4 验收标准（Definition of Done）
 
@@ -269,7 +384,7 @@ server/
 2. WS 帧与 `web/src/types/proto.ts` 字段级一致；心跳 / 重连 / kicked 在真实前端上验证
 3. 首个注册用户 role=admin；封禁后该用户 REST 全部 403、WS 收 kicked
 4. `client_msg_id` 重发不产生重复消息；未读数与已读回执在双端表现一致
-5. 撤回仅本人 2 分钟内；撤回未读消息时对方 unread-1
+5. 撤回仅本人、在 `chat.recallMinutes` 时限内（默认 2 分钟，0=关闭）；撤回未读消息时对方 unread-1
 6. §7 三条限流生效并返回 429
 7. URL 安装对私网 / 回环 / 非 http(s) / 超限响应体全部拒绝（有测试）
 8. `go test ./...` 全绿（含 `-tags integration`）

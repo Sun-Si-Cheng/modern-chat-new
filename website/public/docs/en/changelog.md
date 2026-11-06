@@ -8,7 +8,19 @@ This file records the important changes of ModernChat. Format follows [Keep a Ch
 
 ## [Unreleased]
 
-### Added
+### Fixed
+
+- **Live nickname/avatar sync didn't work**: the server already broadcast `user_change`, but `ServerFrame` didn't declare it and no handler existed, so changes needed a page refresh. `stores/ws.ts` now updates direct-chat peers, group member caches, friends/requests and the user's other devices.
+- **Own messages didn't update the conversation list**: the sender never receives the "new message" `conv_change`; the echo branch now writes `lastMessageId/At/Preview/Type`, so preview, time and ordering no longer stay on the previous message.
+- **WS 4 KB uplink limit broke long messages**: `chat.maxMessageLength` allows up to 5000 characters (over 4 KB in UTF-8); the old `maxMsgSize=4096` closed the connection without an `error` frame. Raised to 64 KB.
+- **New group members saw "no messages"**: `initInboxes` inserted an empty inbox row without syncing the latest message, while opening the conversation showed history. Join/invite now writes the latest preview/time and advances `last_read` to the latest message (historical unread is not retroactively counted).
+- **`FRONTEND_URL` with only blank entries panicked on password reset**: a value like `FRONTEND_URL=","` parsed to zero origins, rejecting every browser Origin and leaving `Forgot` to index `FrontendURLs[0]` out of range. `config.Load` now returns an error at startup (with a unit test).
+
+### Docs
+
+- Rewrote the design doc, backend API spec, frontend guide, ops manual, `web/README.md` and `server/README.md` against the current code; removed references to deleted `update.ps1` / `coverage.ps1` and fixed a malformed changelog entry.
+
+### Added (earlier unreleased notes)
 
 - Frontend technical guide (`docs/前端技术方案.md`): structure, state management, realtime pipeline, performance conventions & common pitfalls
 - Ops manual (`docs/运维手册.md`): full env-var table, deployment, backup & upgrade, logs, troubleshooting FAQ
@@ -25,7 +37,7 @@ This file records the important changes of ModernChat. Format follows [Keep a Ch
 - **Feishu-style four-column layout**: icon rail (avatar, new, chats, contacts, plugins, admin, settings) + filter pane (all / unread / direct / group) + conversation & contact list + chat area
 - **Selectable login-page background**: solid base color + aurora / waves / grid effects, 6 preset colors + custom picker, preference persisted locally
 - **Unified settings page** (`/settings`): language, theme, account, version
-- **Coverage tooling**: `scripts/coverage.ps1` / `coverage.sh` merge unit & integration coverage and detect "silently skipped" false-green runs
+- **Coverage tooling**: `scripts/coverage.sh` merges unit & integration coverage and detects "silently skipped" false-green runs
 - Unit tests for the backend config / version / mail packages
 
 ### Fixed

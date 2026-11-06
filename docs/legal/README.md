@@ -28,7 +28,7 @@
 | JWT 7 天、HS256、`token_version` 失效 | `server/internal/middleware/jwt.go` |
 | 浏览器本地存储 `mc_token` / `mc_lang` / `mc_theme` | `web/src/api/client.ts`、`web/src/i18n/index.ts`、`web/src/stores/prefs.ts` |
 | 找回密码令牌 15 分钟、一次性 | `server/internal/handler/auth.go` `Forgot` / `Reset` |
-| 消息 2 分钟内可撤回 | `web/src/components/chat/MessagePane.vue`、`server/internal/ws/dispatch.go` |
+| 消息默认 2 分钟内可撤回（后台可配） | `web/src/components/chat/MessagePane.vue`、`server/internal/ws/dispatch.go` |
 | 插件沙箱（无 same-origin）、权限白名单 | `web/src/composables/usePluginHost.ts` |
 | 插件 URL 安装的 SSRF 防护 | `server/internal/plugin/fetch.go` |
 | 在线状态仅存内存 | `server/internal/ws/hub.go`（无持久化） |

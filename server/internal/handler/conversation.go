@@ -1280,10 +1280,24 @@ func (h *ConversationHandler) requireManager(c *gin.Context, convID, userID uint
 }
 
 // initInboxes 初始化收件箱行（无历史未读）。
+//
+// 新成员加入时同步当前最新一条消息作为预览，并把 last_read 推到最新：
+// 只插入空行会让会话列表显示「暂无消息」，而点进去又能看到历史消息。
+// unread 仍为 0（不追溯加入前的历史未读）。
 func (h *ConversationHandler) initInboxes(convID uint, userIDs ...uint) error {
+	latestID, latestAt, err := h.convs.LatestVisibleMessage(convID)
+	if err != nil {
+		return err
+	}
 	rows := make([]model.UserConversation, 0, len(userIDs))
 	for _, uid := range userIDs {
-		rows = append(rows, model.UserConversation{UserID: uid, ConversationID: convID})
+		row := model.UserConversation{UserID: uid, ConversationID: convID}
+		if latestID > 0 {
+			row.LastMessageID = &latestID
+			row.LastMessageAt = latestAt
+			row.LastReadMessageID = latestID
+		}
+		rows = append(rows, row)
 	}
 	return h.msgs.UpsertInbox(rows)
 }

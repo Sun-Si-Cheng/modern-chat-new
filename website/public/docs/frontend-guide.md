@@ -17,11 +17,13 @@
 | 状态 | Pinia | ^4.0.3 |
 | 路由 | Vue Router | ^5.3.1 |
 | 国际化 | vue-i18n | ^11.4.16 |
-| UI | tdesign-vue-next | ^1.20.10 |
+| 样式 | **UnoCSS** | ^66（原子类，颜色映射 `--td-*` / `--mc-*` 变量） |
+| 组件 | **`components/ui/Ui*`（自研）** | 主力；`tdesign-vue-next` 仅剩 `TForm/TFormItem/TTable/TTabs/TList/TConfigProvider`（后台与认证页） |
 | 图标 | tdesign-icons-vue-next | ^0.4.11 |
 | 大列表 | vue-virtual-scroller | ^3.0.5 |
 
-设计原则：**内核尽量薄**。除账号 / 消息 / 会话 / 插件运行时外，一切增强（图片消息、表情、Markdown、主题皮肤、机器人）都由插件提供，前端只提供 8 个白名单声明式组件给插件渲染。
+
+设计原则：**内核尽量薄**。账号 / 好友 / 会话 / 文本 + 图片 + 语音 + 视频消息 / 插件运行时属于内核；表情回复、Markdown、主题皮肤、机器人等增强由插件提供，前端只提供 11 个白名单声明式组件给插件渲染（`text / image / button / input / card / list / divider / link / table / progress / badge`）。
 
 ---
 
@@ -36,21 +38,34 @@ web/src/
 │   └── index.ts            # 分域 API：auth/user/conv/friend/plugin/admin
 ├── stores/                 # Pinia（见 §3）
 │   ├── auth.ts             # token + 当前用户 + isAdmin
-│   ├── ws.ts               # WebSocket 连接、在线用户集合、收发出口
+│   ├── ws.ts               # WebSocket 连接、在线用户集合、收发出口、user_change 分发
 │   ├── conversations.ts    # 会话列表、消息缓存、未读、筛选、发送与乐观消息
 │   ├── friends.ts          # 好友与申请
+│   ├── favorites.ts        # 收藏 id 集合与抽屉数据
 │   ├── plugins.ts          # 插件清单
-│   └── prefs.ts            # 语言 / 主题 / 认证页背景偏好（持久化）
+│   ├── layout.ts           # 三块区域的宽度 / 常驻 / 抽屉形态（localStorage）
+│   ├── site.ts             # 站点公开配置（30s 轮询、可见性暂停）
+│   └── prefs.ts            # 语言 / 主题 / 认证页背景 / 全站页面背景偏好（持久化）
 ├── composables/
 │   ├── useWebSocket.ts     # 连接生命周期：挂载连接、卸载断开、绑定上行出口
 │   ├── usePluginHost.ts    # 插件宿主：iframe 沙箱、postMessage 协议、事件总线
+│   ├── notifications.ts    # 桌面通知 / Web Push 开关与发送
+│   ├── announcement.ts     # 全站公告本地已读位置
+│   ├── localCache.ts       # 本地缓存统计与清理（Cache Storage，不碰偏好）
+│   ├── useOverlay.ts       # 浮层焦点圈定 / body 滚动锁
 │   └── useAppI18n.ts       # t / te（错误消息映射）
 ├── components/
 │   ├── chat/               # AppRail / GroupPane / ConvSidebar / MessagePane /
-│   │                       # MessageComposer / DetailPanel / PluginDrawer /
+│   │                       # MessageComposer / DetailPanel / PluginDrawer / FavoriteDrawer /
+│   │                       # NotificationDrawer / AnnouncementDialog / VoiceMessage /
 │   │                       # ProfileCard / AddFriendDialog / AvatarBadge
 │   ├── common/             # AuthScene（认证页背景场景）/ QuickPrefs（语言·明暗·背景）
-│   └── declarative/        # 插件声明式 UI 渲染器（8 个白名单组件）
+│   │                       # AppBackgroundPicker（全站页面背景：颜色 + 纹理）
+│   │                       # PaneResizer（区域拖拽调宽）/ ContextMenu（右键菜单）
+│   ├── ui/                 # 自研控件层（见 §8.1）：UiButton / UiInput / UiTag / UiBadge
+│   │                       # UiSelect / UiSlider / UiSwitch / UiCheckbox / UiInputNumber
+│   │                       # UiTooltip / UiPopup / UiDialog / UiDrawer
+│   └── declarative/        # 插件声明式 UI 渲染器（11 个白名单组件）
 ├── views/                  # Auth / Forgot / Settings / Legal / ChatLayout / admin
 ├── router/index.ts         # 路由 + 登录态与站长守卫
 ├── i18n/                   # zh-CN.ts / en-US.ts / errors.ts（服务端中文错误 → 英文）
@@ -69,8 +84,11 @@ web/src/
 | `ws` | 连接状态、在线用户集合、收发帧 | `send()` 返回 **boolean**：连接不可用时调用方必须把消息标记为失败，而不是静默丢弃 |
 | `conversations` | 会话列表、按会话的消息缓存、未读数、发送队列 | 乐观消息 + `clientMsgId` 幂等；`resync()` 用于断线重连后补数据 |
 | `friends` | 好友列表、收到的申请、申请计数 | 与 `conversations` 解耦，好友变更单独推送 |
+| `favorites` | 收藏 id 集合（右键菜单判断「收藏 / 取消收藏」） | 一次拉取 200 条 id，本地判断 |
 | `plugins` | 插件清单（启用 / 停用 / 全局下架） | 与插件宿主 `usePluginHost` 配合 |
-| `prefs` | 语言、主题、认证页背景色与特效 | 只写 `localStorage`，不影响他人 |
+| `layout` | 分组栏 / 会话列表 / 详情面板的宽度、常驻 / 抽屉、展开态 | `localStorage.mc_layout`，跨刷新保持 |
+| `site` | `GET /api/site` 公开配置 | 30s 轮询、页面不可见时暂停、浅比较避免整屏重渲 |
+| `prefs` | 语言、主题、认证页背景色与特效、全站页面背景色与纹理 | 只写 `localStorage`，不影响他人 |
 
 **数据流**
 
@@ -81,7 +99,9 @@ web/src/
 ```
 
 - 只读数据走 REST，写入走 store 动作；视图不直接 `fetch`
-- WS 下行帧统一在 `ws.ts` 分发：`message` / `read` / `recall` / `typing` / `presence` / `conv_change` / `user_change` / `kicked` / `error`
+- WS 下行帧统一在 `ws.ts` 分发：`message` / `message_update` / `recall` / `reaction` / `message_delivered` / `message_admin_deleted` / `read` / `typing` / `presence` / `user_change` / `conv_change` / `kicked` / `error`
+- **`user_change` 由 `ws.ts` 直接消费**：同时更新 `conversations`（单聊 peer + 群成员缓存）与 `friends`（好友 / 申请），本人多端也会更新 `auth.user`；否则昵称/头像要刷新页面才同步（该帧一直由服务端广播）
+- **`conv_change` 只做增量**：普通帧（只是来了新消息）不再重拉 `/api/conversations`——`message` 帧已经把最后一条/未读更新到本地；只有 `meta` 帧（成员/群名/公告变化）或**本地还没有该会话**时才 refetch。旧行为是每条别人的消息触发一次全量列表请求 + 整份数组换引用（列表、分组栏、聊天页全部重渲）
 
 ---
 
@@ -95,7 +115,10 @@ web/src/
 - **断开即清空在线集合**：否则会一直显示过期的"在线"绿点
 - **发送失败可见**：`ws.send()` 在连接未就绪时返回 `false`，`conversations.sendText()` 立刻把乐观消息标记为 `failed`，用户可点重发（而不是永远停在"发送中"）
 
-上行帧：`chat` / `read` / `recall` / `typing`（详见后端规格 §3.3）。
+上行帧：`chat` / `read` / `delivered` / `recall` / `edit` / `reaction` / `typing`（详见后端规格 §3.3）。
+- **单聊送达**：收到单聊消息后自动上行 `delivered`，发送方据此展示「已送达」
+- **表情回应**：`toggleReaction()` 上行 `reaction`，本地按广播增量维护 `{emoji,count,mine}`
+- 上行单帧上限 64 KB（服务端 `maxMsgSize`），前端不需要额外截断，但输入区仍按 `site.maxMessageLength` 提前拦
 
 ---
 
@@ -104,7 +127,7 @@ web/src/
 | 路由 | 访问 | 说明 |
 |---|---|---|
 | `/login` `/register` | 公开 | 已登录访问会跳回聊天页 |
-| `/forgot` | 公开 | 两步：填邮箱 → 填令牌与新密码 |
+| `/forgot` | 公开 | 两步：填邮箱 → 填令牌与新密码。**邮件链接带 `?token=` 时自动进入第二步并填入令牌**，随后把 token 从地址栏清掉（避免截图/分享泄漏）；邮件正文同时给出令牌原文，链接被网关改写时仍可手工粘贴 |
 | `/terms` `/privacy` | 公开 | 协议正文，仅登录页有入口（协议需可直达） |
 | `/settings` | 公开 | 未登录仅可改外观；账号区需登录 |
 | `/chat` | 需登录 | 主界面 |
@@ -123,7 +146,7 @@ web/src/
 **颜色规范**：一律用令牌，不写死色值。
 
 - `--td-*`：TDesign 原生令牌
-- `--mc-text-faint` / `--mc-link` / `--mc-selection` / `--mc-hairline` / `--mc-dur-*` / `--mc-ease-*` / `--mc-scene-color`：项目辅助令牌（见 `assets/main.css`）
+- `--mc-text-faint` / `--mc-link` / `--mc-selection` / `--mc-hairline` / `--mc-dur-*` / `--mc-ease-*` / `--mc-scene-color` / `--mc-app-bg` / `--mc-app-pattern`：项目辅助令牌（见 `assets/main.css`）
 
 ---
 
@@ -131,12 +154,23 @@ web/src/
 
 | 主题 | 做法 | 现状 |
 |---|---|---|
-| 组件体积 | **不写 `app.use(TDesign)`**；组件在 SFC 内按需 `import { X as TX } from 'tdesign-vue-next'`，样式全量引入 | TDesign chunk 1,371 kB → 726 kB |
-| 分包 | `manualChunks` 只固定框架核心为 `vendor`；TDesign 组件**跟随引用它的路由**分包 | 首屏 gzip 262 kB → **104 kB** |
-| 长列表 | 消息流用 `vue-virtual-scroller` 虚拟滚动 | 已在 `MessagePane` |
+| 组件体积 | 迁移到自研 `Ui*` 后，TDesign 只剩后台表格/页签与认证页表单；**不写 `app.use(TDesign)`**，仍在用的组件按需 import | TDesign 已不占首屏 |
+| 分包 | `manualChunks` 只固定框架核心为 `vendor`；后台页按路由分包，不进首屏 | 首屏约 **161 KB / 21 请求**（未压缩） |
+| 传输压缩 | 构建生成 `.gz` / `.br`，nginx `gzip_static on` 优先发预压缩文件 | 首屏 **161 KB → 约 65 KB** |
+| 长列表 | 消息流用 `vue-virtual-scroller`；实测 2000 条历史只渲染 21 个 DOM | 已在 `MessagePane` |
+| 图片 | 头像加 `loading="lazy" + decoding="async"`（100 个会话原本同时发 100 个请求）；消息图片**不能** lazy（与 DynamicScroller 测量冲突，见 §8.2） | 已处理 |
+| 全局监听 | `UiPopup` / `ContextMenu` 的 `scroll` / `resize` **只在打开期间挂载**，`scroll` 带 `passive` | 已处理 |
 | 动画 | 只改 `transform` / `opacity`（网格动效用 `background-position`），不触发重排 | 统一在 `main.css` 关键帧 |
-| 无障碍 | `prefers-reduced-motion: reduce` 时停掉所有装饰动画 | 认证页背景、消息入场等均已处理 |
+| 无障碍 | `prefers-reduced-motion: reduce` 时停掉所有装饰动画 | 认证页背景、消息入场、滑块回弹等均已处理 |
 | devtools | `vite-plugin-vue-devtools` 仅在 `mode === 'development'` 启用 | 生产包不含 |
+
+**已经验证过、不必再优化**（附数据，避免重复投入）：
+
+- 后端接口 6–18 ms，不是瓶颈；
+- 消息列表虚拟滚动后滚动 60 fps（p95 28.5 ms）；
+- 打开 2000 条历史有 115 ms 长任务，是纯 DOM 渲染（每条消息 27 个节点），优化需砍结构、样式回归风险高，**属一次性开销，不做**；
+- 会话列表加了 `content-visibility: auto` 会让 `scrollHeight` 从估算值跳到实测值（滚动条"跳一下"），**已回退**；
+- dev 环境测出的 112 MB 堆 / 55 MB 传输是 DevTools + 未压缩模块造成的假象，生产是 3.4 MB / 161 KB，**结论必须基于 `vite preview`**。
 
 > **踩坑提醒**：TDesign 组件并非都支持裸 `v-model`。
 > `Drawer` / `Dialog` / `Popup` 只有 `visible` prop，必须写 `v-model:visible="xxx"`；
@@ -149,9 +183,97 @@ web/src/
 
 - 组件文件名 PascalCase，事件用 kebab-case，props 显式声明并给默认值
 - 图标从 `tdesign-icons-vue-next` **按名导入**（`import { ChatIcon } from 'tdesign-icons-vue-next'`），不要 `import * as`
+- **布局类挂在父容器上，不要穿过组件**：抽屉的 `position/z-index/宽度` 这类布局属性必须由**父组件自己的元素**承载（如 `ChatLayout` 里 `DetailPanel` 外面那层 `div.mc-pane--right`）。原因：父组件的 scoped 样式要作用到子组件根节点，而多根子组件（`DetailPanel` = `.mc-detail` + `ContextMenu` + 若干 `UiDialog`）**不会接收**父级 `class`，且不报错——`is-drawer` 一旦丢失，抽屉就没有 `z-index`，全屏遮罩会盖住整个面板（表现为「能看到详情但点不了按钮」）
+- 多根组件若要接收 attrs，必须 `defineOptions({ inheritAttrs: false })` + 根容器 `v-bind="$attrs"`；但即便如此，也不要把布局类交给它
 - 样式用 `<style scoped>`；全局仅 `assets/main.css`
 - 主题相关一律用令牌，避免暗色下出现"重框"（细描边用 `--mc-hairline` 而非 `--td-component-border`）
 - 认证页背景（`components/common/AuthScene.vue`）：纯色基色 + 三种纯 CSS 动效（光晕 / 波纹 / 网格），访客可在右上角调色板自选颜色与特效，偏好存 `localStorage`
+- 全站页面背景（`components/common/AppBackgroundPicker.vue`）：预设色 / 自定义色 / 本地图片 + 四种纹理（无 / 网格 / 圆点 / 斜纹）；图片经 canvas 压缩为 webp（不支持时 jpeg），data URL ≤1.5M 字符并写入 `localStorage`；颜色以 30% 透明度叠加在 body 的主题底色上，聊天、设置、后台、协议、登录/找回页统一生效（认证页在自身场景色与特效之上叠加）；**入口只在设置页「外观」分区**（聊天标题栏的悬浮按钮已按信息架构规则移除，仅影响当前浏览器）。层叠实现（`stores/prefs.ts` `buildBgStack`）：纹理 → 颜色 → 图片柔化层 → 图片；**body 盒高只有视口高**（`html/body/#app` 均 `height: 100%`），所以纯色/柔化层必须 `repeat`（平铺纯色渐变无缝，否则整页滚动的页面下半段不叠色），图片层用 `background-attachment: fixed` 视口锁定——变量经 `--mc-app-bg-attachment` 下发到 body
+
+### 8.1 UI 组件层（UnoCSS + Ui*）
+
+**背景**：早期全部依赖 TDesign，体积大且样式不可控。现改为**自研控件 + UnoCSS 原子类**，`tdesign-vue-next` 只剩迁移不划算的几个（后台 `TTable`/`TTabs`、认证页 `TForm`）。
+
+| 层 | 位置 | 说明 |
+|---|---|---|
+| 设计令牌 | `assets/main.css` | 字号 7 档 / 圆角 4 档 / 时长 3 档 / 缓动 3 条（含 spring）/ 阴影 3 档 / 浮层材质 |
+| 原子类 | `uno.config.ts` | 颜色**全部映射到 `--td-*` / `--mc-*`**，亮暗自动跟随；圆角映射 `--mc-radius-*`（避免与 uno 内置 8px 打架） |
+| 控件 | `components/ui/` | 13 个自研组件，见下表 |
+
+```
+UiButton  UiInput  UiTag  UiBadge  UiSelect  UiSlider  UiSwitch
+UiCheckbox  UiInputNumber  UiTooltip  UiPopup  UiDialog  UiDrawer
+```
+
+**写 UnoCSS 时的两条硬性约束**（都踩过坑）：
+
+1. **不要给 CSS 变量用 `/alpha` 修饰**。`bg-success/12` 对 `var(--td-success-color)` 无效，会退化成实心色——配合同色文字就变成"看不见的字"。需要淡色时用预定义档位：`bg-success-soft`、`border-brand-line`（内部是 `color-mix`）。
+2. **自研按钮必须显式 `border-none`**。`<button>` 自带浏览器默认边框（`2px outset`）与灰底，暗色下表现为"白圈/白块"；描边变体用 `border-1 border-solid`（项目未引入 preflight，只写 `border` 会缺边）。
+
+**动效**：所有过渡从令牌取（`var(--mc-dur-*)` / `var(--mc-ease-*)`），裸写 `ease-out` 视为不符合约定。滑块拖动放大、开关滑钮 spring、按钮按压 `scale(0.97)` 均已在控件内实现，业务代码不用管。
+
+**浮层与键盘（`composables/useOverlay.ts`）**：`UiDialog` / `UiDrawer` 打开时锁 body 滚动（引用计数，可嵌套）、把焦点移入容器、Tab/Shift+Tab 在容器内循环、关闭后归还焦点；`UiSelect` 是 `role=combobox` + `role=listbox`，支持 ↑/↓/Home/End/Enter/Esc 与 `aria-activedescendant`，选项用 `role=option` + `aria-selected`。
+
+### 8.2 媒体消息（图片 / 语音 / 视频）
+
+- **发送链路**：`mediaApi.upload()`（multipart，**不能复用 `http.request`**——那里写死 `Content-Type: application/json`，FormData 必须让浏览器补 boundary）→ 拿到 URL → `convStore.sendMedia(convId, 'image'|'audio'|'sticker'|'video', url)` → WS `chat` 帧只带 URL。
+- **图片**：选图后先 canvas 压缩（最大边 1600、webp q0.82），小于 300 KB 不压、压完更大则用原图、失败回退原图。点击弹出灯箱，`Esc` 关闭。
+- **语音**：`MediaRecorder` 录制，**点击开始 / 再点结束**（按住模式在移动端与滚动冲突），60 秒上限、<1 秒丢弃。气泡宽度随时长变化、进度条用 `scaleX`（不触发布局）、同一时刻只播一条；webm 的 `duration=Infinity` 用 seek 逼出真实值。
+- **视频**：输入区「视频」按钮选本地文件（`accept="video/mp4,video/webm,video/quicktime,video/x-m4v"`），前端按 `site.maxVideoMB` 先拦体积，再 `upload(kind=video)`；**不做前端转码**（浏览器转码要 WASM + 长时间占主线程，收益远低于图片压缩）。气泡用原生 `<video controls playsinline preload="metadata">`，容器固定 `16:9`（`object-fit: contain`，竖屏留黑边）——`DynamicScroller` 依赖测量高度，等元数据到达再撑开会让列表跳动。
+- **渲染**：`MessagePane` 按 `msgType` 分支（`image` → 图片 + 灯箱；`audio` → `VoiceMessage`；`video` → 原生播放器；`sticker` → 贴纸）。视频右键走通用消息菜单（无「查看大图 / 保存图片」专属项）。
+- **图片缩略图**：气泡用 `imageSrc()`——按约定把 URL 扩展名前替换为 `_t.jpg`（服务端上传时生成，见设计文档 §9.2），`@error` 回退原图（老消息 / GIF / 生成失败都没有缩略图，一次 404 属预期兜底，以 `content` 为 key 避免乐观消息 id 串扰）；**灯箱始终用原图**。表情贴图不走缩略图（120×120 且要保透明动画）。
+- **占位文案**：引用块、合并转发、会话列表预览、通知、收藏、搜索结果统一按类型给 `[图片]/[语音]/[表情]/[视频]`，不能把 `/uploads/...` 地址直接显示出来。
+- **坑**：图片**不能加 `loading="lazy"`**——`DynamicScroller` 依赖测量 item 高度，图片未加载时高度为 0 → 永远进不了视口 → 永远不加载（死循环）。虚拟滚动本身已保证只渲染视口附近。
+- **`min-item-size` 取接近真实行高的值（当前 88）**：估值偏小会让滚动位置在实测后不断向上漂移（`scrollToBottom` 才需要连补三帧校正）。改动行高（padding/meta/气泡）时要同步调整它。
+
+### 8.3 表情 / 转发 / 群公告 / 群文件
+
+| 功能 | 要点 |
+|---|---|
+| **表情包** | 表情是「收藏关系 + URL」，文件走 `upload(kind=sticker)`（≤2 MB）。面板在输入框上方，点一下直接发送（`sendMedia(convId,'sticker',url)`），右键删除。消息渲染不套气泡背景，120×120 透明贴图 |
+| **消息编辑** | 右键「编辑」只对自己 **5 分钟内、未撤回的文本消息**可见；提交走 WS `edit`，收到 `message_update` 帧后更新本地正文并显示「已编辑」。输入区进入编辑模式时禁用发送附件；`recall` 帧命中正在编辑的消息时直接退出编辑态 |
+| **转发** | 右键「转发」→ 弹会话选择框（当前会话禁用）→ `forwardMessage()` 照搬 `content + msgType` 发新消息并打 `forwarded` 标记。**不引用原消息**：原消息撤回/删除不影响转发出去的那条。**已撤回的消息不可转发**（选择框停留期间被撤回也要在发送时再判一次，否则撤回内容会被发出去）；合并转发最多 20 条（超出当场拒绝），已撤回的会被跳过并提示条数 |
+| **群公告** | 存 `conversations.announcement*`（全员共享）。聊天区顶部折叠条，点开看全文与发布者；群主在详情面板编辑/撤销 |
+| **群文件** | 详情面板「群文件」：上传（`upload(kind=file)` ≤20 MB）→ 记账 → 列表（名称 / 大小 / 上传者），上传者或群主可删 |
+| **会话内搜索** | 详情面板顶部「搜索聊天记录」分区（L2：针对当前会话）：`UiInput` 输入 → 250ms 防抖调 `searchApi.messages(kw, convId)` → 结果列表（发送者/时间/关键词 `<mark>` 高亮）。点击结果走 `convStore.openConversationAtMessage()` → 写 `pendingJumpId` → `MessagePane` 滚动定位并高亮（历史太旧最多向前翻 10 页，找不到则提示）。**Ctrl/Cmd+F** 保留：经 `layout.requestDetailSearch()` 展开详情抽屉（仅抽屉形态且收起时）并聚焦输入框；切换会话自动清空搜索状态。列表栏全局搜索（人/群/消息混合）仍是 L1 |
+
+> **转发 vs 合并转发**：单条转发照搬 `content + msgType`；合并转发是把选中的多条消息拼成**一条文本**（带「【合并转发】」头，最多 20 条），不是微信的「聊天记录卡片」。后者需要存多条消息快照，而 `messages.content` 上限 1000 字符塞不下，得单开表或加 `msg_meta` JSON 字段——留到有明确需求时再做。
+
+**发送失败与断线**：失败消息的元信息里有「发送失败 · 重发」（所有会话类型都有，点击走 `convStore.resend`，保留引用与 @）；`ws.connected` 与 `ws.hasConnected` 一起决定是否显示顶部「正在重连」提示条——只在连过一次之后才显示，避免首屏连接中闪一条黄条。
+
+**撤回的一致性（收到 `recall` 帧时四处都要动）**：① 消息本身置 `isRecalled` + `recalledAt`；② 引用块快照（`m.replyTo.id` 命中）置撤回，否则别人一直看到撤回前的正文；③ 若正在编辑该消息，直接退出编辑态（否则要等提交才被服务端拒绝）；④ 会话最后一条被撤回时把预览置空、`lastMessageType` 设为 `recalled`（文案由列表按当前语言渲染），并按「该消息是否未读」把本地未读数 -1（与服务端 `RecallUnreadAdjust` 对齐）。
+
+### 8.4 收藏夹
+
+`stores/favorites.ts` + `components/chat/FavoriteDrawer.vue`（`UiDrawer`）。右键消息可收藏；抽屉按收藏时间倒序列出，支持跳回原会话、取消收藏。
+
+> **后端返回空列表时是 `[]` 而不是 `null`**：Go 的 nil slice 会序列化成 `null`，前端 `items.map()` 直接崩、整抽屉白屏。约定所有列表接口都返回空数组，前端 store 再做一层 `Array.isArray()` 收敛。
+
+> **`isFavorited` 是本地判断**：`ids` 来自一次列表拉取（显式请求 200 条，服务端默认 100）。收藏超过 200 条后，更早的消息仍会显示「收藏」——此时点一次是无害的幂等写入。要彻底解决需让服务端提供 `GET /api/messages/:id/favorite` 单条状态查询，当前未做。
+
+### 8.5 运营配置的消费（`stores/site.ts`）
+
+`GET /api/site`（免登录）返回全部可公开配置，`stores/site.ts` 拉一次缓存并**每 30 秒刷新**：
+
+- **为什么轮询**：维护模式可能在用户在线时被站长打开。后端拦截是实时的（REST 503 / WS 拒绝），但界面要靠这 30 秒的探测才能跟上，否则用户得手动刷新。
+- **省流与省渲染**：页面不可见（`document.visibilityState !== 'visible'`）时跳过轮询，切回前台立刻补一次；`refresh()` 对返回字段做**浅比较**，值没变就不替换 `config` 对象——`config` 被消息气泡（`canRecall`）、输入区（字数上限）、上传提示等大量订阅，整体替换会让整屏每 30 秒重渲一次。
+- **消费点**：浏览器标题与登录页品牌名（`site.name`）、注册入口显隐（`allowRegister`）、输入框 `maxlength` 与字数计数（`maxMessageLength`）、右键菜单撤回时限（`recallMinutes`，0 时整个不显示）、图片超限提示（`maxImageMB`）、注册页邮箱与验证码字段显隐（`requireEmail` / `requireEmailVerify`，服务端给的是实际生效值）。
+- **注册邮箱验证**：`AuthView` 在 `requireEmail` 为真时渲染邮箱行、`requireEmailVerify` 为真时再渲染验证码行（`UiInput` + 发送按钮，文案随倒计时变为「{n}s 后重发」）；提交时按需带上 `email` / `emailCode`。验证码冷却秒数由服务端返回，前端只负责倒计时展示。
+- **维护拦截**：`App.vue` 按「维护中 && 非管理员 && 不在 /login」渲染 `MaintenanceView`。管理员放行（否则站长把自己锁在门外）、`/login` 放行（管理员要能登录）；后端中间件是硬保障，前端只是让界面跟上。
+- **拉取失败用默认值**：默认值是**保守值**（`allowRegister=false`、不渲染邮箱字段），并用 `site.loaded` 控制入口显隐——配置没拉回来之前不露出注册入口，避免用户填完才被 403/503 打回。维护状态的判断仍沿用上一次成功拉取的值，不因一次失败误判成「维护结束」。
+
+### 8.6 本地缓存管理（`composables/localCache.ts`）
+
+设置页「本地缓存」分区只管理 **Cache Storage**（PWA 静态资源），不碰 localStorage 里的登录凭证与偏好：
+
+- **统计**：优先用 `navigator.storage.estimate()` 一次拿到 origin 总占用，减去 localStorage 即为静态缓存的近似值（缓存条目多时不再逐条 `blob()` 读一遍）；estimate 不可用才回退遍历 `caches.keys()`。localStorage 用 `Blob` 估算键值字节数，仅展示、不清理。
+- **清空**：删除全部 Cache Storage 条目，保留登录、语言、主题、布局、背景与插件数据；确认弹窗走 `DialogPlugin.confirm`。静态缓存可再生，清空后离线资源在下次访问时重新下载。
+
+### 8.7 消息流阅读辅助
+
+- **回到底部 / 新消息提示**：`MessagePane` 用 `stickToBottom` + `unseenCount` 维护。上翻历史时右下角出现「回到底部」；期间收到别人消息改为「N 条新消息」（最多显示 99+），点击后滚到底并 `markRead`。
+- **判定新消息不能用数组长度**：上翻加载历史是**前插**，长度增加但末条 id 不变；改为监听「最后一条已落库消息 id」，切会话 / 清空导致 id 回退时不计。自己发的消息（`senderId === 当前用户`）直接跳回底部，避免发出去却停在历史中段。
+- **标签页标题**：`App.vue` 汇总非免打扰会话的未读数，`/chat` 下有未读时设为 `(N) 站点名`，其他路由恢复站点名；`stores/site.ts` 不再直接写 `document.title`（否则 30 秒轮询会把未读前缀覆盖）。
 
 ---
 
@@ -160,9 +282,12 @@ web/src/
 `composables/usePluginHost.ts` 是前端最复杂的部分：
 
 - 每个插件一个**沙箱 iframe**（`sandbox="allow-scripts"`），插件代码不能直接碰主页面 DOM
+- **启动并发**：所有启用插件的代码**并发**拉取（`Promise.all`）后再按顺序挂载——串行 `await` 会让第 N 个插件等前面全部返回（5 个插件 × 200ms ≈ 1 秒）；单个插件失败只记日志并提示，不阻塞其余插件
 - 通信走 `postMessage`，主页面校验来源与消息结构后才处理
-- 插件 UI 用**声明式描述**（`components/declarative/index.ts`）：插件只描述"这里放一个按钮 / 一段文字 / 一张图"，由主页面用白名单组件渲染，插件拿不到任意 HTML
-- 卸载插件时同步卸载 iframe、移除事件监听、清理状态，回到纯文本内核
+- 插件 UI 用**声明式描述**（`components/declarative/index.ts`）：插件只描述"这里放一个按钮 / 一段文字 / 一张图"，由主页面用白名单组件渲染，插件拿不到任意 HTML；白名单 11 个（含 `table` / `progress` / `badge` 三个数据展示组件）
+- **扩展点**：`registerMessageAction` 注册的菜单项会追加到消息右键菜单（键前缀 `plug:<pluginId>:<actionId>`，`MessagePane` 只把事件投递给注册者）；`conv:read` 提供只读上下文（`me/conv/messages.recent`），`ui:host` 提供 `nav.*` 与 `toast`。**`messages.recent` 只下发已落库的可见消息**（过滤乐观/失败消息，撤回消息的 `content` 置空），插件拿不到撤回原文
+- **语言**：插件可用 TypeScript 编写，服务端转译后仍是纯 JS，沙箱侧无需编译；类型声明在 `plugins/modernchat-sdk.d.ts`
+- 卸载插件时同步卸载 iframe、移除事件监听、清理状态（面板与菜单动作一并清除），回到纯文本内核
 
 ---
 
@@ -183,6 +308,46 @@ web/src/
 
 - **类型**：`web/src/types/proto.ts` 与 `server/internal/model/view.go` 一一对应（字段名、类型、枚举值），改一侧必须改另一侧
 - **WS 帧**：`proto.ts` 的 `ClientFrame` / `ServerFrame` 对应后端 `ws/dispatch.go` 的上下行处理
-- **错误**：后端返回 `{ error, code? }`，前端 `api/client.ts` 归一化成 `Error`；中文错误在 `i18n/errors.ts` 中映射为英文
+- **错误**：后端返回 `{ error, code? }`，前端 `api/client.ts` 归一化成 `ApiError`；中文错误在 `i18n/errors.ts` 中映射为英文。`fetch` 的网络层异常统一包装成「网络连接失败」，非 401 的失败**不会**清登录态（只有 401 才清 token 并跳登录，且带 `?redirect=` 回到原页面）
 - **改接口的流程**：先改 [后端需求规格.md](后端需求规格.md) → 再改后端与 `proto.ts` → 最后改前端
+
+## 12. 信息架构（新增入口该放哪一层）
+
+界面上不要堆按钮。任何新入口先按下面三层判断，**不要凭手感决定**：
+
+| 层 | 位置 | 只放什么 | 判定 |
+|---|---|---|---|
+| **L1 主界面** | 图标栏 + 列表栏 | 聊天过程中反复用的动作：切换视图、搜索、发起新对话 | 每天用多次 |
+| **L2 上下文面板** | `DetailPanel`（右侧） | 针对**当前会话或当前成员**的动作：会话内搜索、改名群、转让群主、移出成员、退群 | 与当前会话强绑定 |
+| **L3 设置页** | `SettingsView` | 全局、低频、一次性配置：账号资料、外观主题、语言、插件管理、站长后台、关于、退出登录 | 全局 / 低频 / 仅本人或管理员 |
+
+三条硬性约束：
+
+1. **高频动作不许藏进二级菜单**。「加好友 / 新建群聊」常驻列表栏顶部的 `+`（`ConvSidebar`），不要只放在某个「更多」里——用户会认为功能丢了。
+2. **低频配置不许占图标栏**。插件管理、站长后台已从图标栏移入设置页（站长分区仅 `auth.isAdmin` 可见）。
+3. **移动入口必须保证功能可达**。例如插件面板属于聊天页，设置页用 `router.push('/chat?panel=plugins')` 回去，`ChatLayout` 的 `onMounted` 读 `route.query.panel` 自动展开抽屉并清理 query，避免出现「改完找不到功能」。
+
+当前图标栏只有 4 项：头像（资料卡）、聊天、联系人、设置。**再加图标前先问：它是不是 L2 或 L3 的东西？**
+
+## 13. 布局可调（宽度 + 抽屉形态）
+
+聊天页的三块区域（分组栏 / 会话列表 / 详情面板）都支持**两种形态**与**任意宽度**：
+
+| 形态 | 行为 |
+|---|---|
+| **常驻（docked）** | 参与 flex 布局，占据固定宽度；区域之间有可拖拽分隔条 |
+| **抽屉（drawer）** | 脱离布局、浮在主区之上（`position: absolute`），不挤压消息区；点遮罩或 `Esc` 收起 |
+
+**交互**：
+
+- 拖动分隔条 → 调整该区域宽度（`PaneResizer`，支持键盘 ←/→，Shift 加速）
+- 双击分隔条 → 在「常驻 / 抽屉」之间切换，**切成抽屉时立即展开**（否则区域会凭空消失，用户会以为功能丢了）
+- 设置页「布局」分区 → 滑块调宽度、分段控件切形态、一键恢复默认
+- 抽屉形态下，图标栏的「聊天 / 联系人」按钮改为展开/收起该抽屉；详情抽屉的入口是主区右上角的按钮
+
+**状态**：`stores/layout.ts` 保存 `{ panes: {width, drawer}, opened }` 到 `localStorage.mc_layout`，宽度、形态与展开态**跨刷新保持**。抽屉互斥（同时展开多个会互相遮挡）。
+
+> 实现要点：各区域组件的宽度写 `width: var(--mc-w-conv, 300px)`（默认值与历史硬编码一致，首屏不跳变），宽度值由 `.mc-layout` 的内联 CSS 变量下发。
+
+
 

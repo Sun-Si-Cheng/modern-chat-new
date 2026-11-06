@@ -189,11 +189,20 @@ export const useConversationsStore = defineStore('conversations', () => {
     else conversations.value.push(conv)
   }
 
-  /** 用户资料变更（昵称/头像）后就地更新会话列表里的 peer，无需重新拉取 */
+  /** 用户资料变更（昵称/头像）后就地更新会话 peer 与成员缓存，无需重新拉取 */
   function applyUserProfile(u: { userId: number; nickname: string; avatar: string; avatarColor: string }) {
     for (const c of conversations.value) {
       if (c.peer?.id === u.userId) {
         c.peer = { ...c.peer, nickname: u.nickname, avatar: u.avatar, avatarColor: u.avatarColor }
+      }
+    }
+    // 群聊不存 peer，昵称/头像由成员缓存提供：漏更新会让群成员列表、
+    // 消息气泡的发送者名字与 @ 选择器一直显示旧资料，直到重进会话
+    for (const list of Object.values(membersByConv)) {
+      for (const m of list) {
+        if (m.user.id === u.userId) {
+          m.user = { ...m.user, nickname: u.nickname, avatar: u.avatar, avatarColor: u.avatarColor }
+        }
       }
     }
   }
@@ -800,8 +809,18 @@ export const useConversationsStore = defineStore('conversations', () => {
         if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
       if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
       else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
-      // 自己发出的消息本身就是已读位置：记住该会话的上报水位，避免重复上报
-      lastReportedReadByConv.set(convId, frame.id)
+      // 发送者本端不会收到「纯新消息」的 conv_change，列表摘要只能在这里更新；
+      // 漏更新会出现「消息已发出，但会话列表的预览与时间还是上一条」。
+      const sentConv = conversations.value.find((c) => c.id === convId)
+      if (sentConv) {
+        sentConv.lastMessageId = frame.id
+        sentConv.lastMessageAt = frame.createdAt
+        sentConv.lastMessagePreview = frame.content
+        sentConv.lastMessageType = frame.msgType
+      }
+      // 不要把发送水位直接写成 frame.id：该会话此前可能还有未读（例如把消息
+      // 转发到一个尚未打开的会话），提前记下水位会让之后打开会话时跳过 read
+      // 上报，服务端未读数永远清不掉。已读游标以服务端为准，打开会话时再上报。
       return
     }
 

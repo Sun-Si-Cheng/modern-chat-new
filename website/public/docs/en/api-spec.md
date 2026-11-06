@@ -220,7 +220,7 @@ SMTP_HOST= SMTP_PORT= SMTP_USER= SMTP_PASS= SMTP_FROM=
 - Graceful shutdown: on SIGTERM drain WS writes within 10s, close HTTP
 - Nginx: `/api` proxies to `:8080`; `/ws` with `Upgrade/Connection` headers, `proxy_read_timeout ≥ 300s` (`deploy/nginx.conf.example`; container version `deploy/nginx.compose.conf`)
 - One-command environment: repo-root `docker-compose.yml` (MySQL 8 + backend, starts after healthcheck, `MIGRATE=true`)
-- Upgrade: `scripts/update.sh` / `update.ps1` (pull Gitee → rebuild → restart); builds inject the version for `/api/version` verification
+- Upgrade: `scripts/update.sh` auto-detects install mode (release download+verify, or source `git pull` + local build), defaults to blue-green hot swap; builds inject the version for `/api/version` verification
 
 ## 10. Deliverables
 
@@ -263,7 +263,7 @@ Tests share directories with the code under test as `*_test.go`; cross-process i
 - `.env.example`: every key commented
 - `migrations/`: header notes the rollback path
 - User custom avatars: `migrations/0002_user_avatar` (`users.avatar` MEDIUMTEXT, stores the frontend-compressed data URL)
-- `scripts/update.sh` / `update.ps1`: one-command upgrade from Gitee (with `--no-restart` and `RESTART_CMD`)
+- `scripts/update.sh`: auto-detects release/source mode (supports `--cold`, `--no-restart`, `RESTART_CMD`)
 
 ### 10.4 Acceptance criteria (Definition of Done)
 

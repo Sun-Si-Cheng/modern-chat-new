@@ -173,6 +173,16 @@ func TestLoadFrontendURLs(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsEmptyFrontendURLs(t *testing.T) {
+	// 全部项都是空白 / 逗号时解析结果为空：必须拒绝启动，
+	// 否则 WS Origin 白名单为空 + 找回密码取 FrontendURLs[0] 会 panic。
+	isolateEnv(t, map[string]string{"FRONTEND_URL": " , ,  "})
+
+	if _, err := Load(); err == nil {
+		t.Fatal("FRONTEND_URL 解析后为空时应返回错误")
+	}
+}
+
 func TestLoadTrustedProxies(t *testing.T) {
 	// 显式设为空串 = 不信任任何代理（不使用 XFF 判定 ClientIP）
 	isolateEnv(t, map[string]string{"TRUSTED_PROXIES": ""})

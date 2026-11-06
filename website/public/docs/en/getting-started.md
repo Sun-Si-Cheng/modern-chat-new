@@ -45,14 +45,14 @@ A **frontend-backend separated, plugin-first** web chat platform. Out of the box
 | Mail | Password recovery email (SMTP, 465 implicit TLS / 587 STARTTLS, QQ/163 auth codes); link printed to server log when SMTP is not configured |
 | Ops | Structured logs (rotation + retention days), health check `/api/health`, version `/api/version`, three-tier rate limiting, WS Origin whitelist, one-command upgrade from Gitee, coverage script (unit + integration merged) |
 
-**Not in this phase (v2)**: voice/video, emoji reactions, @mentions, message forwarding/search/edit, group admins & muting, plugin marketplace, multi-device read sync, horizontal scaling (Redis rate limiting is already supported).
+**Not in this phase (v2)**: video calls, chat-record card forwarding (multi-message merge is sent as one text), image multi-select, voice waveform/seek, the default entry for emoji reactions (implemented but disabled via `FEATURES.reactions`), plugin marketplace (manual install only), horizontal scaling (Redis rate limiting is already supported).
 
 ## Tech Stack
 
 | Layer | Choice |
 |---|---|
 | Frontend | Vue 3 + Vite + TypeScript + Pinia + Vue Router |
-| UI | tdesign-vue-next (TDesign design tokens are CSS variables; plugins can reskin directly) |
+| UI | UnoCSS + in-house `components/ui/Ui*` (13 controls); tdesign-vue-next only for admin tables/tabs and auth forms. Colors/radii/typography/motion use `--td-*` / `--mc-*` tokens so plugins can reskin |
 | Long lists | vue-virtual-scroller (virtual scrolling for message streams) |
 | Realtime | Native WebSocket wrapper (25s heartbeat + exponential-backoff reconnect) |
 | Backend | Go (see `server/go.mod` for the exact version; the dependency chain requires 1.26+) / Gin / gorilla/websocket |
@@ -65,7 +65,8 @@ modernchat-new/
 ├── docs/                       # Design doc / backend spec / frontend guide / ops manual / legal texts
 ├── deploy/                     # nginx config examples (bare-metal / compose)
 ├── plugins/examples/           # Example plugins (ready to upload & try)
-├── scripts/                    # update.sh / update.ps1 (Gitee upgrade) + coverage.sh / coverage.ps1 (coverage)
+├── website/                    # Marketing site / docs / plugin marketplace (syncs docs from repo)
+├── scripts/                    # install.sh / package-release.sh / update.sh / update-release.sh / uninstall.sh / coverage.sh
 ├── server/                     # Go backend
 │   ├── cmd/server/main.go      # Entry: config → db → hub → router → graceful shutdown
 │   ├── internal/
@@ -255,7 +256,7 @@ After pushing code to Gitee, run **one command** on the deploy machine to pull a
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
 ```
 
-On Windows locally: `.\scripts\update.ps1` (supports `-Branch` / `-NoRestart`).
+Windows local development does not use the upgrade script: pull and rebuild manually.
 
 What the script does: `git pull --ff-only` (errors out on local divergence, never auto-merges) → `go build` (version injected) → `npm ci && npm run build` → restart via `RESTART_CMD` / docker compose / systemd in that order.
 

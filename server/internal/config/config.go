@@ -91,11 +91,11 @@ func Load() (Config, error) {
 		// 一律不可用；仅支持 install.sh 的 systemd 部署，Docker / 裸机自动不可用。
 		WebUpdate: getBool("WEB_UPDATE", true),
 		// 发行版模式（install.sh 写入 .env）：非空即从 Release 下载预编译包更新
-		ReleaseAPIURL: os.Getenv("RELEASE_API_URL"),
-		ReleaseDLURL:  os.Getenv("RELEASE_DL_URL"),
-		VAPIDPublicKey:      getv("VAPID_PUBLIC_KEY", ""),
-		VAPIDPrivateKey:     getv("VAPID_PRIVATE_KEY", ""),
-		VAPIDSubject:        getv("VAPID_SUBJECT", "mailto:admin@localhost"),
+		ReleaseAPIURL:   os.Getenv("RELEASE_API_URL"),
+		ReleaseDLURL:    os.Getenv("RELEASE_DL_URL"),
+		VAPIDPublicKey:  getv("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey: getv("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:    getv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),
@@ -119,6 +119,12 @@ func Load() (Config, error) {
 		if u = strings.TrimSuffix(strings.TrimSpace(u), "/"); u != "" {
 			cfg.FrontendURLs = append(cfg.FrontendURLs, u)
 		}
+	}
+	// 解析后为空（例如 FRONTEND_URL="," / 全空白项）：WS Origin 白名单会拒绝
+	// 所有浏览器来源，找回密码链接也取不到 prefix（曾导致 index out of range panic）。
+	// 启动时直接报错，让部署者知道配置有问题。
+	if len(cfg.FrontendURLs) == 0 {
+		return cfg, fmt.Errorf("FRONTEND_URL 解析后为空，请至少配置一个前端来源（如 http://localhost:5173）")
 	}
 	// 可信反向代理：默认只信任本机回环（nginx 同机部署）。
 	// 修复缺陷：gin 默认信任所有代理，攻击者伪造 X-Forwarded-For 即可换 IP，

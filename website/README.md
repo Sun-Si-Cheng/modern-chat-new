@@ -55,15 +55,32 @@ website/
 
 ## 文档同步
 
-文档真源在仓库根（`README.md`、`docs/*.md`、`server/README.md`、`web/README.md`），官网只放副本：
+文档真源在仓库根（`README.md`、`docs/*.md`、`server/README.md`、`web/README.md`），官网只放副本，**不要在 `public/docs/` 里手改中文副本**：
 
 ```bash
 # 在仓库根执行
-.\website\scripts\sync-docs.ps1     # Windows
-./website/scripts/sync-docs.sh      # Linux / macOS
+powershell -File website/scripts/sync-docs.ps1   # Windows
+bash website/scripts/sync-docs.sh                # Linux / macOS / Git Bash
 ```
 
+| 源文件（唯一真源） | 官网文件 |
+|---|---|
+| `README.md` | `public/docs/getting-started.md` |
+| `CHANGELOG.md` | `public/docs/changelog.md` |
+| `docs/设计文档.md` | `public/docs/design.md` |
+| `docs/后端需求规格.md` | `public/docs/api-spec.md` |
+| `docs/前端技术方案.md` | `public/docs/frontend-guide.md` |
+| `docs/运维手册.md` | `public/docs/ops-guide.md` |
+| `server/README.md` | `public/docs/server-readme.md` |
+| `web/README.md` | `public/docs/web-readme.md` |
+
 脚本会把中文源覆盖到 `website/public/docs/`，并检查 `public/docs/en/` 的英文译本是否落后于中文源（落后只提示，不覆盖——英文需人工修订）。
+
+## 插件市场
+
+- 可下载文件在 `public/plugins/`，对应源码在仓库 `plugins/examples/`（`weather` / `dice` / `word-count` / `conv-stats`）。
+- 新增示例插件时三处一起改：`plugins/examples/` 源码、`website/public/plugins/` 可下载副本、`src/views/PluginsView.vue` 的列表。
+- 插件说明、权限标签与安装步骤都在 `PluginsView.vue`，文案同时维护在 `src/i18n/messages.clean.json`。
 
 ## 部署
 

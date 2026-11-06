@@ -1,143 +1,123 @@
 # ModernChat Web
 
-ModernChat frontend (Vue 3 + Vite + TypeScript + Pinia + tdesign-vue-next).
+ModernChat frontend (Vue 3 + Vite + TypeScript + Pinia + Vue Router + UnoCSS + in-house `Ui*` controls).
 
-> This file is a structure & command overview. **The full frontend architecture lives in [docs/前端技术方案.md](../docs/前端技术方案.md)**.
+Positioning, plugin development and upgrades are in the root [README](../README.md); the full design is in [docs/设计文档.md](../docs/设计文档.md); API fields are in [docs/后端需求规格.md](../docs/后端需求规格.md); frontend structure/interaction conventions are in [docs/前端技术方案.md](../docs/前端技术方案.md).
 
-For project positioning, plugin development and upgrades & deployment, see the root [README](../README.md); full design in [docs/设计文档.md](../docs/设计文档.md); API fields in [docs/后端需求规格.md](../docs/后端需求规格.md).
-
-> The frontend needs the backend on `:8080` for login & messaging (Vite proxies `/api` and `/ws`).
+> The frontend needs the backend on `:8080` to log in and exchange messages (Vite proxies `/api` / `/uploads` / `/ws`).
 
 ## Commands
 
 ```sh
-npm install        # install deps
+npm install        # install dependencies
 npm run dev        # dev server :5173 (/api and /ws proxied to :8080)
-npm run build      # type check + production build (output dist/)
-npm run type-check # vue-tsc type check only
+npm run build      # type-check + production build (dist/) + .gz/.br
+npm run type-check # vue-tsc only
 npm run lint       # oxlint + eslint
+npm run format     # prettier for src/
 ```
 
-> ⚠️ Both `lint` sub-scripts (`lint:oxlint` / `lint:eslint`) carry `--fix` and **rewrite source files**.
-> For a check-only pass, use `npx oxlint .` / `npx eslint .` (no `--fix`).
-> To format after changes, use `npm run format` (prettier), which also writes files.
+> ⚠️ Both `lint` sub-scripts (`lint:oxlint` / `lint:eslint`) pass `--fix` and **rewrite source files**.
+> To check without modifying, use `npx oxlint .` / `npx eslint .` (without `--fix`).
 
-## Structure overview
+## Structure
 
-```
+```text
 src/
 ├── api/
-│   ├── client.ts            # fetch wrapper: /api prefix, Bearer, unified 401 → clear token & jump to login
-│   └── index.ts             # domain APIs (auth/user/friend/conv/plugin/admin/system)
-├── i18n/
-│   ├── index.ts             # createI18n (defaults to browser language, localStorage persistence)
-│   ├── zh-CN.ts / en-US.ts  # full UI copy
-│   └── errors.ts            # Chinese server errors → current language mapping
-├── stores/                  # auth / ws / conversations / friends / plugins / prefs (language+theme)
+│   ├── client.ts            # fetch wrapper: /api prefix, Bearer, timeout, 401 clears token
+│   └── index.ts             # auth/user/friend/conv/sticker/media/favorite/search/
+│                            #   moderation/push/invite/plugin/admin/system
+├── i18n/                    # index.ts / zh-CN.ts / en-US.ts / errors.ts
+├── stores/
+│   ├── auth.ts              # token, current user, isAdmin
+│   ├── ws.ts                # WS lifecycle, heartbeat/reconnect, online set, frame dispatch
+│   ├── conversations.ts     # conversations, message cache, unread, optimistic messages
+│   ├── friends.ts           # friends & requests
+│   ├── favorites.ts         # favorite id set + drawer
+│   ├── plugins.ts           # plugin list
+│   ├── prefs.ts             # language / theme / auth-scene background / app background
+│   ├── layout.ts            # panel widths, docked / drawer, opened state
+│   └── site.ts              # GET /api/site public config (30s poll)
 ├── composables/
-│   ├── useWebSocket.ts      # connect on mount, disconnect on unmount, uplink outlet binding
-│   ├── useAppI18n.ts        # t (copy) + te (error translation)
-│   └── usePluginHost.ts     # plugin sandbox host: document.write bootstrap page, postMessage bridge, permission whitelist, UI description validation
+│   ├── useWebSocket.ts      # mount/connect, unmount/disconnect, bind uplink
+│   ├── usePluginHost.ts     # sandbox iframe + postMessage bridge + permission/UI validation
+│   ├── notifications.ts     # desktop notifications / Web Push
+│   ├── announcement.ts      # local announcement read position
+│   ├── localCache.ts        # Cache Storage stats & clearing
+│   ├── useOverlay.ts        # overlay focus trap / body scroll lock
+│   └── useAppI18n.ts        # t + te (error translation)
 ├── components/
-│   ├── common/
-│   │   └── QuickPrefs.vue       # login-page quick toggles: language + light/dark + background (color/effect)
-│   ├── chat/
-│   │   ├── AppRail.vue          # leftmost icon rail: avatar (profile card) + new menu + chats/contacts/plugins/admin + settings
-│   │   ├── GroupPane.vue        # filters: all / unread / direct / group (counts by conversations)
-│   │   ├── ConvSidebar.vue      # conversation & contact list: search (people/groups), presence, friend requests
-│   │   ├── AddFriendDialog.vue  # add friend: username/nickname search, apply, already-friend/pending states, inline accept
-│   │   ├── MessagePane.vue      # virtual-scrolled message stream, 5-minute grouping, read/recall, back-to-bottom, plugin message rendering
-│   │   ├── MessageComposer.vue  # 1–6 auto-growing rows, Enter to send / Shift+Enter newline, IME protection, typing throttle
-│   │   ├── DetailPanel.vue      # group name/members & admin, direct-chat profile + plugin sidebar
-│   │   ├── PluginDrawer.vue     # upload/URL install, permission confirmation, enable/disable, uninstall, upgrade reload
-│   │   ├── ProfileCard.vue      # profile card: avatar upload (hover camera), settings/logout/admin
-│   │   └── AvatarBadge.vue      # avatar (custom image / default cartoon public/default-avatar.svg / initial fallback) + online dot
-│   └── declarative/
-│       ├── index.ts             # render functions for the 8 whitelist components (primitive props only; text/image/card/list/link are native tags, button/input/divider use TDesign)
-│       └── PluginPanel.vue      # plugin panel + action feedback
-├── types/proto.ts           # WS frames / entities / UI description contracts (shared with backend)
-├── views/
-│   ├── AuthView.vue         # login/register (immersive background + centered card)
-│   ├── ForgotView.vue       # password recovery (two steps + progress)
-│   ├── SettingsView.vue     # settings: appearance (language/theme) / account / about (background only on the login page)
-│   ├── LegalView.vue        # Terms / Privacy
-│   ├── ChatLayout.vue       # Feishu-style four-column layout + responsive (tablet folds detail, phone single panel)
-│   └── admin/AdminView.vue  # admin console: user management / plugin aggregated takedown / build version
-├── router/index.ts          # routes + auth/admin guards (refresh runs fetchMe before checking roles)
-└── assets/main.css          # auxiliary tokens (--mc-*) + global utilities + motion keyframes
+│   ├── ui/                  # 13 in-house controls
+│   ├── chat/                # AppRail/GroupPane/ConvSidebar/MessagePane/MessageComposer/
+│   │                        # DetailPanel/PluginDrawer/FavoriteDrawer/NotificationDrawer/
+│   │                        # AnnouncementDialog/VoiceMessage/ProfileCard/AddFriendDialog/AvatarBadge
+│   ├── common/              # AuthScene/QuickPrefs/AppBackgroundPicker/PaneResizer/ContextMenu
+│   └── declarative/         # plugin declarative UI renderer (11 whitelisted components)
+├── types/proto.ts           # WS frames / entities / UI description contracts
+├── views/                   # Auth/Forgot/Settings/Legal/Join/Maintenance/ChatLayout/admin
+└── assets/main.css          # --mc-* tokens + utilities + motion keyframes
 ```
 
-Auxiliary tokens exposed by `assets/main.css` (all other colors use TDesign's `--td-*`):
+## Implemented (frontend)
 
-| Token | Purpose | Light | Dark |
-| --- | --- | --- | --- |
-| `--mc-text-faint` | faintest text (placeholders/hints, ≥4.5:1 in both themes) | `#6b6b6b` | `#a8a8a8` |
-| `--mc-link` | links | `#0052d9` | `#7cb8ff` |
-| `--mc-selection` | text selection background | brand blue 16% | bright blue 28% |
-| `--mc-hairline` | card/group hairlines (softer than `--td-component-border`) | black 8% | white 8% |
-| `--mc-dur-fast` / `--mc-dur-base` / `--mc-dur-slow` | motion durations | 120ms / 200ms / 320ms | same |
-| `--mc-ease-out` / `--mc-ease-spring` | easing curves | `cubic-bezier` | same |
-| `--mc-scene-color` | login-page background base (written at runtime by `stores/prefs.ts`) | default `#123a5c` | same (user-selectable) |
+- **Four-column layout**: icon rail → filter pane → conversation/contact list → chat + detail panel; panels are resizable, double-click a divider to toggle docked / drawer.
+- **Messages**: text / image / audio / video / sticker; reply, @mention, forward, merged forward (≤20 messages as one text), edit (5 min), recall (limit configured server-side), reactions (off by default), favorites, delete-for-me, report.
+- **Conversations**: pin / mute / archive / remove / clear; drafts; `lastMessageType` drives placeholder previews.
+- **Groups**: announcement, files, avatar, admins, per-member mute, mute-all, invite links, invite friends, kick, transfer ownership.
+- **Realtime**: heartbeat + exponential-backoff reconnect; `resync()` after reconnect; direct-chat delivered/read; multi-device read sync; `user_change` live nickname/avatar sync.
+- **Experience**: desktop notifications, PWA, site-wide announcement dialog, unread tab title, image compression + thumbnails, 16:9 inline video, login-page effects, app-wide background, zh/en, light/dark themes.
+- **Plugins**: sandbox iframe + declarative UI + permission list + TypeScript (server-side transpile) + custom message renderers / side panels / context-menu actions.
 
-Motion keyframes (`mc-fade-in` / `mc-fade-up` / `mc-pop-in` / `mc-bubble-in` / `mc-dot-bounce` / `mc-online-pulse` etc.)
-and route/conversation transition classes (`mc-route-*` / `mc-swap-*` / `mc-fade-scale-*`) are all maintained in `main.css`.
+## i18n & theme
 
-## Chat UI
+Language follows the browser by default (`zh` → Chinese, otherwise English) and is stored in `localStorage.mc_lang`. Add keys to both `zh-CN.ts` and `en-US.ts`; Chinese server errors are mapped in `errors.ts` (unknown messages pass through).
 
-Four columns: icon rail (56px) → filter pane (148px) → conversation/contact list → chat area, with the current conversation's detail panel on the right. Tablet (≤1024px) hides the filter pane & detail panel; phone (≤768px) shows list and chat area mutually exclusively.
+Theme is driven by `:root[theme-mode="dark"|"light"]` with three states (system / light / dark) stored in `localStorage.mc_theme`; an inline script in `index.html` applies it before styles to avoid a flash.
 
-- **Message stream**: consecutive messages by one sender within 5 minutes merge into a group; avatars & nicknames appear only at the group head; time & read receipts only at the group tail; direct-chat read marks only the latest self message; group messages use real avatars & nicknames from the members API; recall & resend fold into a meta row below the message, revealed on hover or keyboard focus; a "back to latest" button appears when scrolled away from the bottom
-- **Composer**: 1–6 auto-growing rows; Enter sends, Shift+Enter newlines; pressing Enter during IME composition never mis-sends; the whole panel is focusable; a hint appears near the length cap
-- **Contacts**: the top of the contact list, the new menu and the empty state all open the "Add friend" dialog with username/nickname search; existing friends show status, incoming requests can be accepted inline, successful sends show "requested"; when chatting with a non-friend, the right profile area also offers "Add friend / accept request"; nickname/avatar changes broadcast via WS and sync instantly to conversation, friend & group member lists
-- **Empty state**: with no conversations, show the product name, tagline and "Add friend / Plugin manager" entries; the duplicate "Add friend" entry hides while in the contacts view
+Always use tokens (`--td-*` or the `--mc-*` tokens in `assets/main.css`) instead of hard-coded colors.
 
-## i18n & Theme
+## Settings page
 
-**Language**: `src/i18n/`, defaults to the browser language (`zh*` = Chinese, otherwise English), persisted at `localStorage.mc_lang` after switching.
-New copy adds keys to both `zh-CN.ts` / `en-US.ts`; Chinese server errors map to English via `errors.ts` (unmapped ones pass through).
+`/settings` is public; account and other sections require login.
 
-**Theme**: `src/stores/prefs.ts` drives TDesign tokens via `:root[theme-mode="dark"|"light"]`, tri-state "system / light / dark", persisted at `localStorage.mc_theme`.
-An inline script in `index.html` presets the theme before styles apply, avoiding a dark-mode white flash.
-Custom colors always go through tokens: `--td-*` (TDesign) or the auxiliary tokens in `assets/main.css` — `--mc-text-faint` / `--mc-link` / `--mc-selection` / `--mc-hairline` / `--mc-dur-*` / `--mc-ease-*` (full list above), never hardcoded values.
-
-## Settings Page
-
-`/settings` is the post-login settings entry (gear at the bottom of the chat icon rail, header of the admin console):
-
-- **Appearance**: language (CN/EN), theme (system/light/dark)
-- **Account** (login required): nickname, email, log out
+- **Appearance**: language, theme, app-wide background (preset / custom color / local image + grid / dots / stripes)
+- **Account**: nickname, email (change requires a code), sign out / sign out all devices
+- **Layout**: panel widths, docked/drawer, reset to defaults
+- **Plugins**: upload / URL install / enable / uninstall (returns to `/chat?panel=plugins`)
+- **Notifications**: desktop notifications, Web Push (requires VAPID on the server)
+- **Local cache**: Cache Storage usage and one-click clear (keeps login & preferences)
+- **Admin** (only `isAdmin`): go to `/admin`
 - **About**: current build version
 
-> Login / register / recovery / legal pages have three quick buttons in the top-right: language, light/dark, background (color + effect).
-> Language & light/dark share the same preferences as the settings page (`localStorage.mc_lang` / `mc_theme`);
-> **the background belongs only to the login page** (`/settings` offers no background item) and only affects pages mounting `AuthScene.vue` (login & recovery);
-> the chat UI and legal pages (which mount only `QuickPrefs`, no background layer) are unaffected.
+Preferences live in `localStorage` (`mc_lang` / `mc_theme` / `mc_layout` / `mc_scene_*` / `mc_app_*`) and only affect this browser.
 
-Preferences persist in `localStorage` (`mc_lang` / `mc_theme` / `mc_scene_color` / `mc_scene_effect`), scoped to the current browser.
+## Login-page background
 
-## Login-page Background (color & effects)
+Login / forgot-password share `components/common/AuthScene.vue`:
 
-Login / recovery pages share `components/common/AuthScene.vue` (`AuthView` / `ForgotView` mount it; the legal pages only mount `QuickPrefs`, no background layer):
+- Base color defaults to `#123a5c`, driven by `--mc-scene-color`
+- Effects: `aurora` (default) / `waves` / `grid` / `none`
+- Visitors can pick 6 presets + a custom color + 4 effects; stored locally
+- Honors `prefers-reduced-motion`; animates only `transform` / `opacity`
 
-- **Base color**: default `#123a5c` (deep blue), driven by the CSS variable `--mc-scene-color`
-- **Effects** (three, pure CSS, no images, no external deps):
-  - `aurora`: three soft glow blobs (blurred solid circles) drifting slowly, default
-  - `waves`: concentric rings expanding outward
-  - `grid`: a faint grid flowing slowly + a breathing central glow
-  - `none`: solid color
-- **Visitor-selectable**: top-right palette → 6 preset colors + custom picker + 4 effects + reset; preferences persist in `localStorage` (`mc_scene_color` / `mc_scene_effect`), scoped to that browser
-- **Changing defaults**: `DEFAULT_SCENE_COLOR` and `detectSceneEffect()` in `stores/prefs.ts`
-- **Accessibility**: `prefers-reduced-motion` stops all animations
-- **Performance**: animations only use `transform` / `opacity` (`grid` uses `background-position`), never layout
+## Design conventions
 
-### Replacing with an image
+- **UnoCSS + in-house `Ui*` first**; `tdesign-vue-next` remains only for admin tables/tabs, auth forms and a few global configs. Plugin UI must use declarative whitelisted components.
+- Message content uses `{{ }}` interpolation (auto-escaped); no `v-html` anywhere.
+- Numbers (time, unread, counts) use `tabular-nums`.
+- Motion is feedback only (hover / focus / state change), uses `--mc-dur-*` / `--mc-ease-*`, animates `transform` / `opacity`, and respects `prefers-reduced-motion`.
+- **UnoCSS `/alpha` does not work on CSS variables**: use the predefined `*-soft` / `*-line` steps.
+- **In-house buttons need `border-none`**: the browser default border becomes a white ring in dark mode.
+- **Do not pass layout classes through multi-root components**: drawer positioning/z-index belongs to the parent container.
+- **Never add `loading="lazy"` to message images**: `DynamicScroller` measures heights and the image would never enter the viewport.
+- Keep `min-item-size` (currently 88) close to the real row height when changing bubble padding/meta.
 
-Drop an image at `web/public/login-bg.jpg` to automatically override the base color (the build copies it to the site root), with a theme-aware darkening layer on top for card readability. Prefer ≥1920×1080 landscape with the subject off-center (the card covers roughly the central 420×360 area). For `.png` / `.webp`, change one `url()` line on `.auth-scene__img` in `AuthScene.vue`.
+## Testing status
 
-## Design Conventions
+No frontend automated tests yet; the quality gate is `vue-tsc` + `oxlint` + `eslint` + build. Suggested first tests:
 
-- A single component library (TDesign), never a second design system; plugin UI always goes through declarative whitelist components
-- Message content uses `{{ }}` text interpolation (Vue auto-escapes); the project never uses `v-html`
-- Numbers (times, unread, counts) use `tabular-nums`
-- Motion is feedback-only (hover / focus / transitions) and respects `prefers-reduced-motion`
-- Motion always uses the `--mc-dur-*` / `--mc-ease-*` tokens and animates only `transform` / `opacity`; route & conversation switches, message entrances, sidebar view switches and layered empty-state entrances all have transitions and degrade under reduced-motion preferences
+1. `stores/conversations.ts` (optimistic messages / `clientMsgId` idempotency / frame dedupe / markRead)
+2. `stores/ws.ts` (reconnect + `resync` conditions / `user_change` dispatch)
+3. `AvatarBadge` / `ProfileCard` (avatar fallback and upload branches)
+4. i18n key parity between zh/en

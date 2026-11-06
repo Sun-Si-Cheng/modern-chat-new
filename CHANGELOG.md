@@ -6,6 +6,22 @@
 
 ---
 
+## [未发布]
+
+### 修复
+
+- **昵称/头像实时同步未生效**：服务端一直广播 `user_change` 帧，前端 `ServerFrame` 未声明该类型也没有处理分支，导致对方改了昵称/头像后必须刷新页面才更新。现由 `stores/ws.ts` 统一分发，更新单聊 peer、群成员缓存、好友/申请列表与本人多端。
+- **自己发出的消息不更新会话列表**：发送者本端收不到「纯新消息」的 `conv_change`，消息回显分支漏写 `lastMessageId/At/Preview/Type`，列表预览、时间与排序会停在旧消息；同时移除「发送即记已读水位」的错误优化，避免把消息转发到仍有未读的会话后，服务端未读数永远清不掉。
+- **WS 上行 4 KB 限制误伤长消息**：`chat.maxMessageLength` 可配到 5000 字符（UTF-8 下超过 4 KB），原 `maxMsgSize=4096` 会让合法长消息在 gorilla 读限制处直接断连且收不到 `error` 帧；上限改为 64 KB。
+- **新成员加入群后列表显示「暂无消息」**：`initInboxes` 只插入空收件箱行，没有同步当前最新消息；而打开会话又能看到历史。现在主动加入 / 被邀请 / 注册自动进公共群时都写入最新消息预览与时间，并把 `last_read` 推到最新（不追溯历史未读）。
+- **`FRONTEND_URL` 全为空白项时启动后找回密码 panic**：形如 `FRONTEND_URL=","` 或全空格时解析结果为空，WS Origin 白名单拒绝所有浏览器来源，且 `Forgot` 取 `FrontendURLs[0]` 会越界。现在启动阶段直接报错并提示至少配置一个来源（附单元测试）。
+
+### 文档
+
+- 按当前代码回写 `docs/设计文档.md`（功能范围 / 目录 / 数据表 / 完整 REST 与 WS 帧）、`docs/后端需求规格.md`、`docs/前端技术方案.md`、`docs/运维手册.md`、`web/README.md`、`server/README.md`；修复对已删除的 `update.ps1` / `coverage.ps1` 的引用与 CHANGELOG 中串行的条目。
+
+---
+
 ## [0.10.3] — 2026-11-06
 
 ### 新增
@@ -28,9 +44,8 @@
 - **sha256 校验被 Gitee 反盗链页击穿**：拉取 `.sha256` 附件用了不带 `-L` 的 curl（下载 tar.gz 时带了），Gitee 附件重定向后拿到的是 HTML 反盗链页，被当作校验清单比对，报「期望 `<html><body>You`」并中止安装。三处修复：install.sh 与发行包内 update.sh 的拉取补 `-L`；三处（含 Go 端 updater）都先校验清单必须是 64 位十六进制再比对，异常时降级跳过校验并显示本包哈希，不再误报"被篡改"。
 - **install.sh 自动装 MySQL 后建库失败（ERROR 1698）**：预检用 `mysql -uroot`（Unix socket，auth_socket 生效）判定 root 免密通过，但建库时强制 `--protocol=TCP -h127.0.0.1`——Ubuntu 的 root@localhost 仅允许 socket 认证，TCP 直接 Access denied。修复为：免密 root 且目标是本机时改走 Unix socket（远程实例仍走 TCP）。
 - **install.sh 跳过提示与 --force 参数**：脚本头部注释与进度提示一直宣称 `--force` 可全部重跑，但从未解析该参数（实际只有 `FORCE=1` 生效），已补上参数解析；所有「跳过已完成阶段」提示现在同时说明重跑方法——只重跑该阶段（删除 state 文件中对应 `STAGE_` 行）或全部重跑（`--force` / `FORCE=1`），不再让用户只看到"跳过了"却不知道怎么重来。
-- **install.sh 因未定义变量中断安装**：`set -u` 模式下引用了旧版"自动装 Go/Node"时代残留的 `$MIRROR` 变量（该机制已随发行版模式移除），全新安装在数据库问答后必然报 `MIRROR: unbound variable` 中止，走不到下载发行包阶段。已删除残留的状态记录行。：`notify.mentions` / `notify.empty` 的中文文案里 `@` 未按 vue-i18n 语法转义成 `{'@'}`，整条消息编译失败、抽屉渲染抛错，loading 结束后 DOM 仍停在「加载中」。已转义并补浏览器回归验证。
-
-
+- **install.sh 因未定义变量中断安装**：`set -u` 模式下引用了旧版"自动装 Go/Node"时代残留的 `$MIRROR` 变量（该机制已随发行版模式移除），全新安装在数据库问答后必然报 `MIRROR: unbound variable` 中止，走不到下载发行包阶段。已删除残留的状态记录行。
+- **通知抽屉文案编译失败**：`notify.mentions` / `notify.empty` 的中文文案里 `@` 未按 vue-i18n 语法转义成 `{'@'}`，整条消息编译失败、抽屉渲染抛错，loading 结束后 DOM 仍停在「加载中」。已转义并补浏览器回归验证。
 
 ### 性能
 

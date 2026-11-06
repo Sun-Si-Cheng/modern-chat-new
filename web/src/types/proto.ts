@@ -250,6 +250,14 @@ export type ServerFrame =
   | { type: 'read'; convId: number; userId: number; upToId: number }
   | { type: 'typing'; convId: number; userId: number }
   | { type: 'presence'; userId: number; online: boolean }
+  /** 昵称 / 头像变更：好友、同会话成员与本人其他端据此就地更新，无需刷新 */
+  | {
+      type: 'user_change'
+      userId: number
+      nickname: string
+      avatar: string
+      avatarColor: string
+    }
   /** meta=true 表示成员/群名/公告等元信息变更（需重拉成员与群文件）；纯新消息不带 */
   | { type: 'conv_change'; convId: number; meta?: boolean }
   | { type: 'kicked'; reason: string }

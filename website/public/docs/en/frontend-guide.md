@@ -81,7 +81,8 @@ view ──calls──▶ store ──HTTP──▶ api/*  ──▶ backend
 ```
 
 - Reads go through REST, writes through store actions; views never `fetch` directly
-- Downlink WS frames dispatch in `ws.ts`: `message` / `read` / `recall` / `typing` / `presence` / `conv_change` / `user_change` / `kicked` / `error`
+- Downlink WS frames dispatch in `ws.ts`: `message` / `message_update` / `recall` / `reaction` / `message_delivered` / `message_admin_deleted` / `read` / `typing` / `presence` / `user_change` / `conv_change` / `kicked` / `error`
+- **`user_change` is consumed directly by `ws.ts`**: it updates direct-chat peers, group member caches, friends/requests and the user's other devices; otherwise nickname/avatar changes would require a page refresh even though the server broadcasts the frame.
 
 ---
 

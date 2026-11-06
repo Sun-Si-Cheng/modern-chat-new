@@ -261,7 +261,15 @@ func (h *AuthHandler) joinDefaultGroup(userID uint) {
 		}
 		return
 	}
-	if err := h.msgs.UpsertInbox([]model.UserConversation{{UserID: userID, ConversationID: conv.ID}}); err != nil {
+	// 与 ConversationHandler.initInboxes 保持一致：新注册用户进公共群时同步
+	// 当前最新消息作为预览，否则会话列表显示「暂无消息」而聊天里却有历史。
+	row := model.UserConversation{UserID: userID, ConversationID: conv.ID}
+	if latestID, latestAt, err := h.convs.LatestVisibleMessage(conv.ID); err == nil && latestID > 0 {
+		row.LastMessageID = &latestID
+		row.LastMessageAt = latestAt
+		row.LastReadMessageID = latestID
+	}
+	if err := h.msgs.UpsertInbox([]model.UserConversation{row}); err != nil {
 		slog.Warn("default group inbox failed", "uid", userID, "err", err.Error())
 	}
 }

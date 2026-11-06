@@ -12,33 +12,41 @@
 ## 1. 产品定位与功能范围
 
 ### 1.1 一句话定位
-一个**前后端分离、插件优先**的网页聊天平台。开箱只有最朴素的账号 + 纯文本聊天；用户可自己写 JS 插件并安装，给网站加图片、表情、主题、机器人、小游戏等任意能力。
+一个**前后端分离、插件优先**的网页聊天平台。开箱即可用：账号、好友、单聊/群聊、文本 + 图片 + 语音 + 视频消息；用户还可自己写 JS 插件并安装，给网站加表情、主题、机器人、小游戏等任意能力。
 
 ### 1.2 内核 vs 插件（一切皆插件）
 
 **内核（不可禁用）**
 - 账号：注册/登录/找回密码、JWT、封禁、token 失效
-- 好友、会话（单聊/群聊）、**纯文本消息收发**、消息漫游、WebSocket 管道
+- 好友、会话（单聊/群聊）、**文本 / 图片 / 语音 / 视频消息收发**、消息漫游、收藏、WebSocket 管道
+- 文件存储（本地磁盘或 S3 兼容对象存储）
 - 插件运行时：加载器、权限模型、事件总线、描述式 UI 渲染器、沙箱
 - 站长后台、插件上下架
 
-**插件（可装可卸，卸掉即回到纯文本）**
-- 图片消息、表情/颜文字、Markdown 渲染、暗色主题、消息提醒音效、自动回复机器人、天气面板、小游戏等
+**插件（可装可卸，卸掉即回到「文本 + 图片 + 语音 + 视频」）**
+- 表情回复（对消息加 emoji 表态）、Markdown 渲染、消息提醒音效、自动回复机器人、天气面板、小游戏、自定义消息类型渲染等
+
+> 自定义表情**发送**属于内核（`msgType=sticker`），不是插件能力——它和图片/语音一样是基础通信手段。
+
+> 图片与语音属于 IM 基本盘，因此放在内核；这也让「插件」的定位更纯粹——增强与玩法，而不是补齐基础能力。
 
 ### 1.3 本期做 / 不做
 
 **本期做（IM 基本盘 + 插件运行时）**
-- 账号（bcrypt + JWT + 找回密码）、好友（搜索/申请/同意/删除）
-- 单聊、群聊（创建/搜索/加入/退群/群成员）、会话列表（最后消息 + 未读红点）
-- 已读回执、未读数、2 分钟撤回、"对方正在输入"、在线/离线
-- 群管理（群主改群名/踢人/转让）、站长后台（封禁/解封/重置密码/插件全局下架）
-- 插件沙箱 + 描述式 UI + 权限白名单 + 上传/URL 安装 + 同名升级
-- 界面：中 / 英文切换、亮 / 暗 / 跟随系统主题（偏好本地持久化）
+- 账号（bcrypt + JWT + 找回密码 / 邮箱验证码）、好友（搜索/申请/同意/删除）、拉黑与举报
+- 单聊、群聊（创建/搜索/加入/邀请/邀请链接/退群/群成员）、初始公共群、会话列表（最后消息 + 未读 + 归档）
+- 已读回执、未读数、撤回（时限后台可配，提示 3 分钟后自动移除）、消息编辑（**5 分钟内、仅文本**）、"对方正在输入"、在线/离线、送达 / 已读状态、多端已读同步
+- **图片 / 语音 / 视频消息**（图片发送前压缩 + 服务端缩略图；视频选本地文件上传，默认 ≤30 MB，原生播放器内联播放）、消息收藏、转发、仅自己删除、清空记录
+- 群管理（改群名 / 群头像 / 踢人 / 转让 / 管理员 / 单人禁言 / 全员禁言 / 群公告 / 群文件）、站长后台（封禁/解封/重置密码/插件全局下架/系统设置/备份/在线更新）
+- 插件沙箱 + 描述式 UI + 权限白名单 + 上传/URL 安装 + 同名升级 + TypeScript 服务端转译
+- 界面：中 / 英文切换、亮 / 暗 / 跟随系统主题、区域可拖拽调宽与抽屉形态、PWA、桌面通知 / Web Push
+- 运维：维护模式、登录失败锁定、注册邀请码、敏感词、Prometheus 指标、数据库备份、孤儿文件清理
 
 **本期不做（二期）**
-- 语音/视频、表情回复、@人、消息转发、消息搜索
-- 群管理员（群主之外的角色）、群禁言、群公告
-- 插件市场（本期只做手动安装）、多端已读同步
+- 视频通话、**合并转发（聊天记录卡片，本期是「多条拼成一条文本」）**、图片多选发送、语音波形与拖动进度
+- 视频的进阶能力：拍摄即传、前端转码/压缩、封面帧（poster）、播放进度记忆
+- 表情回应默认入口（代码已实现，`FEATURES.reactions=false` 默认关闭）
+- 插件市场（本期只做手动安装）
 - 水平扩展（本期单实例，见 §9）
 
 ---
@@ -48,11 +56,11 @@
 | 层 | 选型 | 说明 |
 |---|---|---|
 | 前端 | Vue 3 + Vite + TS + Pinia + Vue Router | 前后端完全分离 |
-| UI | `tdesign-vue-next` | 腾讯 TDesign 官方 Vue 3 组件库（见 §2.1） |
-| 图标 | `tdesign-icons-vue-next` | TDesign 配套图标库 |
+| UI | **UnoCSS + 自研 `components/ui/Ui*`** | 13 个自研控件为主力；`tdesign-vue-next` 仅剩后台表格/页签与认证页表单（见 §2.1） |
+| 图标 | `tdesign-icons-vue-next` | 与 TDesign 同源，与自研控件混用无冲突 |
 | 大列表 | `vue-virtual-scroller` | 消息流虚拟滚动 |
 | 实时 | 原生 WebSocket 封装 | 心跳 + 重连 |
-| 后端 | Go 1.22+ / Gin | |
+| 后端 | Go 1.26+ / Gin | `go.mod` 的 `go 1.26.0`；依赖链不允许更低版本 |
 | WS | `github.com/gorilla/websocket` | |
 | DB | MySQL 8.0 / GORM，utf8mb4 | |
 | 鉴权 | JWT HS256（7 天），带 `token_version` | |
@@ -64,15 +72,32 @@
 
 ### 2.1 UI 方案说明
 
-选用 **tdesign-vue-next**（腾讯 TDesign 官方 Vue 3 组件库），理由与约束：
+**现状：UnoCSS 原子类 + 自研控件层为主，TDesign 收缩为残余。**
 
-- **npm 正式依赖**：`npm i tdesign-vue-next tdesign-icons-vue-next`，按需引入组件与图标；版本升级由 npm 管理，不复制源码入库。
-- **契合插件白名单**：§8.2 那 8 个渲染器（`text/image/button/input/card/list/divider/link`）直接基于 TDesign 组件（`Typography` / `Image` / `Button` / `Input` / `Card` / `List` / `Divider` / `Link`）做受控封装，危险输入（`javascript:` 链接、内联脚本）在渲染器层拒绝，不依赖第三方库的 XSS 防护。
-- **主题即 CSS 变量**：TDesign 设计令牌以 CSS 变量形式暴露，插件 `api.theme.apply(cssVars)` 直接改令牌，插件改主题不会污染主站样式。
-- **亮/暗主题**：以 `:root[theme-mode="dark"]` 切换（TDesign 内置两套令牌），三态「跟随系统/亮/暗」，`index.html` 内联脚本预置避免暗色闪白；项目辅助色（最浅文字、链接、选区）收敛为 `--mc-*` 变量，两套取值均满足正文 ≥4.5:1。
+早期全站使用 `tdesign-vue-next`，但遇到两个实际问题，因此逐步迁移：
+
+1. **样式不可控**：改一个按钮的高度/圆角要覆盖多层 TDesign 内部选择器，且升级时容易失效。
+2. **体积**：TDesign 全量引入时 chunk 达 1,371 kB。
+
+迁移策略是**按风险分批**，每批替换后逐页截图回归，而不是一次性重写：
+
+| 批次 | 替换内容 | 结果 |
+|---|---|---|
+| A | Button / Input / Tag / Badge | 12 个文件 |
+| B | Dialog / Popup / Drawer | 11 处浮层 |
+| C | Select / Slider / Switch / Checkbox / InputNumber / Tooltip | 14 个文件 |
+| — | **保留 TDesign** | 后台 `TTable`/`TTabs`、认证页 `TForm`/`TFormItem`、`TConfigProvider` |
+
+**保留部分的理由**：`Table`（排序/筛选/分页/行插槽）与 `Tabs` 自研成本高、收益低，且只在低频的后台页；`TForm` 的校验语义（rules/触发时机）重写风险大于观感收益。
+
+**关键约束**（迁移期与迁移后都必须遵守）：
+
+- **颜色/圆角/字号/动效一律走令牌**：`--td-*`（TDesign 提供的变量，仍作为色板底座）与 `--mc-*`（项目自建的字号、圆角、时长、缓动、阴影、材质）。两套控件吃同一套变量，所以视觉不打架。
+- **UnoCSS 的 `/alpha` 修饰对 CSS 变量无效**：需要淡色时用 `uno.config.ts` 里用 `color-mix` 预定义的 `*-soft` / `*-line` 档位，不要写 `bg-success/12`。
+- **自研按钮必须 `border-none`**：`<button>` 自带浏览器默认边框与灰底，暗色下会成为"白圈/白块"。
+- **插件白名单渲染器**（§8.2）走 `components/declarative/`，与主站控件解耦，插件不依赖任何具体组件库。
+- **主题**：`:root[theme-mode="dark"]` 切换，三态「跟随系统/亮/暗」，`index.html` 内联脚本预置避免暗色闪白。
 - **中英双语**：`vue-i18n`，默认跟随浏览器语言并可切换（`localStorage` 持久化）；全部 UI 文案入语言包，服务端中文错误由前端映射表翻译。
-- **后台表格零成本**：TDesign 自带 `Table`（排序/筛选/分页/行选开箱即用）与 `Form`、`Dialog`、`Message` 等，`/api/admin/*` 页面无需自建。
-- **不混用组件库**：全站单一设计体系，避免双主题、双间距规范并存。
 
 ---
 
@@ -110,36 +135,50 @@
 
 ```
 modernchat-new/
-├── docs/                   设计文档.md 后端需求规格.md
+├── docs/                   设计文档 / 后端需求规格 / 前端技术方案 / 运维手册 / UI 设计方案 / 插件开发 / 协议正文
 ├── deploy/                 nginx.conf.example（裸机） nginx.compose.conf（容器）
-├── plugins/examples/       weather.plugin.js（示例插件）
-├── scripts/                update.sh update.ps1（从 Gitee 拉取升级）
+├── website/                官网（落地页 / 文档站 / 插件市场）
+│   ├── public/docs/        由仓库文档同步生成（scripts/sync-docs.sh|ps1）
+│   └── scripts/            sync-docs.sh / sync-docs.ps1
+├── plugins/examples/       weather / dice / word-count / conv-stats 示例插件
+├── scripts/                install.sh / package-release.sh / update.sh / update-release.sh / uninstall.sh / coverage.sh
 ├── docker-compose.yml      MySQL + 后端一键环境
 ├── server/
 │   ├── go.mod  .env.example  Dockerfile
-│   ├── migrations/                 版本化 SQL（0001_init.up/down.sql）
+│   ├── migrations/                 版本化 SQL（0001…0022，生产用）
 │   ├── test/                       集成测试（//go:build integration）
+│   ├── data/uploads/               上传的图片 / 语音 / 视频（本地存储时；已 gitignore）
 │   ├── cmd/server/main.go
 │   └── internal/
 │       ├── config/                 环境变量解析
 │       ├── version/                构建版本（ldflags 注入）
-│       ├── model/                  GORM 模型 + 响应视图
-│       ├── store/                  数据访问 + migrations 执行器
-│       ├── handler/                auth/user/friend/conversation/plugin/admin/health
-│       ├── middleware/             logger/jwt/ban/admin/limiter
+│       ├── model/                  GORM 模型 + 响应视图 + 系统设置
+│       ├── store/                  数据访问 + migrations 执行器 + secretbox（AES-GCM）+ Redis
+│       ├── handler/                auth/user/friend/conversation/moderation/plugin/admin/
+│       │                           admin_settings/upload/file/sticker/push/ops/site/health/version
+│       ├── middleware/             logger/jwt/ban/admin/limiter/maintenance/guard/bodylimit/securityheaders
+│       ├── service/                mailer（热更新）/ storage（本地 + S3）/ thumbnail / push / backup / updater
 │       ├── ws/                     hub(64 分片)/serve(读写 pump)/dispatch/presence
-│       ├── plugin/                 manifest 校验 + URL 拉取（SSRF 防护）
-│       └── service/                mailer（SMTP 可选）
+│       ├── plugin/                 manifest 校验 / esbuild TS 转译 / URL 拉取（SSRF 防护）
+│       ├── logx/ metrics/          日志轮转 / Prometheus 指标
+│       └── router/                 全部路由与中间件装配
 └── web/
-    ├── vite.config.ts              # /api 与 /ws 代理
+    ├── vite.config.ts              # /api、/uploads 与 /ws 代理（dev 与 preview）
+    ├── uno.config.ts               # 原子类配置：颜色/圆角映射到 CSS 变量
+    ├── scripts/precompress.mjs     # 构建后生成 .gz / .br
     └── src/
-        ├── api/ stores/ router/
-        ├── composables/            useWebSocket.ts usePluginHost.ts（沙箱宿主）
+        ├── api/ stores/ router/    # stores：auth/ws/conversations/friends/favorites/plugins/prefs/layout/site
+        ├── composables/            useWebSocket.ts usePluginHost.ts notifications.ts announcement.ts localCache.ts useOverlay.ts
         ├── components/
-        │   ├── chat/               图标栏/分组栏/会话列表/消息流/输入区/详情面板/插件抽屉/好友搜索弹窗/资料弹窗
-        │   └── declarative/        白名单渲染器（8 组件）+ 插件面板
+        │   ├── ui/                 # 自研控件层（13 个）：UiButton/UiInput/UiTag/UiBadge/
+        │   │                       #   UiSelect/UiSlider/UiSwitch/UiCheckbox/UiInputNumber/
+        │   │                       #   UiTooltip/UiPopup/UiDialog/UiDrawer
+        │   ├── chat/               图标栏/分组栏/会话列表/消息流/输入区/详情面板/插件抽屉/
+        │   │                       收藏抽屉/通知抽屉/公告弹窗/语音气泡/好友搜索弹窗/资料弹窗
+        │   ├── common/             AuthScene / QuickPrefs / AppBackgroundPicker / PaneResizer / ContextMenu
+        │   └── declarative/        白名单渲染器（11 组件）+ 插件面板
         ├── types/proto.ts
-        └── views/                  AuthView/ForgotView/ChatLayout/admin
+        └── views/                  AuthView/ForgotView/SettingsView/LegalView/JoinView/MaintenanceView/ChatLayout/admin
 ```
 
 ---
@@ -165,9 +204,12 @@ modernchat-new/
 | 字段 | 说明 |
 |---|---|
 | id | 主键，即全局 `conv_id` |
-| type | 1=单聊 2=群聊 |
+| type | 1=单聊 2=群聊 3=系统公告会话（仅存储公告，不在会话列表展示） |
 | name | 群名（单聊为空） |
-| owner_id | 群主（单聊为空） |
+| avatar | 群头像地址（上传接口返回的 URL；空=默认头像） |
+| mute_all | 全员禁言（群主 / 管理员不受影响） |
+| owner_id | 群主（单聊 / 初始公共群为空） |
+| announcement / announcement_at / announcement_by | 群公告正文（≤500 字）、发布时间、发布者 |
 | created_at | |
 
 ### conversation_members（会话成员）
@@ -176,7 +218,8 @@ modernchat-new/
 | id | 主键 |
 | conversation_id | |
 | user_id | |
-| role | `owner` / `member`（单聊双方均 member） |
+| role | `owner` / `admin` / `member`（单聊双方均 member） |
+| mute_until | 禁言截止时间（NULL=未禁言，到期自动失效） |
 | last_read_message_id | 已读到哪条（已读回执） |
 | joined_at | |
 | 唯一键 | `(conversation_id, user_id)` |
@@ -196,11 +239,17 @@ modernchat-new/
 | conversation_id | |
 | sender_id | |
 | client_msg_id | 客户端生成 UUID，**服务端幂等键**，唯一索引 `(conversation_id, client_msg_id)`，防重连重复发 |
-| msg_type | `text`（插件可注册自定义类型） |
-| content | ≤1000 字（文本） |
+| msg_type | 内置五类：`text` / `image` / `audio` / `sticker` / `video`；其余为插件注册的自定义类型（字符白名单校验） |
+| content | `text`：≤1000 字正文；`image` / `audio` / `sticker` / `video`：**本站上传的相对地址**（如 `/uploads/2026/11/xxx.png`），WS 落库前会校验必须落在 `Storage.Owns()` 认得的地址下，禁止外链 |
 | is_recalled | 撤回软标记 |
+| recalled_at | 撤回时间（服务端写入）；前端据此显示「XXX 撤回了一条消息」并在 **3 分钟后把该提示从聊天记录移除**。为 NULL 的历史撤回消息按已过期处理 |
+| edited_at | 编辑时间（服务端写入）；NULL 表示从未编辑，前端据此显示「已编辑」，并只对自己 **5 分钟内**的文本消息展示「编辑」入口 |
+| reply_to_id | 引用的消息 id（**须同会话**，落库前校验，防止引用别的会话内容）；NULL 表示普通消息。摘要不落库，查询时批量装配 |
+| mentions | 被 @ 的用户 id（JSON 数组，仅群聊）。落库前过滤成「真实成员 + 去重 + 排除自己 + 上限 20」 |
+| forwarded | 是否转发消息。转发是「照搬 content + msgType 发一条新消息」，不引用原消息，原消息撤回/删除不影响它 |
+| admin_deleted_at / admin_deleted_by | 管理员 / 群主删除违规消息的时间与执行人；非 NULL 时对所有成员不可见（本体保留供审计） |
 | created_at | DATETIME(3) |
-| 索引 | `(conversation_id, id)` |
+| 索引 | `(conversation_id, id)`、`sender_id`（迁移 0021）、FULLTEXT ngram `content`（迁移 0022） |
 
 ### user_conversations（收件箱 / 会话列表冗余，性能关键）
 | 字段 | 说明 |
@@ -209,10 +258,38 @@ modernchat-new/
 | conversation_id | |
 | last_message_id / last_message_at | 冗余，用于排序 |
 | unread_count | 未读数 |
+| pinned | 置顶（**个人设置**：我置顶不代表别人也置顶） |
+| muted | 免打扰：只压红点数字（前端显示为小圆点），未读照常累加 |
+| archived | 归档：从默认列表收起，可在「归档」筛选查看 |
+| cleared_before_id | 清空记录水位：早于该 id 的消息不再下发给该用户（消息本体保留） |
+| mention_unread | 有未读的 @我 消息：免打扰下也要显示「有人@我」，上报已读时清零 |
 | 唯一键 | `(user_id, conversation_id)` |
 
-> 会话列表查询 `WHERE user_id=? ORDER BY last_message_at DESC`，不扫消息表。
+> 会话列表查询 `WHERE user_id=? ORDER BY pinned DESC, last_message_at DESC`，不扫消息表。
 > 入群/新建会话时初始化本表：last_message_* 同步当前会话最新一条消息，unread_count=0，last_read_message_id=最新消息 id（不追溯历史未读）。
+> 删除会话 = 删除该用户这一行；之后新消息由 `UpsertInbox` 重新建行，所以会话会重新出现。
+
+### stickers（个人表情库）
+`id, user_id(索引), url(255), created_at`；`(user_id, url)` 唯一，重复收藏幂等。
+> 只存 URL，文件在 Storage。删表情不影响已发出的消息（消息里存的是 URL 快照）。
+
+### conversation_files（群文件目录）
+`id, conversation_id(索引), uploader_id, name(120), url(255), size, created_at`
+> 文件本体在 Storage，这里只记账。保留 `name` 快照——存储里是随机文件名，对人没有意义。
+> 删除权限：上传者本人或群主。
+
+### invite_codes（注册邀请码）
+`id, code(32, 唯一), created_by(索引), max_uses, uses, expires_at(NULL=永久), disabled, created_at`
+> 码由 **crypto/rand 12 字节 hex**（24 位）生成，不用 `math/rand`——邀请码是凭据，必须不可预测。
+> 核销是**条件 UPDATE 原子完成**：`UPDATE ... SET uses=uses+1 WHERE code=? AND disabled=0 AND uses<max_uses AND (expires_at IS NULL OR expires_at>NOW())`，
+> 全部有效性条件放 WHERE 里由数据库判定，并发注册不会超发最后一个名额。
+> 注册中途失败（用户名重复等）通过 `Refund` 退还名额；停用只置 `disabled`，不删除，保留审计线索。
+
+### login_attempts（登录失败锁定）
+`id, username(64, 唯一), failed_count, locked_until(NULL=未锁), updated_at`
+> 按 **username 而不是 uid** 记：用户不存在时也计数，堵住「用户名不存在」这条绕过路径（同时错误文案保持一致，不泄露账号是否存在）。
+> 失败计数用 `ON DUPLICATE KEY UPDATE failed_count = failed_count + 1` 原子自增，达到阈值写 `locked_until` 并清零计数；
+> 凭据正确即删除记录；锁定期过后自动清理。阈值可在后台配置，**0 = 关闭**。
 
 ### plugins
 | 字段 | 说明 |
@@ -227,8 +304,54 @@ modernchat-new/
 | installed_by | |
 | created_at | |
 
+### admin_audits（站长操作审计）
+`id, admin_id, action, target_type, target_id, target_name, detail, ip, created_at`
+> 记录后台每一次写操作（封禁 / 解封 / 踢下线 / 重置密码 / 角色调整 / 插件下架与卸载 / 公告）。
+> `action` 为短枚举字符串，`detail` 存原因、天数、影响行数等可读信息；写入失败只告警，不阻塞主流程。
+
+### email_codes（注册邮箱验证码）
+`id, email(索引), code_hash, purpose(register / change_email), attempts, expires_at(10 分钟), used_at, created_at`
+> 只存 **HMAC-SHA256 哈希**（密钥由 `JWT_SECRET` 派生），库被读走也拿不到可用验证码。
+> 同一邮箱任何时刻只有一个可用码；连续错 5 次自动作废；校验成功即核销（并发提交同一个码只有一次成功）。
+
 ### password_resets
 `id, user_id, token(唯一,crypto/rand 64hex), expires_at(15 分钟), used(bool), created_at`
+
+### message_deletions（仅自己删除）
+`(user_id, message_id)` 复合主键，created_at
+> 只影响该用户的查询与分页；消息本体保留，其他成员仍可见。主键保证重复删除幂等。
+
+### message_favorites（消息收藏）
+`(user_id, message_id)` 复合主键，created_at；按收藏时间倒序展示。
+> 收藏夹 JOIN 消息与发送者，已撤回消息照常可收藏（前端按撤回状态渲染）。
+
+### message_reactions（表情回应）
+`(message_id, user_id)` 复合主键 + emoji、created_at；每人对每条消息最多一个表情。
+> 历史分页时批量聚合为 `{emoji,count,mine}` 随消息下发；WS 只广播增量（set / remove）。
+
+### user_blocks（拉黑）
+`(blocker_id, blocked_id)` 复合主键，created_at；单向记录，业务层按任意方向判断「互不打扰」。
+> 拉黑后：单聊不能再发消息、也不能发起新单聊；好友申请双向拦截。
+
+### message_reports（消息举报）
+`id, reporter_id + message_id(唯一), reason(≤200), status(0=待处理/1=已处理/2=已忽略), created_at`
+> 同一人对同一条消息只能举报一次；管理员删除违规消息走 `messages.admin_deleted_*`，举报记录保留。
+
+### conversation_invites（群邀请链接）
+`token(32 hex 主键), conversation_id(索引), created_by, expires_at(NULL=永久), revoked, created_at`
+> 任意群成员可生成；免登录可查群信息，加入仍需登录；有效期 0–30 天（0=永久）。
+
+### push_subscriptions（Web Push 订阅）
+`id, user_id(索引), endpoint(500, 唯一), p256dh, auth, created_at`
+> 每个浏览器端点一行；推送返回 410/404 时按 endpoint 删除。未配置 VAPID 时整体跳过。
+
+### system_settings（运行时配置）
+`key(主键,size:64), value(text), encrypted(bool), updated_by, updated_at`
+> 后台「系统设置」写入的键值配置，**优先级高于环境变量**（启动时用库里的值覆盖 `Mailer` 等）。
+> 仅允许 `store.IsKnownKey` 白名单中的键：`smtp.*` / `redis.*` / `storage.*` / `site.*` / `chat.*` / `upload.*` / `security.*`。
+> 密钥类字段（`smtp.pass`、`redis.pass`、`storage.secretKey`）以 **AES-256-GCM 加密**存储，
+> 密钥由 `JWT_SECRET` 派生（`store/secretbox.go`）——**更换 `JWT_SECRET` 会导致这些值无法解密**。
+> 对外接口永不回显密钥明文，只返回 `hasPass` / `hasSecretKey`；提交时空值表示不修改。
 
 ---
 
@@ -238,11 +361,14 @@ modernchat-new/
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/register` `/api/auth/login` | 返回 `{token, user}` |
+| POST | `/api/auth/register` `/api/auth/login` | 返回 `{token, user}`；注册在开启邮箱验证时须带 `email` + `emailCode` |
+| POST | `/api/auth/email-code` `{email}` | 发送注册验证码（6 位、10 分钟、一次性）；同邮箱 60 秒冷却，冷却期内也返回 200 + 剩余秒数 |
 | GET | `/api/me` | 当前用户 |
 | POST | `/api/auth/forgot` `{email}` | 发重置链接（开发期打日志） |
 | POST | `/api/auth/reset` `{token, newPassword}` | 设新密码（token_version+1） |
-| PATCH | `/api/me` `{nickname?, email?}` | 改资料 |
+| PATCH | `/api/me` `{nickname?, email?, avatar?, emailCode?}` | 改资料；**换绑邮箱须带新邮箱验证码**；avatar 为 ≤256KB 的 png/jpeg/webp data URL |
+| POST | `/api/me/email-code` `{email}` | 发送换绑邮箱验证码（发往新邮箱） |
+| POST | `/api/me/logout-others` | 退出所有设备：`token_version+1`，旧 JWT 全部失效 |
 | GET | `/api/users/search?kw=` | 搜人 |
 | GET | `/api/friends` `/api/friends/requests` | 好友 / 收到的申请 |
 | POST | `/api/friends/apply` `{toUsername}` | 发申请 |
@@ -252,30 +378,79 @@ modernchat-new/
 | POST | `/api/conversations/single` `{toUserId}` | 发起/复用单聊 |
 | POST | `/api/conversations/group` `{name}` | 创建群并自动入群 |
 | GET | `/api/conversations/search?kw=` | 搜群（按群名模糊匹配公开群，返回 id/name/成员数） |
-| POST | `/api/conversations/:id/leave` | 退群（群主不可退，须先转让） |
-| GET | `/api/conversations/:id/messages?beforeId=&limit=30` | 历史分页 |
+| GET | `/api/conversations/:id/messages?beforeId=&afterId=&limit=30` | 历史分页（`beforeId` 降序）；带 `afterId` 时改为升序增量补齐（离线上限 200 条） |
+| DELETE | `/api/conversations/:id/messages/:messageId` | 仅自己删除：只从当前账号的记录移除，对方仍可见 |
 | GET | `/api/conversations/:id/members` | 成员 |
 | POST | `/api/conversations/:id/join` | 加群 |
-| POST | `/api/conversations/:id/read` `{upToId}` | 上报已读 |
+| POST | `/api/conversations/:id/invite` `{userIds}` | 拉自己的好友入群（最多 50 人，整批超限则整体拒绝） |
+| POST | `/api/conversations/:id/invite-link` `{expiresDays:0-30}` | 生成群邀请链接，返回 `{token,path}` |
+| GET | `/api/invite/:token` | **免登录**查看邀请群信息 |
+| POST | `/api/invite/:token/join` | 通过邀请链接加群 |
+| POST | `/api/conversations/:id/leave` | 退群（群主不可退，须先转让） |
+| POST | `/api/conversations/:id/read` `{upToId}` | 上报已读（顺带清掉「有人@我」） |
+| DELETE | `/api/conversations/:id` | 从自己的列表移除（不退出群、不删消息） |
+| POST | `/api/conversations/:id/clear` `{upToId?}` | 清空我的聊天记录（设置个人水位，消息本体保留） |
+| PATCH | `/api/conversations/:id/prefs` `{pinned?,muted?,archived?}` | 会话个人设置；不传的字段表示不修改，显式 `false` 才是取消 |
+| PUT | `/api/conversations/:id/announcement` `{content}` | 群公告（仅群主，≤500 字）；空串表示撤销；变更后推 `conv_change` |
+| GET | `/api/conversations/:id/files` | 群文件列表（新→旧，≤100）；空时 `[]` |
+| POST | `/api/conversations/:id/files` `{name,url,size}` | 记一条群文件（URL 须属于本站存储） |
+| DELETE | `/api/files/:id` | 删群文件（上传者本人或群主） |
+| GET/POST/DELETE | `/api/stickers` `/api/stickers/:id` | 个人表情库：列表 / 收藏（幂等）/ 删除；上限 200 个 |
+| GET | `/api/site` | **免登录**公开站点信息：`{name, allowRegister, maintenanceMode, maintenanceMessage, requireInviteCode, requireEmail, requireEmailVerify, maxMessageLength, recallMinutes, maxGroupMembers, maxImageMB, maxAudioMB, maxFileMB, maxVideoMB}`。只暴露能公开的字段（`requireEmail/Verify` 是实际生效值），密钥类配置一律不在此接口 |
 | PATCH | `/api/conversations/:id` `{name}` | 群主改群名 |
-| POST | `/api/conversations/:id/kick` `{userId}` | 群主踢人 |
+| PUT | `/api/conversations/:id/avatar` `{avatar}` | 群头像（群主 / 管理员；空串恢复默认） |
+| POST | `/api/conversations/:id/kick` `{userId}` | 群主 / 管理员踢人（不能踢群主或其他管理员） |
+| POST | `/api/conversations/:id/admin` `{userId, admin}` | 群主设置 / 取消管理员 |
+| POST | `/api/conversations/:id/mute` `{userId, minutes}` | 禁言 / 解除禁言（0–43200 分钟，0=解除） |
+| POST | `/api/conversations/:id/mute-all` `{muted}` | 群全员禁言（群主 / 管理员仍可发言） |
 | POST | `/api/conversations/:id/transfer` `{userId}` | 转让群主 |
 | GET | `/api/plugins` `/api/plugins/active` | 我的插件 / 启动拉启用清单 |
 | GET | `/api/plugins/:id/code` | 下发插件 JS 代码（本人已安装且启用；响应 `Content-Type: text/javascript`） |
+| POST | `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart 上传图片 / 语音 / 表情 / 群文件 / 视频，按用户 10 次/分限流。**按文件头判定真实类型**（伪装成 .png 的 HTML 会被拒；视频按 `ftyp` brand / Matroska magic 兜底识别容器）；图片 ≤8 MB、语音 ≤5 MB、表情 ≤2 MB、群文件 ≤20 MB、视频 ≤30 MB（均后台可配）；返回 `{kind,size,url}` |
+| GET | `/uploads/<年>/<月>/<随机名>.<ext>` | 上传文件的静态服务（仅本地存储；`Cache-Control: immutable`）。用对象存储时由 S3/CDN 直接提供 |
+| GET | `/api/favorites?limit=100` | 我的收藏（按收藏时间倒序），空时为 `[]` 而不是 `null` |
+| POST | `/api/messages/:messageId/favorite` | 收藏一条消息（须为会话成员），幂等 |
+| DELETE | `/api/messages/:messageId/favorite` | 取消收藏 |
+| GET | `/api/search/messages?kw=&convId=&limit=` | 消息搜索：`convId` 可选（传了=会话内，省略=全局，只搜本人已加入的会话）；≥2 字符走 FULLTEXT ngram 短语匹配，单字符/索引异常回退 LIKE；排除已撤回/管理员删除/本人删除 |
+| GET/POST/DELETE | `/api/users/:id/block` | 查询 / 设置 / 取消拉黑（单向记录，业务层双向拦截） |
+| POST | `/api/messages/:messageId/report` `{reason}` | 举报消息（1–200 字，每人每条一次，重复返回 `duplicate:true`） |
+| POST | `/api/messages/:messageId/admin-delete` | 管理员 / 群主删除违规消息；广播 `message_admin_deleted`，各端移除 |
+| GET | `/api/push/key` | Web Push 公钥与是否启用 `{enabled,key}` |
+| POST | `/api/push/subscribe` | 保存订阅 `{endpoint,p256dh,auth}` |
+| DELETE | `/api/push/subscribe?endpoint=` | 删除订阅 |
 | POST | `/api/plugins/upload` `/api/plugins/from-url` | 上传 / URL 安装 |
 | PATCH | `/api/plugins/:id` `{enabled}` | 启用/禁用 |
 | DELETE | `/api/plugins/:id` | 卸载 |
-| GET | `/api/admin/users?page=` | 站长：用户列表 |
+| GET | `/api/admin/stats` | 站长：概览统计（用户 / 会话 / 消息 / 插件 / 在线数 / 运行时长） |
+| GET | `/api/admin/users?page=&kw=&role=&status=` | 站长：用户列表（关键词 / 角色 / 封禁状态筛选） |
+| GET | `/api/admin/users/:id` | 站长：用户详情（含会话、消息、插件计数与在线状态） |
+| POST | `/api/admin/users/:id/kick` | 站长：强制下线（不封禁） |
 | POST | `/api/admin/users/:id/ban` `{days, reason}` | 封禁（days=0 永久），强制下线 |
 | POST | `/api/admin/users/:id/unban` | 解封 |
 | POST | `/api/admin/users/:id/reset-password` | 重置密码 |
 | GET | `/api/admin/plugins?page=` | 站长：插件按 name 聚合（安装数/启用数/全局状态） |
 | POST | `/api/admin/plugins/global-disable` `{name, disabled}` | 按插件名全局下架 / 恢复（影响所有用户） |
+| POST | `/api/admin/plugins/purge` `{name, userId?}` | 按插件名强制卸载（物理删除；省略 userId 表示所有用户） |
+| POST | `/api/admin/users/:id/role` `{role}` | 设 / 取消站长（至少保留一个站长） |
+| POST | `/api/admin/announce` `{content}` | 全站公告：写入系统会话（`type=3`）并推送给所有用户 |
+| GET | `/api/admin/audits?page=` | 站长操作审计（封禁 / 踢线 / 角色 / 插件 / 公告） |
+| GET | `/api/admin/invites` | 站长：邀请码列表（新→旧，附创建者昵称） |
+| POST | `/api/admin/invites` `{maxUses:1-1000, expiresDays:0-365, count:1-20}` | 批量生成邀请码（`expiresDays=0` 永久） |
+| POST | `/api/admin/invites/:id/disable` `{disabled}` | 停用 / 启用（不删除，保留审计线索） |
+| GET/PUT | `/api/admin/settings` | 系统设置（SMTP / Redis / 对象存储 / 站点 / 聊天规则 / 上传上限 / 登录安全 / 敏感词 / 存储配额）。密钥类只回 `hasXxx`、留空表示不修改；数值越界返回 400 而非静默收敛 |
+| POST | `/api/admin/settings/smtp/test` `{to}` | 发送测试邮件，失败返回邮件服务器原始错误 |
+| GET | `/api/admin/storage/stats` | 本地附件用量（文件数 / 字节 / 孤儿数） |
+| POST | `/api/admin/storage/gc` `{dryRun}` | 清理未被消息 / 表情 / 群文件 / 头像引用的孤儿文件 |
+| GET/POST | `/api/admin/backups` | 备份文件列表 / 立即备份（依赖 `mysqldump`） |
+| GET | `/api/admin/update/status` | 在线更新状态快照（轮询） |
+| GET | `/api/admin/update/check` | 检查最新版本（发行版 Release / 源码 origin/main） |
+| POST | `/api/admin/update/start` | 触发更新（仅 systemd 部署；`WEB_UPDATE=false` 关闭） |
 | GET | `/api/health` | 探活（免鉴权） |
 | GET | `/api/version` | 当前构建版本 `{version, commit, buildTime}`（免鉴权） |
+| GET | `/api/metrics` | Prometheus 指标（`METRICS_TOKEN` 非空时需 Bearer） |
 
-约定：错误 `{error:"msg"}`；群管理校验 `owner`；`/api/admin/*` 校验 `role=admin`。
-`PATCH /api/me` 改 email 后 `email_verified` 重置为 false（本期无邮箱验证流程，email 仅用于找回密码）。
+约定：错误 `{error:"msg"}`；群管理按 `owner` / `admin` 角色校验；`/api/admin/*` 校验 `role=admin`。
+`PATCH /api/me` 换绑邮箱必须核销新邮箱验证码，成功后才落库并置 `email_verified=true`；解绑（空串）不需要验证。
 插件上传 / URL 安装命中"同一用户 + 同名插件"时执行**升级覆盖**（复用记录、保留启停、响应头 `X-Plugin-Updated: true`）。
 
 ---
@@ -289,10 +464,14 @@ modernchat-new/
 ### 上行
 ```ts
 type ClientFrame =
-  | { type:"chat"; convId:number; clientMsgId:string; content:string; msgType?:"text" }
+  | { type:"chat"; convId:number; clientMsgId:string; content:string; msgType?:string /* 缺省 text；image/audio/sticker/video 的 content 必须是本站上传地址 */;
+      replyToId?:number; mentions?:number[]; forwarded?:boolean }
   | { type:"typing"; convId:number }
   | { type:"read"; convId:number; upToId:number }
+  | { type:"delivered"; messageId:number } /* 单聊送达回执：接收方确认后回传发送者 */
   | { type:"recall"; messageId:number }
+  | { type:"edit"; messageId:number; content:string } /* 仅本人、5 分钟内、未撤回的 text 消息 */
+  | { type:"reaction"; messageId:number; emoji:string; action:"set"|"remove" }
   | { type:"ping" };
 ```
 
@@ -301,26 +480,34 @@ type ClientFrame =
 type ServerFrame =
   | { type:"message"; id:number; convId:number;
       from:{id:number;nickname:string}; content:string;
-      msgType:"text"; clientMsgId?:string; createdAt:string }
-  | { type:"recall"; messageId:number; convId:number }
+      msgType:string; /* text | image | audio | sticker | video | 插件自定义 */ clientMsgId?:string;
+      replyToId?:number; replyTo?:ReplyBrief; mentions?:number[]; forwarded?:boolean; createdAt:string }
+  | { type:"message_update"; id:number; convId:number; content:string; editedAt:string /* RFC3339，服务端时间 */ }
+  | { type:"recall"; messageId:number; convId:number; recalledAt:string /* RFC3339，服务端时间 */ }
+  | { type:"reaction"; messageId:number; convId:number; emoji:string; before?:string; userId:number; action:"set"|"remove" }
+  | { type:"message_delivered"; messageId:number; convId:number; userId:number }
+  | { type:"message_admin_deleted"; messageId:number; convId:number }
   | { type:"read"; convId:number; userId:number; upToId:number }
   | { type:"typing"; convId:number; userId:number }
   | { type:"presence"; userId:number; online:boolean }
   | { type:"user_change"; userId:number; nickname:string; avatar:string; avatarColor:string }
-  | { type:"conv_change"; convId:number }
+  | { type:"conv_change"; convId:number; meta?:boolean /* true=成员/群名/公告变化 */ }
   | { type:"kicked"; reason:string }
   | { type:"pong" } | { type:"error"; reason:string };
 ```
 
 **幂等**：上行 `chat` 带 `clientMsgId`，服务端按唯一索引去重；前端按消息 `id`（回显前按 `clientMsgId`）去重，重连不重复收发。
+**上行帧上限**：64 KB（`ws/serve.go` 的 `maxMsgSize`）。必须覆盖 `chat.maxMessageLength` 上限 5000 字符在 UTF-8 下的字节数（约 20 KB）加 JSON 开销；原 4 KB 会让管理员调大长度后的合法长消息被直接断连。
 
 ---
 
 ## 8. 插件系统（方案 A：描述式 UI）
 
 ### 8.1 运行时模型
-- 每个插件 = 一个 JS 文件（≤1MB），代码由服务端下发，前端用 **blob/srcdoc 注入到 sandbox iframe**（`sandbox="allow-scripts"`，不给 `allow-same-origin`），不依赖跨域加载。
+- 每个插件 = 一个文件（≤1MB），代码由服务端下发，前端用 **blob/srcdoc 注入到 sandbox iframe**（`sandbox="allow-scripts"`，不给 `allow-same-origin`），不依赖跨域加载。
 - 插件**不接触 DOM、不接触主站 window**，只在沙箱内跑逻辑，通过 `postMessage` 与主站桥接层通信。
+- **语言**：JavaScript / TypeScript 均可。上传 `.ts`（`?lang=ts`）或安装以 `.ts` 结尾的 URL 时，服务端用内嵌 **esbuild** 逐文件转译成 ES2020 JS 后入库；前端沙箱不承担编译，插件体积与首屏包体都不受影响。manifest 一律从**源码**解析，转译产物若丢失注释会补回。
+- 开发指引见 [`插件开发.md`](插件开发.md)。
 
 ### 8.2 描述式 UI 协议
 插件要展示界面时，向主站发**UI 描述 JSON**，主站只用白名单组件渲染：
@@ -336,17 +523,20 @@ type ServerFrame =
 }
 ```
 
-**白名单组件**：`text / image / button / input / card / list / divider / link`。
+**白名单组件**：`text / image / button / input / card / list / divider / link / table / progress / badge`（后三个用于统计与状态展示）。
 - 出现白名单外的组件、`javascript:` 链接、内联脚本等一律拒绝渲染。
 - 自定义消息类型同理：`api.registerMessageRenderer("weather", payload => UI 描述)`，主站在消息气泡内渲染。
 
 ### 8.3 插件 SDK
 | API | 作用 | 权限 |
 |---|---|---|
-| `api.on(event, fn)` | 监听 `message:new / message:recall / conv:open / presence` | `message:read` |
+| `api.on(event, fn)` | 监听 `message:new / message:recall / conv:open / presence / ui:action / message:action` | `message:read` |
 | `api.send(convId, payload, msgType?)` | 发消息（可自定义类型） | `message:send` |
 | `api.registerMessageRenderer(type, fn)` | 注册自定义消息类型的 UI 描述 | `message:render` |
 | `api.addSidePanel(desc)` | 发侧边栏 UI 描述 | `ui:panel` |
+| `api.registerMessageAction({id,label})` | 消息右键菜单项：点开后收到 `message:action`（只投递给注册者） | `ui:actions` |
+| `api.me()` / `api.conv.current()` / `api.conv.members()` / `api.messages.recent(n)` | 只读上下文：本人身份、会话概览、成员、最近 n 条消息摘要 | `conv:read` |
+| `api.nav.openConversation(id)` / `api.nav.jumpToMessage(id)` / `api.toast(text, kind?)` | 宿主侧动作：切会话、定位消息、轻提示 | `ui:host` |
 | `api.storage.get/set` | 每插件独立命名空间存储 | `storage` |
 | `api.request(url, opts)` | **客户端桥接执行**：主站按 `allowed_hosts` 白名单校验后用 fetch 转发，受浏览器 CORS 天然约束，服务端不出站 | `net` |
 | `api.theme.apply(cssVars)` | 改主题 | `ui:theme` |
@@ -369,23 +559,79 @@ type ServerFrame =
 4. 在线成员 fan-out `message` 帧；未读接收者额外推 `conv_change`。
 5. 打开会话上报 read 时：清 `unread_count`、写 `last_read_message_id`，并向其他在线成员推 `read` 帧。
 
-> 撤回：仅发送者本人、2 分钟内；若接收方尚未读（其 `last_read_message_id < 撤回消息 id`），对应 `unread_count` 同步 -1。
+> 撤回：仅发送者本人、`chat.recallMinutes` 时限内（默认 2 分钟，0=关闭）；若接收方尚未读（其 `last_read_message_id < 撤回消息 id`），对应 `unread_count` 同步 -1。
 
 ### 9.2 性能
-- Hub 按 `conversation_id` 分 64 片锁，广播只锁目标分片；每用户多端（`userID->[]*Client`），下线引用计数。
+- Hub 按 **userID** 分 64 片锁（`shards[uid%64]`），广播只锁目标分片；每用户多端（`userID->[]*Client`），下线引用计数。按用户分片能让同一用户的多端落在同一片、每次投递只锁一片；按会话分片则一次 fan-out 需要锁住成员所在的多个分片。
+- **查询不物化无关行**：会话列表只取「成员数（一条 `GROUP BY`）+ 单聊对方」，不再把用户所有会话的全部成员行 JOIN `users` 拉回来（20 个满员群从约 4000 行降到几十行）；群搜索同理，一次 `GROUP BY` 取代「命中 N 个群查 N 次 COUNT」。
+- **图片消息缩略图**：上传 `kind=image` 时生成 ≤480px 的 JPEG 缩略图（`_t.jpg`；GIF 丢动画、过小图无收益、解码失败都跳过，透明图垫白底——JPEG 无 alpha）。本地存储异步生成、S3 主文件成功后追加 PutObject；前端气泡按 URL 约定派生缩略图地址，404 回退原图，灯箱始终用原图。
+- **消息搜索走 FULLTEXT**：`messages.content` 建 ngram 全文索引（迁移 `0022`；AutoMigrate 不建全文索引，启动时 `EnsureMessageFulltext` 按 information_schema 幂等补建）。≥2 字符关键词用 `MATCH...AGAINST` 短语模式近似 LIKE 的子串语义（引号内的短语保证连续性），单字符（ngram 最小 token 为 2）与索引异常回退 LIKE。
+- **只问布尔就别 COUNT**：`/api/site` 每 30 秒被每个在线客户端轮询，判断「是否已有账号」用 `SELECT 1 ... LIMIT 1`，避免 InnoDB 遍历最小索引全量条目。
+- **配置解析结果缓存**：`Ops()` 在每个请求至少被调用两次（维护中间件 + handler），解析结果用 `atomic.Pointer` 缓存，`Save/Invalidate` 时置空；否则每次都要深拷贝配置 map 并解析 ~20 个键。
+- **索引补齐**：`messages(sender_id)`（后台按发送者统计，迁移 `0021`）、`messages(conversation_id)`（游标分页，InnoDB 二级索引叶子含主键即等效 `(conversation_id, id)`）、`(conversation_id, client_msg_id)` 唯一（幂等）。
 - 每连接 send channel（256）+ 写超时，慢消费者踢出；读/写 pump 分离。
 - **群成员上限 200**（控制 fan-out 写放大与单分片热点）；超大群二期走"拉模型"（不做写扩散）。
 - 历史游标分页（`beforeId`），禁 OFFSET 深分页。
-- 压缩：REST `gin-contrib/gzip`；WS `permessage-deflate`（权衡见 v2，连接数压顶时可关）；前端构建产 gzip/brotli。
+- 压缩：REST 用 `gin-contrib/gzip`（排除 `/ws`、响应 <1KB 不压缩）；WS 开 `permessage-deflate`（`upgraderFor` 的 `EnableCompression`，连接数压顶时可关）；前端构建产 gzip/brotli。
 
-### 9.3 限流
+### 9.3 限流与账号保护
 - 登录/注册/找回：每 IP 10 次/分钟。
 - 发消息：每用户 20 条/分钟。
 - 插件上传/URL 安装：每用户 5 次/分钟。
+- 媒体上传（图片 / 语音 / 表情 / 视频 / 群文件）：每用户 10 次/分钟（防止被当图床刷）。
+- **登录失败锁定**（`login_attempts` 表，后台可配阈值与时长，0 = 关闭）：按账号累计失败次数，
+  达到阈值临时锁定（429 + 剩余分钟数），锁定期过自动清理。按 username 而非 uid 计——
+  用户不存在时也计数，堵住「用户名不存在」绕过路径；凭据正确即清零；
+  **计数失败只记日志不返回 500**，否则等于给攻击者一个让登录接口瘫痪的手段。与 IP 限流互补。
 
-### 9.4 扩展边界（明确不模糊）
+### 9.4 文件存储（本地 ↔ 对象存储）
+
+消息里的图片 / 语音 / 视频只存 **URL**，具体落在哪由 `service.Storage` 接口决定——换存储实现时数据不用动。视频落盘扩展名由容器嗅探决定（mp4 / webm / mov / m4v），对象存储的 `Content-Type` 按 kind + 扩展名给出（`.webm` 需要区分 `audio/webm` 与 `video/webm`，否则视频会被当音频处理）。上传是**流式**的（`FileStreamSaver`）：multipart 分段边读边写临时文件，本地原子改名、S3 以已知长度上传——文件不整块进内存；本地配额检查走 60s TTL 缓存 + 成功后增量累加。
+
+| 实现 | 触发条件 | URL 形态 | 静态服务 |
+|---|---|---|---|
+| `LocalStorage` | 后台未配 `storage.endpoint` + `storage.bucket` | `/uploads/2026/11/<128bit>.png` | 后端 `GET /uploads/**`（长缓存） |
+| `S3Storage` | 后台配了上述两项（MinIO / AWS S3 / OSS / COS，minio-go） | `<publicBase>/2026/11/<128bit>.png` | 由对象存储 / CDN 提供 |
+
+**关键约束**：
+
+1. **类型按文件头判定，不信扩展名**。`http.DetectContentType` 读 magic bytes；webm/m4a 这类返回 `application/octet-stream` 的容器再按特征二次识别。把 HTML 改名成 `.png` 会被拒（否则配合浏览器 MIME 嗅探可变成存储型 XSS）。
+2. **文件名 128 位随机**，不可枚举；目录按 `年/月` 分片，避免单目录文件过多。
+3. **WS 落库前校验 URL 归属**：`image` / `audio` 的 content 必须是 `Storage.Owns()` 认得的地址，防止用户塞 `https://evil.com/x.png`（消息看起来正常，但接收方会去加载外部资源 → 泄露 IP、可被打点统计）。
+4. **配了 S3 就不会静默回退本地**：上传失败直接报错，否则会出现「以为在云端、重装机器全丢」的数据分裂。
+5. **切换存储不迁移历史文件**：老消息里的 `/uploads/...` 仍由本地静态服务提供（本地实现保留），新消息走新存储。
+
+### 9.5 扩展边界（明确不模糊）
 - **本期只支持单实例**：在线状态、Hub 路由在内存，不做水平扩展。
 - 二期上多实例需：Go 无状态化 + Redis（在线状态、连接路由、跨实例 pub/sub），届时 Hub 需重写，不作为本期内容。
+
+### 9.6 运营开关（`store.Ops`，全部即时生效）
+
+后台「系统设置」里的可运营参数与 SMTP / Redis / 存储这类「改了要重启」的基础设施配置是两类：
+前者读 `store.SettingStore.Ops()`——带默认值与范围收敛的类型化读取，`Save` 失效缓存后下一次请求即拿到新值。
+
+| 分组 | 配置项 | 接线点 |
+|---|---|---|
+| 站点 | `site.name` | 浏览器标题、登录页品牌名（`GET /api/site` 下发） |
+| 站点 | `site.allowRegister` | 注册接口 403 + 登录页隐藏注册入口 |
+| 站点 | `site.maintenanceMode` / `maintenanceMessage` | 见下 |
+| 站点 | `site.requireInviteCode` | 注册必须携带有效邀请码（原子核销，失败退还） |
+| 聊天 | `chat.maxMessageLength`（100–5000） | WS 长度校验 + 前端输入框 maxlength / 字数计数 |
+| 聊天 | `chat.recallMinutes`（0–60，**0 = 关闭撤回**） | WS 撤回校验 + 前端右键菜单 |
+| 聊天 | `chat.maxGroupMembers`（2–2000） | 入群事务校验（并发也卡得住） |
+| 上传 | `upload.maxImageMB / maxAudioMB / maxFileMB / maxVideoMB`（1–32 / 1–32 / 1–200 / 1–100） | 上传 handler 用 `MaxBytesReader` 按当前值卡住；`storage.Save` 增加 `maxBytes` 参数（体积是调用方策略，不焊死在存储层） |
+| 安全 | `security.loginMaxAttempts`（0 或 2–20）/ `loginLockMinutes`（1–1440） | 登录失败锁定（见 §9.3） |
+
+**维护模式**（`middleware.Maintenance`）：
+
+- 挂在 `authed` 路由组（Auth 之后，能读到角色）与 `register / forgot / reset` 上；管理员放行，其余 **503 + `{maintenance:true, message}`**。
+- 白名单不挂中间件：`/api/site`（前端要拿维护文案）、`/api/health`、`/api/version`、**`/api/auth/login`（必须留给管理员登录）**。
+- `ws.Serve` 增加 settings 参数：维护中非管理员握手直接 503——REST 被挡但已有连接还能收发就等于没挡。
+- 前端：`stores/site.ts` 每 30 秒刷新配置，App 层按「维护中 && 非管理员 && 不在 /login」渲染 `MaintenanceView`；维护页上有「管理员登录」入口形成闭环。
+- 管理员仍可访问 `/api/admin/*`（该组不走 `authed` 中间件链），所以能进后台把维护关掉。
+
+**默认值即改造前行为**：`OpsFrom()` 对缺失 / 脏值回落默认，不会因为库里存了个错值把功能卡死；
+后台保存时显式校验范围（越界 400），不做静默收敛——站长填 50000 被悄悄改成 5000 会以为没保存成功。
 
 ---
 
@@ -395,7 +641,8 @@ type ServerFrame =
 - 本地一键环境：`docker-compose.yml`（MySQL 8 + 后端，首次启动 `MIGRATE=true` 自动建表）。
 - 生产用 `migrations/` 版本化 SQL 建表，不用 AutoMigrate。
 - 生产必须设置 `JWT_SECRET`（release 模式缺省拒绝启动）与 `FRONTEND_URL`（WS Origin 白名单 + 找回密码链接）。
-- **升级**：`scripts/update.sh`（Linux）/ `scripts/update.ps1`（Windows）从 Gitee 拉取 → 重建前后端 → 重启；`GET /api/version` 或后台右上角核对版本。应用内不提供"触发 git pull"的接口（避免管理员账号退化为远程代码执行入口）。
+- **安装（发行版模式，推荐）**：`scripts/package-release.sh` 在构建机打 tag 后产出预编译包（ldflags 注入版本号，含后端二进制 + 前端 dist + 迁移 SQL），上传为 Gitee / GitHub Release 附件；服务器上 `scripts/install.sh` 一键下载部署（架构/发行版自动识别，sha256 校验），**无需 Go / Node / git，服务器不编译任何东西**（细节见运维手册 §3.1）。
+- **升级**：三种等价途径——① `scripts/update.sh`（源码部署，蓝绿双实例热更新）；② 发行包内 `scripts/update.sh`（发行版部署，下载新 Release 替换后优雅重启）；③ 站长后台「在线更新」页签（`server/internal/service/updater.go`：发行版模式查 Release 最新 tag 与 `/api/version` 比对 → 下载校验 → 原子替换 → systemd 重启；源码模式 git pull 后本地编译）。安全边界：仅站长可触发（Admin 中间件 + 审计）、URL 与命令全部固定（版本号来自 Release 服务端 / `origin/main`，不接收用户输入）、`WEB_UPDATE=false` 可整体关闭。此接口本质是"管理员账号可触发代码更新"，账号泄露等同服务器可控——早期设计为避免此风险不提供应用内升级，后按用户要求提供，风险面以上述边界收敛。
 - 配置（DB DSN、JWT_SECRET、SMTP）走环境变量，不进仓库。
 
 ## 11. 本地运行
@@ -410,8 +657,14 @@ cd web && npm install && npm run dev  # :5173，代理 /api 与 /ws 到 :8080
 首个注册账号自动成为站长（`/admin`：用户封禁 / 重置密码 / 插件全局下架）。
 
 ## 12. 交付与 Git 约定
-- 远端：Gitee `https://gitee.com/Sun-Si-Cheng/modern-chat-new.git`，分支 `master`。
+- 远端：Gitee `https://gitee.com/Sun-Si-Cheng/modern-chat-new.git`，分支 `main`。
 - 每完成一个模块自动 `git add -A` → commit → push，无需提醒。
+- **文档与代码同步更新**：用户不会去看提交记录，文档是了解功能变更的唯一窗口。每次提交涉及内容更新（新功能、行为变更、入口位置调整、配置项增删、部署方式变化等）时，必须在**同一次提交内**把变更写进对应文档，不得拖延或事后补写：
+  - 功能/架构/协议变化 → `docs/设计文档.md`（必要时同步 §13 实施记录）
+  - 接口字段/校验/错误码变化 → `docs/后端需求规格.md`（先改文档再改代码）
+  - 前端结构/交互/信息架构变化 → `docs/前端技术方案.md`
+  - 环境变量/部署/运维变化 → `docs/运维手册.md`
+  - 用户可见的功能增量 → `CHANGELOG.md`（[未发布] 段）
 - `.gitignore` 已忽略 `node_modules/`、`dist/`、`.env`、编译产物、日志。
 
 ## 13. 评审结论与实施记录
@@ -421,12 +674,22 @@ cd web && npm install && npm run dev  # :5173，代理 /api 与 /ws 到 :8080
 
 ### 13.2 实施完成（2026-10-24）
 - **前端 `web/`**：认证（登录/注册/找回）、聊天四栏（图标栏 / 分组筛选栏 / 会话与联系人列表 / 聊天区 + 详情面板）、连续消息分组与已读/撤回收敛、添加好友弹窗（用户名/昵称搜索、就地同意）、群管理、插件沙箱宿主 + 描述式渲染器、插件管理抽屉、站长后台（用户 + 插件）、响应式（平板收详情 / 手机单面板）、设计规范打磨（对比度、tabular 数字、焦点可达性）。
-- **后端 `server/`**：§6 全部接口、§7 WS 协议（64 分片 Hub / 读写 pump / presence / kicked）、插件（manifest 校验 / SSRF / 升级覆盖 / 全局下架）、站长后台、限流三档、结构化日志、优雅停机、`migrations/0001_init`。
+- **后端 `server/`**：§6 全部接口、§7 WS 协议（64 分片 Hub / 读写 pump / presence / kicked）、插件（manifest 校验 / SSRF / 升级覆盖 / 全局下架）、站长后台、限流三档、结构化日志、优雅停机、`migrations/0001…0022`。
 - **测试**：`go build` / `go vet` / `gofmt` / 单元测试 / 集成测试（真实 MySQL 全链路：认证→好友→单聊→WS 收发→幂等→已读→撤回→未读→群聊→封禁踢线→插件安装/升级/SSRF/下架）全绿；前端 `vue-tsc` / `oxlint+eslint` / `vite build` 全绿。
 - **安全补强**（代码审查后）：WS Origin 白名单、`JWT_SECRET` 生产强制、找回链接配置化 + 恒定耗时、证书类文件 gitignore。
-- **交付配套**：`docker-compose.yml`、`server/Dockerfile`、Nginx 双版配置、示例插件、`scripts/update.sh|ps1` 一键升级、`/api/version` 版本核对。
+- **交付配套**：`docker-compose.yml`、`server/Dockerfile`、Nginx 双版配置、示例插件、`scripts/install.sh` / `package-release.sh` / `update.sh` / `uninstall.sh`、`/api/version` 版本核对。
 
 ### 13.3 与初版设计的偏差（实现时调整并已回写本文档）
-- 发消息链路与 presence 的实现落在 `internal/ws`（与 Hub 强耦合，避免 ws ↔ service 循环依赖）；`internal/service` 仅保留 mailer。
+- 发消息链路与 presence 的实现落在 `internal/ws`（与 Hub 强耦合，避免 ws ↔ service 循环依赖）；`internal/service` 承载 mailer / storage / thumbnail / push / backup / updater。
 - 新增 `internal/version`（构建版本注入）、admin 插件聚合接口、插件同名升级语义、`/api/health` 与 `/api/version`。
 - 规格文档 `后端需求规格.md` 中 `before_id` / `new_password` 统一为 camelCase（`beforeId` / `newPassword`），与前端一致。
+- Hub 分片按 **userID** 而非本文 §9.2 写的 `conversation_id`（`shards[uid%64]`）：广播本质是「按用户投递」，按用户分片能让同一用户的多端落在同一片、每次投递只锁一片；若按会话分片，一次 fan-out 需要锁住成员所在的多个分片。锁粒度与热点行为一致，仅分片键不同。
+- REST gzip 的最小压缩阈值设为 1KB（`gzip.WithMinLength`）：小于该长度的响应加上 gzip 头与熵不足，压缩后反而更大。
+
+### 13.4 文档补齐与缺陷修复（2026-11-06）
+- **文档补齐**：按当前代码回写 §1.3 功能范围、§4 目录结构、§5 数据表（新增删除 / 收藏 / 表情回应 / 拉黑 / 举报 / 邀请链接 / Push 订阅）、§6 全部 REST 路由、§7 完整 WS 帧；`docs/后端需求规格.md`、`docs/前端技术方案.md`、`docs/运维手册.md`、`web/README.md`、`server/README.md` 同步更新。
+- **修复：WS 上行 4 KB 限制**：`chat.maxMessageLength` 可配到 5000 字符（UTF-8 下可超 4 KB），原 `maxMsgSize=4096` 会把合法长消息直接断连且用户收不到 `error`；改为 64 KB。
+- **修复：`user_change` 帧前端未处理**：服务端一直广播昵称/头像变更，前端 `ServerFrame` 缺少该类型且没有分支，导致文档承诺的实时同步实际要刷新页面；现补充类型与处理（会话 peer、成员缓存、好友/申请、本人多端）。
+- **修复：自己发出的消息不更新会话列表**：发送者本端收不到「纯新消息」的 `conv_change`，消息回显分支没有写 `lastMessage*`，列表预览 / 时间 / 排序会一直停在旧消息；同时去掉「发送即记已读水位」的错误优化，避免转发到有未读的会话后服务端未读数永远清不掉。
+- **修复：新成员加入群后列表显示「暂无消息」**：`initInboxes` 只插入空收件箱行，没有按设计（§5）同步当前最新消息；主动加入 / 被邀请 / 注册自动进公共群时统一改为写入最新预览与时间，并把 `last_read` 推到最新，不追溯加入前的历史未读。
+- **修复：`FRONTEND_URL` 解析为空导致找回密码 panic**：`FRONTEND_URL=","` 或全空白项时 `FrontendURLs` 为空，`Forgot` 取 `[0]` 越界；现在 `config.Load` 直接返回错误并提示至少配置一个来源。

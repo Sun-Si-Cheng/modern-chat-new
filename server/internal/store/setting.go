@@ -25,8 +25,8 @@ const (
 	KeyRedisPass = "redis.pass" // 加密
 	KeyRedisDB   = "redis.db"
 
-	// 对象存储：当前版本**没有文件上传功能**（头像只接受 URL 字符串），
-	// 这组配置会被保存，但不会生效。保留是为了后续接入上传时无需再改表结构。
+	// 对象存储：S3 兼容（MinIO / AWS S3 / OSS / COS）。Endpoint + Bucket 都配置时
+	// 上传走对象存储；否则回落到本地磁盘（DATA_DIR/uploads）。
 	KeyStorageEndpoint  = "storage.endpoint"
 	KeyStorageRegion    = "storage.region"
 	KeyStorageBucket    = "storage.bucket"

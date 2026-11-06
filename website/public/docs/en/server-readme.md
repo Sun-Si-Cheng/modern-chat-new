@@ -107,11 +107,7 @@ Integration coverage: register (first registrant = admin) → friend apply/accep
 ### Coverage (unit + integration merged)
 
 ```bash
-# Windows (in server/)
-$env:DB_DSN = 'root:password@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local'
-..\scripts\coverage.ps1
-
-# Linux / macOS
+# Linux / macOS / Git Bash (in server/)
 DB_DSN='root:password@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local' ../scripts/coverage.sh
 
 # HTML report
