@@ -174,7 +174,8 @@ if [ -f "$STATE_FILE" ]; then
       PARAM_DB_PASS)      [ -z "$DB_PASS" ] && DB_PASS="$v" ;;
       PARAM_DB_NAME)      [ "$DB_NAME" = "modernchat" ] && DB_NAME="$v" ;;
       PARAM_RELEASE_TAG)  [ "$RELEASE_TAG" = "latest" ] && RELEASE_TAG="$v" ;;
-      PARAM_PUBLIC_URL)   PUBLIC_URL="${PUBLIC_URL:-$v}" ;;
+      # PUBLIC_URL 不从 state 恢复：它是 DOMAIN/SITE_PORT 的派生值，每次运行重新推导
+      # （旧版断点里可能存着端口为空的坏值 http://IP:）
       PARAM_JWT_SECRET)   JWT_SECRET="${JWT_SECRET:-$v}" ;;
       PARAM_RUN_MODE)     RUN_MODE="${RUN_MODE:-$v}" ;;
       PARAM_NGINX_CONF)   NGINX_CONF_PATH="${NGINX_CONF_PATH:-$v}" ;;
@@ -197,8 +198,10 @@ fi
 
 [ -n "$INSTALL_DIR" ] || { ask "安装目录" "/opt/modernchat"; INSTALL_DIR="$REPLY"; }
 [ -n "$DOMAIN" ]      || { ask "访问域名（没有域名直接回车，将用服务器公网 IP）" ""; DOMAIN="$REPLY"; }
-[ -n "${SITE_PORT+x}" ]    || { ask "站点端口（nginx 对外端口）" "80"; SITE_PORT="$REPLY"; }
-[ -n "${BACKEND_PORT+x}" ] || { ask "后端服务端口（仅本机访问）" "8080"; BACKEND_PORT="$REPLY"; }
+# 注意不能用 [ -n "${X+x}" ] 判断：变量已在上方初始化为空串，该条件恒真会导致
+# 端口问答被跳过、BACKEND_PORT 为空，systemd 启用的实例名变成 modernchat@.service 而失败
+[ -n "$SITE_PORT" ]    || { ask "站点端口（nginx 对外端口）" "80"; SITE_PORT="$REPLY"; }
+[ -n "$BACKEND_PORT" ] || { ask "后端服务端口（仅本机访问）" "8080"; BACKEND_PORT="$REPLY"; }
 
 if [ -z "${DB_MODE:-}" ]; then
   echo >&2
@@ -427,7 +430,10 @@ if [ -z "${PUBLIC_URL:-}" ]; then
   save_state "PARAM_PUBLIC_URL" "$PUBLIC_URL"
 fi
 
-stage_done config && ! [ "$FORCE" = "1" ] && [ -f server/.env ] && { skip_stage "配置" config; } || {
+# 续跑时若 .env 的 FRONTEND_URL 与当前推导的 PUBLIC_URL 不一致（如旧版端口为空留下的
+# http://IP:），重新生成 .env —— 参数都在 state 里，重写是幂等的
+stage_done config && ! [ "$FORCE" = "1" ] && [ -f server/.env ] \
+  && grep -q "^FRONTEND_URL=$PUBLIC_URL$" server/.env && { skip_stage "配置" config; } || {
   cat > server/.env <<ENV
 # 由 scripts/install.sh 生成（$(date '+%F %T')）。修改后需 systemctl restart modernchat@<端口>
 PORT=$BACKEND_PORT
