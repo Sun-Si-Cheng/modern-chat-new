@@ -23,6 +23,7 @@
 ### 修复
 
 - **补齐 `server/.env.example`**：运维手册 §3.3 手工部署引用了 `cp server/.env.example server/.env` 但文件一直缺失，手工部署者在第 3 步就会卡住。已补齐（与 `config.go` 全部环境变量一一对应，含在线更新 `RELEASE_API_URL` / `RELEASE_DL_URL` 注释示例）；同时修复 `.gitignore` 中自相矛盾的规则（第 24 行 `!.env.example` 放行后又被第 29 行重新忽略，导致示例文件永远进不了仓库）。
+- **发行包二进制无可执行位（203/EXEC）**：包在 Windows 上打包时 NTFS 文件没有 POSIX 执行位，解压出的 `bin/modernchat-server` 是 0644，systemd 启动报 `Permission denied`/`status=203` 无限重启。修复：install.sh / 发行包内 update.sh 解压后强制 `chmod 755` 二进制与更新脚本；Go 端 updater 替换二进制后同样补权限——与打包平台无关，双保险。
 - **端口问答恒跳过导致部署失败**：端口问答条件写成 `[ -n "${X+x}" ]`，而变量已在开头初始化为空串，条件恒真——`SITE_PORT`/`BACKEND_PORT` 全程为空且从未询问。后果：systemd 启用的是模板单元本身 `modernchat@.service`（被 systemd 拒绝，安装中断于服务阶段）、nginx 将生成 `listen ;`、`FRONTEND_URL` 写成 `http://IP:`。修复为 `[ -n "$X" ]` 判断；`PUBLIC_URL` 不再从断点恢复（改由 `DOMAIN`/`SITE_PORT` 每次推导，避免坏值残留）；配置阶段续跑时校验 `.env` 的 `FRONTEND_URL` 与推导值一致，不一致自动重写 `.env` 修复旧断点的坏值。
 - **sha256 校验被 Gitee 反盗链页击穿**：拉取 `.sha256` 附件用了不带 `-L` 的 curl（下载 tar.gz 时带了），Gitee 附件重定向后拿到的是 HTML 反盗链页，被当作校验清单比对，报「期望 `<html><body>You`」并中止安装。三处修复：install.sh 与发行包内 update.sh 的拉取补 `-L`；三处（含 Go 端 updater）都先校验清单必须是 64 位十六进制再比对，异常时降级跳过校验并显示本包哈希，不再误报"被篡改"。
 - **install.sh 自动装 MySQL 后建库失败（ERROR 1698）**：预检用 `mysql -uroot`（Unix socket，auth_socket 生效）判定 root 免密通过，但建库时强制 `--protocol=TCP -h127.0.0.1`——Ubuntu 的 root@localhost 仅允许 socket 认证，TCP 直接 Access denied。修复为：免密 root 且目标是本机时改走 Unix socket（远程实例仍走 TCP）。

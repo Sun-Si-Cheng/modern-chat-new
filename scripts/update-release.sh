@@ -84,6 +84,8 @@ fi
 info "解压 …"
 EXTRACT="$TMP/extract"; mkdir -p "$EXTRACT"
 tar -xzf "$TMP/$ASSET" -C "$EXTRACT"
+# 发行包可能在 Windows 上打包（NTFS 无执行位），解压后强制补齐可执行权限
+chmod 755 "$EXTRACT/bin/modernchat-server" "$EXTRACT/scripts/update.sh" 2>/dev/null || true
 
 # 原子替换产物（保留 server/.env、data/、logs/ —— 它们不在包里，天然不被覆盖）
 info "替换后端二进制（老进程继续用老 inode，直到重启）"

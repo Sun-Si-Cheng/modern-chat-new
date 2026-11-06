@@ -405,6 +405,8 @@ stage_done release && ! [ "$FORCE" = "1" ] && { skip_stage "下载发行版" rel
     mkdir -p "$INSTALL_DIR"
   fi
   tar -xzf "$INSTALL_DIR.tmp/$ASSET" -C "$INSTALL_DIR"
+  # 发行包可能在 Windows 上打包（NTFS 无执行位），解压后强制补齐可执行权限
+  chmod 755 "$INSTALL_DIR/bin/modernchat-server" "$INSTALL_DIR/scripts/update.sh" 2>/dev/null || true
   rm -rf "$INSTALL_DIR.tmp"
   info "发行包已就位：bin/ + web/dist/ + server/migrations/ + scripts/update.sh"
 }

@@ -375,6 +375,10 @@ func replaceProduct(root, extract string) error {
 		if err := os.Rename(newBin, filepath.Join(root, "bin", "modernchat-server")); err != nil {
 			return err
 		}
+		// 发行包可能在 Windows 上打包（NTFS 无执行位），补齐可执行权限
+		if err := os.Chmod(filepath.Join(root, "bin", "modernchat-server"), 0o755); err != nil {
+			return err
+		}
 	}
 	// 前端：dist.new → 原子交换
 	if newDist := filepath.Join(extract, "web", "dist"); dirExists(newDist) {
