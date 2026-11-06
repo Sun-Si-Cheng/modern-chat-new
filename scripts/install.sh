@@ -202,6 +202,9 @@ fi
 # 端口问答被跳过、BACKEND_PORT 为空，systemd 启用的实例名变成 modernchat@.service 而失败
 [ -n "$SITE_PORT" ]    || { ask "站点端口（nginx 对外端口）" "80"; SITE_PORT="$REPLY"; }
 [ -n "$BACKEND_PORT" ] || { ask "后端服务端口（仅本机访问）" "8080"; BACKEND_PORT="$REPLY"; }
+# 兜底：无论 state 里存了什么（旧版断点可能存空值），端口绝不允许为空
+[ -n "$SITE_PORT" ]    || SITE_PORT=80
+[ -n "$BACKEND_PORT" ] || BACKEND_PORT=8080
 
 if [ -z "${DB_MODE:-}" ]; then
   echo >&2
@@ -492,6 +495,9 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 UNIT
     systemctl daemon-reload
+    # 兜底：发行包可能来自无执行位的打包平台（NTFS），启动前强制补齐
+    chmod 755 "$INSTALL_DIR/bin/modernchat-server" 2>/dev/null || true
+    chmod 755 "$INSTALL_DIR/scripts/update.sh" 2>/dev/null || true
     systemctl enable --now "modernchat@$BACKEND_PORT.service"
     RUN_MODE="systemd"
     # 热更新状态文件：BASE_PORT 固定基准，ACTIVE_PORT 当前服务端口（update.sh 维护）
