@@ -313,9 +313,9 @@ export default {
     title: '通知中心',
     friendRequests: '好友申请',
     friendRequestBody: '{name} 申请加你为好友',
-    mentions: '有人@我',
+    mentions: "有人{'@'}我",
     emptyTitle: '暂无新通知',
-    empty: '有人@你或收到好友申请时会出现在这里',
+    empty: "有人{'@'}你或收到好友申请时会出现在这里",
   },
   join: {
     title: '加入群聊',
