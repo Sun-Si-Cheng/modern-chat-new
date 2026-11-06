@@ -726,6 +726,8 @@ export default {
       'This will pull the latest version from the repository, build it locally and restart the service. Takes about 1-5 minutes; messaging pauses briefly. Continue?',
     updateStarted: 'Update task started',
     updateUpToDate: 'Already up to date',
+    retry: 'Retry',
+    updateBackendOld: 'Backend is outdated (no update API). Run scripts/update.sh on the server or redeploy the backend first, then refresh this page.',
   },
   layout: {
     resizeGroup: 'Drag to resize the group pane',

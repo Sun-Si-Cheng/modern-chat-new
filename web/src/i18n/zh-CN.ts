@@ -727,6 +727,8 @@ export default {
       '将从代码仓库拉取最新版本并在本机编译后自动重启服务。过程约 1-5 分钟，期间消息收发短暂中断。确定继续吗？',
     updateStarted: '更新任务已启动',
     updateUpToDate: '已是最新版本',
+    retry: '重试',
+    updateBackendOld: '后端版本过旧（不含在线更新接口），请先在服务器执行 scripts/update.sh 或重新部署后端，再刷新本页。',
   },
   layout: {
     resizeGroup: '拖动调整分组栏宽度',

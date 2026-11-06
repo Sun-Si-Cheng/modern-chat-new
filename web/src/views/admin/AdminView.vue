@@ -12,6 +12,7 @@ import { DialogPlugin, MessagePlugin, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
+import { ApiError } from '@/api/client'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { markAnnouncementSeen } from '@/composables/announcement'
 import {
@@ -257,6 +258,9 @@ const updateStatus = ref<AdminUpdateStatus | null>(null)
 const updateCheck = ref<AdminUpdateCheck | null>(null)
 const updateChecking = ref(false)
 const updateStarting = ref(false)
+/** 状态接口失败：必须显式给错误态 + 重试，否则页签永远停在「加载中」 */
+const updateLoadFailed = ref(false)
+const updateLoadError = ref('')
 let updateTimer: ReturnType<typeof setTimeout> | null = null
 
 const updateBusy = computed(() => updateStatus.value?.busy === true)
@@ -288,8 +292,18 @@ function scheduleUpdatePolling() {
 async function fetchUpdateStatus() {
   try {
     updateStatus.value = await adminApi.updateStatus()
+    updateLoadFailed.value = false
+    updateLoadError.value = ''
   } catch (e) {
-    void MessagePlugin.error(te(e))
+    updateLoadFailed.value = true
+    updateLoadError.value = te(e)
+    // 404 几乎必然是后端版本过旧（不含 update 接口）：给明确指引而不是笼统错误
+    if (e instanceof ApiError && e.status === 404) {
+      updateLoadError.value = t('admin.updateBackendOld')
+      void MessagePlugin.warning(updateLoadError.value)
+    } else {
+      void MessagePlugin.error(te(e))
+    }
     return
   }
   // 刚触发过重启：busy 结束且 phase=restarting → 服务已重启，刷新新版本信息
@@ -1668,6 +1682,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           <!-- 更新日志 -->
           <pre v-if="updateStatus.lines.length" class="mc-admin__update-log">{{ updateStatus.lines.join('\n') }}</pre>
         </template>
+
+        <!-- 状态接口失败：显式错误 + 重试（绝不无限转圈） -->
+        <div v-else-if="updateLoadFailed" class="mc-admin__update-block">
+          <p class="mc-admin__hint">{{ updateLoadError }}</p>
+          <UiButton size="small" variant="outline" @click="fetchUpdateStatus">
+            {{ t('admin.retry') }}
+          </UiButton>
+        </div>
 
         <p v-else class="text-placeholder">{{ t('admin.loading') }}</p>
       </div>
