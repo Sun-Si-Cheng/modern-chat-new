@@ -699,6 +699,34 @@ export default {
     enabledOk: '已恢复',
     disabledTag: '已下架',
     globalNormal: '正常',
+    // 在线更新
+    tabUpdates: '在线更新',
+    updateHint:
+      '从代码仓库拉取最新版本并在本机编译，随后自动重启服务。仅支持一键安装（systemd）部署；Docker / 裸机请用服务器上的 scripts/update.sh。',
+    updateUnavailable:
+      '当前部署方式不支持在线更新（需要 scripts/install.sh 的 systemd 部署）。Docker / 裸机请用服务器上的 scripts/update.sh。',
+    updateCurrent: '当前版本',
+    updatePhase: '任务状态',
+    updateError: '最近错误',
+    updatePhase_idle: '空闲',
+    updatePhase_pulling: '拉取代码',
+    updatePhase_building: '编译中',
+    updatePhase_swapping: '切换产物',
+    updatePhase_restarting: '重启服务',
+    updatePhase_done: '更新完成',
+    updatePhase_failed: '更新失败',
+    updateCheckNow: '检查更新',
+    updateRefresh: '刷新状态',
+    updateRemoteVersion: '最新版本',
+    updateRemoteMsg: '最新提交',
+    updateStart: '立即更新',
+    updateStartHint:
+      '更新期间服务短暂重启，在线用户会自动重连；消息不会丢失。构建约需 1-5 分钟。',
+    updateConfirmTitle: '确认在线更新',
+    updateConfirmBody:
+      '将从代码仓库拉取最新版本并在本机编译后自动重启服务。过程约 1-5 分钟，期间消息收发短暂中断。确定继续吗？',
+    updateStarted: '更新任务已启动',
+    updateUpToDate: '已是最新版本',
   },
   layout: {
     resizeGroup: '拖动调整分组栏宽度',

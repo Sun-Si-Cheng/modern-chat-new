@@ -143,6 +143,19 @@ func main() {
 		slog.Info("web push enabled")
 	}
 
+	// 图形化更新（站长后台）：WEB_UPDATE=false 关闭；Docker / 裸机部署
+	// 由 Updater.Available() 内部检测（需 .git + systemd 模板单元）自动不可用。
+	var updater *service.Updater
+	if cfg.WebUpdate {
+		updater = service.Detect()
+		if updater.Available() {
+			slog.Info("web update enabled", "root", updater.RootDir(), "port", updater.Port())
+		}
+	} else {
+		updater = service.NewUpdater("", cfg.Port)
+		slog.Info("web update disabled (WEB_UPDATE=false)")
+	}
+
 	// WebSocket Hub
 	hub := ws.NewHub(&ws.Deps{
 		Convs:      store.NewConversationStore(db),
@@ -170,6 +183,7 @@ func main() {
 		Push:          pushService,
 		AuthLimiter:   authLimiter,
 		PluginLimiter: pluginLimiter,
+		Updater:       updater,
 	})
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}

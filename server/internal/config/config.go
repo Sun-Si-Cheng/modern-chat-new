@@ -32,6 +32,8 @@ type Config struct {
 	BackupRetain int
 	// MysqldumpPath mysqldump 可执行文件路径（默认取 PATH）
 	MysqldumpPath string
+	// WebUpdate 站长后台图形化更新开关（WEB_UPDATE，默认开）
+	WebUpdate bool
 	// Web Push（VAPID）；两项都配置才启用
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
@@ -81,6 +83,9 @@ func Load() (Config, error) {
 		BackupIntervalHours: int(geti("BACKUP_INTERVAL_HOURS", 0)),
 		BackupRetain:        int(geti("BACKUP_RETAIN", 7)),
 		MysqldumpPath:       getv("MYSQLDUMP_PATH", "mysqldump"),
+		// WebUpdate 站长后台图形化更新开关（默认开）。关闭后 /api/admin/update/*
+		// 一律不可用；仅支持 install.sh 的 systemd 部署，Docker / 裸机自动不可用。
+		WebUpdate: getBool("WEB_UPDATE", true),
 		VAPIDPublicKey:      getv("VAPID_PUBLIC_KEY", ""),
 		VAPIDPrivateKey:     getv("VAPID_PRIVATE_KEY", ""),
 		VAPIDSubject:        getv("VAPID_SUBJECT", "mailto:admin@localhost"),

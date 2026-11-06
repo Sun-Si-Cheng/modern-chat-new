@@ -6,7 +6,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { DialogPlugin, MessagePlugin, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
@@ -21,6 +21,8 @@ import {
   type AdminPluginRow,
   type AdminSettingsPayload,
   type AdminStats,
+  type AdminUpdateCheck,
+  type AdminUpdateStatus,
   type AdminUserDetail,
   type AdminUserRow,
   type BackupFile,
@@ -34,7 +36,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-type AdminTab = 'users' | 'plugins' | 'audits' | 'invites' | 'settings'
+type AdminTab = 'users' | 'plugins' | 'audits' | 'invites' | 'settings' | 'updates'
 const tab = ref<AdminTab>('users')
 
 /**
@@ -65,6 +67,8 @@ function switchTab(next: AdminTab) {
   if (next === 'settings' && !settingsLoaded.value && !settingsLoading.value) {
     void fetchSettings()
   }
+  // 更新页签：进入时拉状态（available/phase 决定界面形态）
+  if (next === 'updates') void fetchUpdateStatus()
 }
 
 const tabItems = computed<Array<{ value: AdminTab; label: string }>>(() => [
@@ -73,6 +77,7 @@ const tabItems = computed<Array<{ value: AdminTab; label: string }>>(() => [
   { value: 'audits', label: t('admin.tabAudits') },
   { value: 'invites', label: t('admin.tabInvites') },
   { value: 'settings', label: t('admin.tabSettings') },
+  { value: 'updates', label: t('admin.tabUpdates') },
 ])
 
 // ---- 注册邀请码 ----
@@ -246,6 +251,92 @@ const backupDir = ref('')
 const backups = ref<BackupFile[]>([])
 const storageBusy = ref(false)
 const backupBusy = ref(false)
+
+// ---- 在线更新（图形化） ----
+const updateStatus = ref<AdminUpdateStatus | null>(null)
+const updateCheck = ref<AdminUpdateCheck | null>(null)
+const updateChecking = ref(false)
+const updateStarting = ref(false)
+let updateTimer: ReturnType<typeof setTimeout> | null = null
+
+const updateBusy = computed(() => updateStatus.value?.busy === true)
+const updateAvailable = computed(() => updateStatus.value?.available === true)
+/** 显示的版本信息：更新前用 buildInfo（tag · commit），更新完成后用服务端返回的新值 */
+const updateVersionText = computed(() => {
+  const s = updateStatus.value
+  if (s && s.version && s.version !== 'dev') return `${s.version} · ${s.commit}`
+  return buildInfo.value ? `${buildInfo.value.version} · ${buildInfo.value.commit}` : '—'
+})
+
+function stopUpdatePolling() {
+  if (updateTimer) {
+    clearTimeout(updateTimer)
+    updateTimer = null
+  }
+}
+
+/** 更新进行中每 2 秒轮询状态；空闲时停轮询 */
+function scheduleUpdatePolling() {
+  stopUpdatePolling()
+  if (tab.value !== 'updates' || !updateBusy.value) return
+  updateTimer = setTimeout(async () => {
+    await fetchUpdateStatus()
+    scheduleUpdatePolling()
+  }, 2000)
+}
+
+async function fetchUpdateStatus() {
+  try {
+    updateStatus.value = await adminApi.updateStatus()
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+    return
+  }
+  // 刚触发过重启：busy 结束且 phase=restarting → 服务已重启，刷新新版本信息
+  scheduleUpdatePolling()
+}
+
+async function checkUpdate() {
+  updateChecking.value = true
+  try {
+    updateCheck.value = await adminApi.updateCheck()
+    if (updateCheck.value.upToDate) {
+      void MessagePlugin.success(t('admin.updateUpToDate'))
+    }
+  } catch (e) {
+    void MessagePlugin.error(te(e))
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+function startUpdate() {
+  const dlg = DialogPlugin.confirm({
+    header: t('admin.updateConfirmTitle'),
+    body: t('admin.updateConfirmBody'),
+    confirmBtn: { content: t('admin.updateStart'), theme: 'primary' },
+    cancelBtn: t('common.cancel'),
+    onConfirm: async () => {
+      updateStarting.value = true
+      try {
+        await adminApi.updateStart()
+        updateCheck.value = null
+        await fetchUpdateStatus()
+        scheduleUpdatePolling()
+        void MessagePlugin.success(t('admin.updateStarted'))
+        dlg.destroy()
+      } catch (e) {
+        void MessagePlugin.error(te(e))
+        updateStarting.value = false
+        dlg.destroy()
+      }
+    },
+    onClose: () => dlg.destroy(),
+  })
+}
+
+onBeforeUnmount(stopUpdatePolling)
+
 
 function fmtBytes(n: number): string {
   if (!n) return '0 B'
@@ -1499,6 +1590,87 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
           </UiButton>
         </div>
       </div>
+
+      <!-- 在线更新（图形化） -->
+      <div v-if="tab === 'updates'" class="mc-admin__panel" role="tabpanel">
+        <p class="mc-admin__hint text-placeholder">{{ t('admin.updateHint') }}</p>
+
+        <!-- 部署方式不支持 -->
+        <div v-if="updateStatus && !updateAvailable" class="mc-admin__update-block">
+          <p class="text-placeholder">{{ t('admin.updateUnavailable') }}</p>
+        </div>
+
+        <template v-else-if="updateStatus">
+          <div class="mc-admin__update-block">
+            <div class="mc-admin__update-row">
+              <span>{{ t('admin.updateCurrent') }}</span>
+              <span class="num">{{ updateVersionText }}</span>
+            </div>
+            <div class="mc-admin__update-row">
+              <span>{{ t('admin.updatePhase') }}</span>
+              <span class="num">
+                <UiTag
+                  :theme="updateStatus.phase === 'failed' ? 'danger' : updateBusy ? 'warning' : 'success'"
+                  variant="light"
+                  size="small"
+                >
+                  {{ t(`admin.updatePhase_${updateStatus.phase}`, { defaultValue: updateStatus.phase }) }}
+                </UiTag>
+              </span>
+            </div>
+            <div v-if="updateStatus.error" class="mc-admin__update-row">
+              <span>{{ t('admin.updateError') }}</span>
+              <span class="mc-admin__audit-detail">{{ updateStatus.error }}</span>
+            </div>
+          </div>
+
+          <!-- 检查结果 -->
+          <div v-if="updateCheck" class="mc-admin__update-block">
+            <template v-if="updateCheck.upToDate">
+              <p class="mc-admin__hint">{{ t('admin.updateUpToDate') }}</p>
+            </template>
+            <template v-else>
+              <div class="mc-admin__update-row">
+                <span>{{ t('admin.updateRemoteVersion') }}</span>
+                <span class="num">{{ updateCheck.remoteTag }} · {{ updateCheck.remote }}</span>
+              </div>
+              <div class="mc-admin__update-row">
+                <span>{{ t('admin.updateRemoteMsg') }}</span>
+                <span>{{ updateCheck.remoteMsg }}</span>
+              </div>
+              <UiButton
+                theme="primary"
+                :loading="updateStarting"
+                :disabled="updateBusy"
+                @click="startUpdate"
+              >
+                {{ t('admin.updateStart') }}
+              </UiButton>
+              <p class="mc-admin__hint text-placeholder">{{ t('admin.updateStartHint') }}</p>
+            </template>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="mc-admin__ops">
+            <UiButton size="small" variant="outline" :loading="updateChecking" :disabled="updateBusy" @click="checkUpdate">
+              {{ t('admin.updateCheckNow') }}
+            </UiButton>
+            <UiButton
+              size="small"
+              variant="outline"
+              :disabled="updateBusy"
+              @click="() => { fetchUpdateStatus(); scheduleUpdatePolling() }"
+            >
+              {{ t('admin.updateRefresh') }}
+            </UiButton>
+          </div>
+
+          <!-- 更新日志 -->
+          <pre v-if="updateStatus.lines.length" class="mc-admin__update-log">{{ updateStatus.lines.join('\n') }}</pre>
+        </template>
+
+        <p v-else class="text-placeholder">{{ t('admin.loading') }}</p>
+      </div>
     </div>
 
     <!-- 封禁弹窗 -->
@@ -2057,6 +2229,40 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+/* ===== 在线更新 ===== */
+.mc-admin__update-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--mc-hairline);
+  border-radius: var(--mc-radius-md);
+}
+.mc-admin__update-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.mc-admin__update-row > span:first-child {
+  color: var(--td-text-color-placeholder);
+  flex-shrink: 0;
+  min-width: 90px;
+}
+.mc-admin__update-log {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: var(--mc-radius-md);
 }
 
 /* ===== 用户详情 ===== */

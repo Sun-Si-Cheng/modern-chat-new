@@ -355,6 +355,31 @@ export const adminApi = {
     http.post<InviteCode[]>('/admin/invites', body),
   disableInvite: (id: number, disabled: boolean) =>
     http.post<{ ok: true }>(`/admin/invites/${id}/disable`, { disabled }),
+
+  /** 在线更新（图形化；仅 install.sh 的 systemd 部署可用） */
+  updateStatus: () => http.get<AdminUpdateStatus>('/admin/update/status'),
+  updateCheck: () => http.get<AdminUpdateCheck>('/admin/update/check'),
+  updateStart: () => http.post<{ started: true }>('/admin/update/start'),
+}
+
+/** 在线更新：状态快照（前端轮询） */
+export interface AdminUpdateStatus {
+  available: boolean
+  busy: boolean
+  phase: string // idle / pulling / building / swapping / restarting / done / failed
+  lines: string[]
+  error?: string
+  version: string
+  commit: string
+}
+
+/** 在线更新：检查结果 */
+export interface AdminUpdateCheck {
+  upToDate: boolean
+  local: string
+  remote: string
+  remoteTag: string
+  remoteMsg: string
 }
 
 /** 注册邀请码 */

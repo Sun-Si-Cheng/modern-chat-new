@@ -1795,6 +1795,66 @@ func TestAdminOverview(t *testing.T) {
 	}
 }
 
+// TestAdminUpdate 在线更新接口：鉴权（未登录 401 / 非站长 403）与不可用环境兜底。
+// 测试环境没有 systemd 模板单元与 .git 仓库，available=false → check/start 应 400；
+// status 始终 200（前端靠它判断界面形态）。
+func TestAdminUpdate(t *testing.T) {
+	e := setup(t)
+	token, admin := register(t, e, "upd-admin")
+	if admin.Role != "admin" {
+		t.Fatalf("首个注册者应为 admin，got %s", admin.Role)
+	}
+	bobToken, _ := register(t, e, "upd-bob")
+
+	call := func(method, path, asToken string) (int, map[string]any) {
+		t.Helper()
+		req, err := http.NewRequest(method, e.ts.URL+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		if asToken != "" {
+			req.Header.Set("Authorization", "Bearer "+asToken)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+
+	// 1) 未登录 401
+	code, _ := call(http.MethodGet, "/api/admin/update/status", "")
+	if code != http.StatusUnauthorized {
+		t.Fatalf("无 token 应 401，got %d", code)
+	}
+
+	// 2) 非站长 403
+	code, _ = call(http.MethodGet, "/api/admin/update/status", bobToken)
+	if code != http.StatusForbidden {
+		t.Fatalf("普通用户应 403，got %d", code)
+	}
+
+	// 3) 测试环境（无 systemd 单元 / 无 .git）：available=false，check/start 400
+	code, st := call(http.MethodGet, "/api/admin/update/status", token)
+	if code != http.StatusOK {
+		t.Fatalf("status 应 200，got %d", code)
+	}
+	if v, ok := st["available"].(bool); ok && v {
+		t.Fatalf("测试环境不应报告 available=true：%v", st)
+	}
+	code, _ = call(http.MethodGet, "/api/admin/update/check", token)
+	if code != http.StatusBadRequest {
+		t.Fatalf("不可用环境 check 应 400，got %d", code)
+	}
+	code, _ = call(http.MethodPost, "/api/admin/update/start", token)
+	if code != http.StatusBadRequest {
+		t.Fatalf("不可用环境 start 应 400，got %d", code)
+	}
+}
+
 // TestAdminActions 角色调整 / 全站公告 / 按插件名强制卸载 / 操作审计。
 func TestAdminActions(t *testing.T) {
 	e := setup(t)

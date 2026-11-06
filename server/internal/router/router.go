@@ -33,6 +33,8 @@ type Deps struct {
 	Storage  service.Storage
 	// Backup 备份服务（可为 nil：测试环境或未启用）
 	Backup *service.BackupService
+	// Updater 站长后台图形化更新（可为 nil：测试环境；Docker / 裸机自动不可用）
+	Updater *service.Updater
 	// Push Web Push 服务（可为 nil 或未配置，此时前端显示「未启用」）
 	Push *service.PushService
 }
@@ -281,6 +283,12 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/storage/gc", opsH.GC)
 		admin.GET("/backups", opsH.Backups)
 		admin.POST("/backups", opsH.RunBackup)
+
+		// 在线更新（图形化；Docker / 裸机部署自动不可用，WEB_UPDATE=false 可整体关闭）
+		updateH := handler.NewAdminUpdateHandler(d.Updater, audits)
+		admin.GET("/update/status", updateH.Status)
+		admin.GET("/update/check", updateH.Check)
+		admin.POST("/update/start", updateH.Start)
 	}
 
 	// WebSocket（握手自行校验 JWT 与 Origin，不走中间件组）

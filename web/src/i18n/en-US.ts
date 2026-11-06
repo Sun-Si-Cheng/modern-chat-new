@@ -698,6 +698,34 @@ export default {
     enabledOk: 'Restored',
     disabledTag: 'Disabled',
     globalNormal: 'Active',
+    // Online update
+    tabUpdates: 'Updates',
+    updateHint:
+      'Pulls the latest release from the repository, builds it locally and restarts the service. Only available for scripts/install.sh (systemd) deployments; use scripts/update.sh on the server for Docker / bare-metal.',
+    updateUnavailable:
+      'Online update is not available for this deployment (requires scripts/install.sh with systemd). Use scripts/update.sh on the server for Docker / bare-metal.',
+    updateCurrent: 'Current version',
+    updatePhase: 'Task state',
+    updateError: 'Last error',
+    updatePhase_idle: 'Idle',
+    updatePhase_pulling: 'Pulling',
+    updatePhase_building: 'Building',
+    updatePhase_swapping: 'Swapping',
+    updatePhase_restarting: 'Restarting',
+    updatePhase_done: 'Up to date',
+    updatePhase_failed: 'Failed',
+    updateCheckNow: 'Check for updates',
+    updateRefresh: 'Refresh status',
+    updateRemoteVersion: 'Latest version',
+    updateRemoteMsg: 'Latest commit',
+    updateStart: 'Update now',
+    updateStartHint:
+      'The service restarts briefly during the update; online users reconnect automatically and no messages are lost. Build takes about 1-5 minutes.',
+    updateConfirmTitle: 'Confirm online update',
+    updateConfirmBody:
+      'This will pull the latest version from the repository, build it locally and restart the service. Takes about 1-5 minutes; messaging pauses briefly. Continue?',
+    updateStarted: 'Update task started',
+    updateUpToDate: 'Already up to date',
   },
   layout: {
     resizeGroup: 'Drag to resize the group pane',
