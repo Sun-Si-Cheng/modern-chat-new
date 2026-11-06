@@ -34,6 +34,10 @@ type Config struct {
 	MysqldumpPath string
 	// WebUpdate 站长后台图形化更新开关（WEB_UPDATE，默认开）
 	WebUpdate bool
+	// ReleaseAPIURL / ReleaseDLURL 发行版模式：releases/latest API 与下载前缀
+	// （RELEASE_API_URL / RELEASE_DL_URL，install.sh 写入 .env）。都为空 = 源码 git 模式。
+	ReleaseAPIURL string
+	ReleaseDLURL  string
 	// Web Push（VAPID）；两项都配置才启用
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
@@ -86,6 +90,9 @@ func Load() (Config, error) {
 		// WebUpdate 站长后台图形化更新开关（默认开）。关闭后 /api/admin/update/*
 		// 一律不可用；仅支持 install.sh 的 systemd 部署，Docker / 裸机自动不可用。
 		WebUpdate: getBool("WEB_UPDATE", true),
+		// 发行版模式（install.sh 写入 .env）：非空即从 Release 下载预编译包更新
+		ReleaseAPIURL: os.Getenv("RELEASE_API_URL"),
+		ReleaseDLURL:  os.Getenv("RELEASE_DL_URL"),
 		VAPIDPublicKey:      getv("VAPID_PUBLIC_KEY", ""),
 		VAPIDPrivateKey:     getv("VAPID_PRIVATE_KEY", ""),
 		VAPIDSubject:        getv("VAPID_SUBJECT", "mailto:admin@localhost"),

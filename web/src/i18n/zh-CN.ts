@@ -701,6 +701,8 @@ export default {
     globalNormal: '正常',
     // 在线更新
     tabUpdates: '在线更新',
+    updateModeRelease: '更新方式：下载发行版（无需本机编译）',
+    updateModeSource: '更新方式：源码编译（需要服务器已安装 Go / Node）',
     updateHint:
       '从代码仓库拉取最新版本并在本机编译，随后自动重启服务。仅支持一键安装（systemd）部署；Docker / 裸机请用服务器上的 scripts/update.sh。',
     updateUnavailable:

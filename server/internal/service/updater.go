@@ -2,10 +2,16 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -13,43 +19,49 @@ import (
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version"
 )
 
-// Updater 站长后台的图形化更新（web update）。
+// Updater 站长后台的图形化更新（web update）。两种模式：
 //
-// 安全边界（设计文档原稿反对应用内升级，用户明确要求提供；此实现收敛风险面）：
+//   - 发行版模式（RELEASE_API_URL / RELEASE_DL_URL 已配置，install.sh 默认）：
+//     从 GitHub / Gitee Release 下载预编译包 → sha256 校验 → 原子替换产物 → 重启。
+//     服务器无需 Go / Node / git。
+//   - 源码模式（两者为空，git clone 部署）：git pull → 本地编译 → 原子替换 → 重启。
+//
+// 共同安全边界（设计文档原稿反对应用内升级，用户明确要求提供；此实现收敛风险面）：
 //   - 仅站长可触发（router 的 Admin 中间件），操作写审计；
-//   - 命令全部为固定参数（分支固定 origin/main，不接收任何用户输入的路径/命令）；
-//   - 仅支持 install.sh 的 systemd 模板单元部署（进程内检测 unit 与 .git）；
-//     Docker / 裸机直接返回"不可用"，避免在容器里半更新；
+//   - 命令/URL 全部固定（发行版模式只请求配置好的 API 与下载前缀，版本号来自
+//     Release 服务端返回；源码模式分支锁 origin/main），无用户输入注入面；
+//   - 仅支持 install.sh 的 systemd 模板单元部署（进程内检测），Docker / 裸机
+//     直接返回"不可用"，避免在容器里半更新；
 //   - WEB_UPDATE=false 可整体关闭。
-//
-// 流程与 scripts/update.sh 的热更新一致：git pull → go build 临时名 + mv 原子替换
-// → npm ci + vite build dist.new + 预压缩 → dist 原子交换 → systemctl restart
-// 当前端口实例（SIGTERM 优雅停机，客户端断线重连）。
 type Updater struct {
-	rootDir string // 仓库根（server 的父目录）
+	rootDir string // 仓库根 / 安装目录（server 的父目录）
 	port    string // 当前实例端口（systemd 单元名 modernchat@<port>）
 
-	mu    sync.Mutex
-	busy  bool
-	phase string // idle / checking / pulling / building / swapping / restarting / done / failed
-	lines []string
+	// 发行版模式（两者都非空时启用；源码模式两者为空）
+	releaseAPI string // releases/latest API（Gitee / GitHub）
+	releaseDL  string // 下载前缀（…/releases/download）
+
+	mu     sync.Mutex
+	busy   bool
+	phase  string // idle / checking / pulling / building / swapping / restarting / done / failed
+	lines  []string
 	errMsg string
 }
 
 const maxLogLines = 600
 
-// NewUpdater rootDir 为仓库根；port 为当前实例监听端口。
-func NewUpdater(rootDir string, port string) *Updater {
-	return &Updater{rootDir: rootDir, port: port, phase: "idle"}
+// NewUpdater rootDir 为安装目录；releaseAPI/releaseDL 传空 = 源码模式。
+func NewUpdater(rootDir string, port string, releaseAPI string, releaseDL string) *Updater {
+	return &Updater{rootDir: rootDir, port: port, releaseAPI: releaseAPI, releaseDL: releaseDL, phase: "idle"}
 }
 
-// Detect 从进程工作目录推断仓库根（install.sh 的 WorkingDirectory 是 <root>/server）。
+// Detect 源码模式：从进程工作目录推断仓库根（install.sh 的 WorkingDirectory 是 <root>/server）。
 func Detect() *Updater {
 	wd, err := os.Getwd()
 	if err != nil {
-		return NewUpdater("", "8080")
+		return NewUpdater("", "", "", "")
 	}
-	return NewUpdater(filepath.Dir(wd), os.Getenv("PORT"))
+	return NewUpdater(filepath.Dir(wd), os.Getenv("PORT"), "", "")
 }
 
 // statusView 传给 handler 的快照。
@@ -61,33 +73,50 @@ type StatusView struct {
 	Error     string   `json:"error,omitempty"`
 	Version   string   `json:"version"`
 	Commit    string   `json:"commit"`
+	Mode      string   `json:"mode"` // release | source
 }
+
+func (u *Updater) isReleaseMode() bool { return u.releaseAPI != "" && u.releaseDL != "" }
 
 func (u *Updater) rootDirOK() bool {
 	if u.rootDir == "" {
 		return false
 	}
-	// 必须同时具备：git 仓库 + systemd 模板单元（restart 是唯一可靠的自重启方式）
-	if _, err := os.Stat(filepath.Join(u.rootDir, ".git")); err != nil {
-		return false
-	}
+	// systemd 模板单元是自重启的唯一可靠方式，两种模式都必须存在
 	if _, err := os.Stat("/etc/systemd/system/modernchat@.service"); err != nil {
 		return false
 	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		return false
 	}
-	return true
+	if u.isReleaseMode() {
+		// 发行版：安装目录 + 后端二进制存在即可
+		if _, err := os.Stat(filepath.Join(u.rootDir, "bin", "modernchat-server")); err != nil {
+			return false
+		}
+		return true
+	}
+	// 源码模式：git 仓库
+	_, err := os.Stat(filepath.Join(u.rootDir, ".git"))
+	return err == nil
 }
 
 // Available 是否支持图形化更新（Docker / 裸机 nohup 部署返回 false）。
 func (u *Updater) Available() bool { return u.rootDirOK() }
 
-// RootDir 仓库根（日志展示用）。
+// RootDir 安装目录（日志展示用）。
 func (u *Updater) RootDir() string { return u.rootDir }
 
 // Port 当前实例端口。
 func (u *Updater) Port() string { return u.port }
+
+// Mode 更新模式名。
+func (u *Updater) Mode() string {
+	if u.isReleaseMode() {
+		return "release"
+	}
+	return "source"
+}
 
 // Status 当前状态快照。
 func (u *Updater) Status() StatusView {
@@ -101,21 +130,22 @@ func (u *Updater) Status() StatusView {
 		Phase:     u.phase,
 		Lines:     lines,
 		Error:     u.errMsg,
-		Version:   version.Version,
-		Commit:    version.Commit,
+		Version:   version.Current().Version,
+		Commit:    version.Current().Commit,
+		Mode:      u.Mode(),
 	}
 }
 
 // CheckResult 检查更新结果。
 type CheckResult struct {
-	UpToDate   bool   `json:"upToDate"`
-	Local      string `json:"local"`
-	Remote     string `json:"remote"`
-	RemoteTag  string `json:"remoteTag"`
-	RemoteMsg  string `json:"remoteMsg"`
+	UpToDate  bool   `json:"upToDate"`
+	Local     string `json:"local"`
+	Remote    string `json:"remote"`
+	RemoteTag string `json:"remoteTag"`
+	RemoteMsg string `json:"remoteMsg"`
 }
 
-// Check 从远端拉取并比较 HEAD 与 origin/main。同步执行（fetch 超时 60s）。
+// Check 检查是否有新版本。发行版模式查询 Release API；源码模式对比 origin/main。
 func (u *Updater) Check() (CheckResult, error) {
 	var res CheckResult
 	if !u.rootDirOK() {
@@ -127,6 +157,19 @@ func (u *Updater) Check() (CheckResult, error) {
 		return res, fmt.Errorf("有更新任务正在进行中")
 	}
 	u.mu.Unlock()
+
+	if u.isReleaseMode() {
+		tag, name, err := u.latestRelease()
+		if err != nil {
+			return res, err
+		}
+		res.RemoteTag = tag
+		res.RemoteMsg = name
+		res.Remote = tag
+		res.Local = version.Current().Version
+		res.UpToDate = tag == "" || tag == version.Current().Version
+		return res, nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -168,11 +211,296 @@ func (u *Updater) Start() bool {
 	u.lines = nil
 	u.mu.Unlock()
 
-	go u.runUpdate()
+	if u.isReleaseMode() {
+		go u.runReleaseUpdate()
+	} else {
+		go u.runSourceUpdate()
+	}
 	return true
 }
 
-func (u *Updater) runUpdate() {
+// ==================== 发行版模式 ====================
+
+type releaseInfo struct {
+	TagName string `json:"tag_name"`
+	Name    string `json:"name"`
+}
+
+// latestRelease 查询最新 Release 的 tag 与名称。
+func (u *Updater) latestRelease() (tag string, name string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.releaseAPI, nil)
+	if err != nil {
+		return "", "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("查询 Release 失败：%w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("查询 Release 失败：HTTP %d", resp.StatusCode)
+	}
+	var info releaseInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", "", fmt.Errorf("解析 Release 响应失败：%w", err)
+	}
+	if info.TagName == "" {
+		return "", "", fmt.Errorf("仓库还没有发布任何 Release")
+	}
+	return info.TagName, info.Name, nil
+}
+
+// goArch 当前进程架构映射（发行包资产命名用）。
+func goArch() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "arm64"
+	default:
+		return "amd64"
+	}
+}
+
+func (u *Updater) runReleaseUpdate() {
+	defer func() {
+		u.mu.Lock()
+		if u.phase != "restarting" && u.phase != "failed" {
+			u.phase = "done"
+			u.busy = false
+		}
+		u.mu.Unlock()
+	}()
+
+	u.log("==> 查询最新 Release")
+	tag, _, err := u.latestRelease()
+	if err != nil {
+		u.fail("%v", err)
+		return
+	}
+	if tag == version.Current().Version {
+		u.fail("已是最新版本（%s），无需更新", tag)
+		return
+	}
+
+	asset := fmt.Sprintf("modernchat-%s-linux-%s.tar.gz", strings.TrimPrefix(tag, "v"), goArch())
+	url := strings.TrimSuffix(u.releaseDL, "/") + "/" + tag + "/" + asset
+	tmp, err := os.MkdirTemp("", "mc-update-")
+	if err != nil {
+		u.fail("创建临时目录失败：%v", err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+
+	archive := filepath.Join(tmp, asset)
+	u.log("%s", "==> 下载 "+asset)
+	if err := u.download(url, archive); err != nil {
+		u.fail("下载失败：%v", err)
+		return
+	}
+
+	// sha256 校验（发布时附带 .sha256 附件）
+	sumURL := url + ".sha256"
+	u.log("==> 校验 sha256")
+	if expected, err := u.fetchText(sumURL); err == nil && strings.TrimSpace(expected) != "" {
+		f, err := os.Open(archive)
+		if err != nil {
+			u.fail("打开下载文件失败：%v", err)
+			return
+		}
+		h := sha256.New()
+		_, _ = io.Copy(h, f)
+		_ = f.Close()
+		actual := hex.EncodeToString(h.Sum(nil))
+		if !strings.HasPrefix(strings.TrimSpace(expected), actual) {
+			u.fail("sha256 不匹配：期望 %s，实际 %s（下载损坏或被篡改）", strings.TrimSpace(expected)[:12], actual[:12])
+			return
+		}
+		u.log("    校验通过")
+	} else {
+		u.log("    （无 .sha256 附件，跳过校验）")
+	}
+
+	u.mu.Lock(); u.phase = "swapping"; u.mu.Unlock()
+
+	// 解压到临时目录
+	extract := filepath.Join(tmp, "extract")
+	if out, err := u.run(context.Background(), tmp, "tar", "-xzf", archive, "-C", extract); err != nil {
+		_ = out
+		u.fail("解压失败：%v", err)
+		return
+	}
+
+	// 原子替换产物（保留 server/.env、data/、logs/ —— 不在包里，天然不被覆盖）
+	u.log("==> 替换产物")
+	if err := replaceProduct(u.rootDir, extract); err != nil {
+		u.fail("产物替换失败：%v", err)
+		return
+	}
+
+	// 重启
+	u.mu.Lock(); u.phase = "restarting"; u.mu.Unlock()
+	u.log("%s", fmt.Sprintf("==> 重启实例 modernchat@%s（优雅停机，客户端自动重连）", u.port))
+	u.log("%s", "==> 更新完成，新版本："+tag)
+	go func() {
+		time.Sleep(1500 * time.Millisecond) // 给 HTTP 响应送达留时间
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		_, _ = u.run(ctx, u.rootDir, "systemctl", "restart", "modernchat@"+u.port+".service")
+		// restart 会停掉本进程；走到这里说明 restart 失败（罕见），进程继续跑旧版本
+	}()
+}
+
+// replaceProduct 用解压出的发行包内容替换安装目录中的产物。
+func replaceProduct(root, extract string) error {
+	// 后端：临时名 + rename（老进程继续用老 inode）
+	newBin := filepath.Join(extract, "bin", "modernchat-server")
+	if _, err := os.Stat(newBin); err == nil {
+		if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(newBin, filepath.Join(root, "bin", "modernchat-server")); err != nil {
+			return err
+		}
+	}
+	// 前端：dist.new → 原子交换
+	if newDist := filepath.Join(extract, "web", "dist"); dirExists(newDist) {
+		if err := os.RemoveAll(filepath.Join(root, "web", "dist.new")); err != nil {
+			return err
+		}
+		if err := os.Rename(newDist, filepath.Join(root, "web", "dist.new")); err != nil {
+			return err
+		}
+		if err := swapDist(filepath.Join(root, "web")); err != nil {
+			return err
+		}
+	}
+	// 迁移 / 部署模板 / 更新脚本：直接覆盖（rename 跨分区时退化为拷贝）
+	for _, rel := range []string{"server/migrations", "deploy", "scripts/update.sh"} {
+		if err := replaceTree(root, extract, rel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// replaceTree 覆盖单个文件/目录；优先 rename（同分区原子），失败退化为拷贝+清理。
+func replaceTree(root, extract, rel string) error {
+	src := filepath.Join(extract, rel)
+	if !dirExists(src) && !fileExists(src) {
+		return nil
+	}
+	dst := filepath.Join(root, rel)
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		// 跨设备（临时目录与安装目录不同分区）：拷贝兜底
+		return copyTree(src, dst)
+	}
+	return nil
+}
+
+func copyTree(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, data, info.Mode().Perm())
+	}
+	if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := copyTree(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// download 下载 URL 到本地文件（10 分钟超时）。
+func (u *Updater) download(url, dst string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d（Release 是否有该架构附件？）", resp.StatusCode)
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
+// fetchText 拉取小文本（sha256 清单）；任何失败返回空串（调用方降级跳过校验）。
+func (u *Updater) fetchText(url string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(data), err
+}
+
+// swapDist dist ↔ dist.new 原子交换（rename 同分区原子；nginx 按路径打开文件）。
+func swapDist(webDir string) error {
+	dist := filepath.Join(webDir, "dist")
+	distNew := filepath.Join(webDir, "dist.new")
+	distOld := filepath.Join(webDir, "dist.old")
+	if _, err := os.Stat(distNew); err != nil {
+		return fmt.Errorf("构建产物缺失：dist.new")
+	}
+	if err := os.RemoveAll(distOld); err != nil {
+		return err
+	}
+	if _, err := os.Stat(dist); err == nil {
+		if err := os.Rename(dist, distOld); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(distNew, dist); err != nil {
+		return err
+	}
+	return os.RemoveAll(distOld)
+}
+
+// ==================== 源码模式 ====================
+
+func (u *Updater) runSourceUpdate() {
 	defer func() {
 		u.mu.Lock()
 		if u.phase != "restarting" && u.phase != "failed" {
@@ -257,33 +585,10 @@ func (u *Updater) runUpdate() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		_, _ = u.run(ctx, root, "systemctl", "restart", "modernchat@"+u.port+".service")
-		// restart 会停掉本进程；如果走到这里说明 restart 失败（罕见），进程继续跑旧版本
 	}()
 }
 
-// swapDist dist ↔ dist.new 原子交换（rename 同分区原子；nginx 按路径打开文件）。
-func swapDist(webDir string) error {
-	dist := filepath.Join(webDir, "dist")
-	distNew := filepath.Join(webDir, "dist.new")
-	distOld := filepath.Join(webDir, "dist.old")
-	if _, err := os.Stat(distNew); err != nil {
-		return fmt.Errorf("构建产物缺失：dist.new")
-	}
-	if err := os.RemoveAll(distOld); err != nil {
-		return err
-	}
-	if _, err := os.Stat(dist); err == nil {
-		if err := os.Rename(dist, distOld); err != nil {
-			return err
-		}
-	}
-	if err := os.Rename(distNew, dist); err != nil {
-		return err
-	}
-	return os.RemoveAll(distOld)
-}
-
-// --- 内部工具 ---
+// ==================== 公共工具 ====================
 
 func (u *Updater) log(format string, args ...any) {
 	line := time.Now().Format("15:04:05") + "  " + fmt.Sprintf(format, args...)
@@ -305,7 +610,7 @@ func (u *Updater) fail(format string, args ...any) {
 	u.mu.Unlock()
 }
 
-// run 执行固定命令并把输出行记入日志（不含用户输入，无注入面）。
+// run 执行命令并把输出行记入日志。
 func (u *Updater) run(ctx context.Context, dir string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
@@ -349,4 +654,14 @@ func short(s string) string {
 		s = s[:7]
 	}
 	return s
+}
+
+func dirExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }

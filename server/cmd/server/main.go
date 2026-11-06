@@ -143,16 +143,22 @@ func main() {
 		slog.Info("web push enabled")
 	}
 
-	// 图形化更新（站长后台）：WEB_UPDATE=false 关闭；Docker / 裸机部署
-	// 由 Updater.Available() 内部检测（需 .git + systemd 模板单元）自动不可用。
+	// 图形化更新（站长后台）：WEB_UPDATE=false 关闭；部署能力由 Updater.Available()
+	// 检测（发行版模式需 RELEASE_API_URL/RELEASE_DL_URL + systemd；源码模式需 .git）。
+	// Docker / 裸机自动不可用。
 	var updater *service.Updater
 	if cfg.WebUpdate {
-		updater = service.Detect()
+		wd, wdErr := os.Getwd()
+		root := ""
+		if wdErr == nil {
+			root = filepath.Dir(wd)
+		}
+		updater = service.NewUpdater(root, cfg.Port, cfg.ReleaseAPIURL, cfg.ReleaseDLURL)
 		if updater.Available() {
-			slog.Info("web update enabled", "root", updater.RootDir(), "port", updater.Port())
+			slog.Info("web update enabled", "mode", updater.Mode(), "root", updater.RootDir(), "port", updater.Port())
 		}
 	} else {
-		updater = service.NewUpdater("", cfg.Port)
+		updater = service.NewUpdater("", cfg.Port, "", "")
 		slog.Info("web update disabled (WEB_UPDATE=false)")
 	}
 

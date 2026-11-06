@@ -112,14 +112,16 @@ modernchat-new/
 
 ### 方式零：生产服务器一键安装（宝塔面板风格）
 
-全新 Linux 服务器（root）一条命令完成「装环境 → 拉代码 → 编译 → 建库 → 部署 → 给出访问地址」：
+全新 Linux 服务器（root）一条命令完成「装环境 → 下载发行版 → 建库 → 部署 → 给出访问地址」：
 
 ```bash
 curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
 bash install.sh
 ```
 
-缺什么装什么（Go / Node / MySQL 8 / nginx，国内镜像），自动建库、生成 `JWT_SECRET`、注册 systemd 服务并配置 nginx，最后输出 `http://域名` 或 `http://公网IP:端口`。详见 [运维手册 §3.1](docs/运维手册.md)。
+服务器**无需 Go / Node / git**——从 GitHub / Gitee Release 下载预编译发行包（`modernchat-<版本>-linux-<架构>.tar.gz`，含后端二进制 + 前端 dist + 迁移 SQL + 部署脚本，sha256 校验）。自动装 MySQL 8 / nginx（缺则补装）、建库、生成 `JWT_SECRET`、注册 systemd 服务并配置 nginx，最后输出 `http://域名` 或 `http://公网IP:端口`。详见 [运维手册 §3.1](docs/运维手册.md)。
+
+发版流程：打 tag 后在构建机运行 `scripts/package-release.sh`，把 `dist-release/` 下的 tar.gz 与 .sha256 上传为 Release 附件（Gitee / GitHub 都可；后台图形化更新与 `scripts/update.sh` 按安装时记录的源自动下载新版本）。
 
 ### 方式一：Docker 一键起后端（本地开发）
 
@@ -286,8 +288,8 @@ Windows 本地开发不走升级脚本：拉取后直接重新构建运行即可
 **核对是否生效**：`curl http://127.0.0.1:8080/api/version`，或看站长后台右上角的构建信息（`版本 · 提交 · 构建时间`）。
 
 > **两种升级方式**：
-> - **图形化（推荐日常使用）**：站长后台 → 在线更新页签，一键拉取 + 编译 + 自动重启。安全边界：仅站长可用、命令全部固定参数（分支锁 `origin/main`，不接收用户输入）、操作写审计、仅 install.sh 的 systemd 部署可用、`WEB_UPDATE=false` 可整体关闭。风险与脚本升级本质相同（站长账号可触发代码更新），请保管好管理员账号。
-> - **脚本（推荐生产 / 无人值守）**：`scripts/update.sh`，支持热更新（蓝绿不停机切换），详见运维手册 §4。
+> - **图形化（推荐日常使用）**：站长后台 → 在线更新页签，一键升级 + 自动重启。发行版安装（install.sh）走 Release 下载（sha256 校验，无需本机编译）；源码部署走 git pull + 本地编译。安全边界：仅站长可用、目标版本来自 Release 服务端 / origin/main（不接收用户输入）、操作写审计、仅 install.sh 的 systemd 部署可用、`WEB_UPDATE=false` 可整体关闭。风险与脚本升级本质相同（站长账号可触发代码更新），请保管好管理员账号。
+> - **脚本（推荐生产 / 无人值守）**：安装目录里的 `scripts/update.sh`（发行版模式：下载新 Release 校验替换后重启；源码模式：git pull + 编译），详见运维手册 §4。
 
 ## 部署
 

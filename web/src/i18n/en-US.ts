@@ -700,6 +700,8 @@ export default {
     globalNormal: 'Active',
     // Online update
     tabUpdates: 'Updates',
+    updateModeRelease: 'Update via prebuilt release (no local build)',
+    updateModeSource: 'Update via source build (requires Go / Node on the server)',
     updateHint:
       'Pulls the latest release from the repository, builds it locally and restarts the service. Only available for scripts/install.sh (systemd) deployments; use scripts/update.sh on the server for Docker / bare-metal.',
     updateUnavailable:

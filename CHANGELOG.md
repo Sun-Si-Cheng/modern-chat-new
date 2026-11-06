@@ -10,6 +10,7 @@
 
 ### 新增
 
+- **发行版安装与更新（不再需要在服务器上编译）**：新增 `scripts/package-release.sh`——构建机打 tag 后一键产出 `modernchat-<版本>-linux-{amd64,arm64}.tar.gz` + `.sha256`（含后端二进制、前端 dist、迁移 SQL、nginx 模板、更新脚本），上传为 Gitee / GitHub Release 附件。`scripts/install.sh` 改为从 Release 下载安装（sha256 校验），服务器**无需 Go / Node / git**；`RELEASE_SOURCE=gitee|github` 选源、`RELEASE_TAG` 指定版本。发行包内自带 `scripts/update.sh`（命令行：查询最新 Release → 下载校验 → 原子替换 → 优雅重启）。站长后台「在线更新」同样支持发行版模式：按安装时记录的 Release 源检查新 tag、下载校验后替换重启（源码 git 部署仍走本地编译模式）。
 - **站长后台图形化更新（在线更新页签）**：后台新增「在线更新」页签——检查更新（对比 `origin/main`，显示最新 tag 与提交）、一键更新（拉取最新代码 → 本机编译前后端 → 原子替换产物 → 自动重启当前实例），实时日志在页签内滚动展示（进行中每 2 秒轮询）。安全边界：仅站长可触发、命令全部固定参数（分支锁 `origin/main`，不接收用户输入）、操作写审计（`web_update`）、仅 install.sh 的 systemd 部署可用（Docker / 裸机界面提示改用脚本）、`WEB_UPDATE=false` 环境变量可整体关闭。新增接口 `GET /api/admin/update/{status,check}`、`POST /api/admin/update/start`。
 - **安装/卸载体系完善**：① 全程日志——安装镜像到 `/var/log/modernchat/install-*.log`、更新到仓库 `logs/update-*.log`（均带 latest 软链）；② 断点续跑——安装失败后重跑同一命令自动跳过已完成阶段、参数不再重复询问（进度存 `/var/lib/modernchat/install-state`，600 权限），`FORCE=1` 全部重跑；③ 面板路径适配——自动探测宝塔（`/www/server/panel/vhost/nginx`）/ 1Panel / OpenResty 的 nginx 二进制与 vhost 目录并直接写配置 reload，识别不到时可手动指定；④ 完整卸载 `scripts/uninstall.sh`——停服务删单元、只删带生成标记的 nginx 配置、数据库与安装目录默认保留需确认，支持 `AUTO_CONFIRM` / `PURGE_DB` / `DELETE_FILES` 免交互。
 - **热更新（升级不停机）**：`scripts/update.sh` 默认蓝绿双实例切换——新二进制原子替换（修复直接覆盖运行中文件会 `ETXTBSH` 的问题）、新实例起备用端口并通过健康检查、nginx upstream 平滑切流、老实例优雅停机，在线用户自动重连并增量补齐消息；任何一步失败自动回滚到老实例。install.sh 部署改为 `modernchat@<端口>` 模板单元；旧式单端口部署升级时自动迁移。前端产物同样原子交换（构建到 `dist.new`）。`--cold` 可强制旧式重启。

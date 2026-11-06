@@ -1632,6 +1632,12 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
                 </UiTag>
               </span>
             </div>
+            <div v-if="updateStatus.mode" class="mc-admin__update-row">
+              <span>{{ t('admin.updateCurrent') }}</span>
+              <span class="text-placeholder">
+                {{ updateStatus.mode === 'release' ? t('admin.updateModeRelease') : t('admin.updateModeSource') }}
+              </span>
+            </div>
             <div v-if="updateStatus.error" class="mc-admin__update-row">
               <span>{{ t('admin.updateError') }}</span>
               <span class="mc-admin__audit-detail">{{ updateStatus.error }}</span>

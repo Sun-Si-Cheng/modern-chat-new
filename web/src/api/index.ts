@@ -371,6 +371,7 @@ export interface AdminUpdateStatus {
   error?: string
   version: string
   commit: string
+  mode?: string // release = 发行版下载 | source = 源码本地编译
 }
 
 /** 在线更新：检查结果 */

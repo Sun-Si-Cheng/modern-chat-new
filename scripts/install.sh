@@ -2,9 +2,10 @@
 # ============================================================================
 # ModernChat 一键安装脚本（宝塔面板风格）
 #
-# 流程：检测/安装运行环境（Go、Node、MySQL、nginx）→ 从代码仓库拉最新代码
-#       → 本地编译前后端 → 自动建库并写入配置 → systemd 常驻 + nginx 反代
-#       → 输出可直接访问的站点链接。
+# 流程：检测/安装运行环境（MySQL、nginx）→ 从 GitHub / Gitee Release 下载
+#       预编译发行包（含前端/后端/迁移/部署脚本）→ 自动建库并写入配置
+#       → systemd 常驻 + nginx 反代 → 输出可直接访问的站点链接。
+#       无需 Go / Node / git —— 服务器上不编译任何东西。
 #
 # 用法（root 或 sudo）：
 #   curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
@@ -17,8 +18,13 @@
 #   BACKEND_PORT=8080 \
 #   DB_MODE=auto \                # auto=本机自动装MySQL | external=已有实例
 #   DB_HOST=127.0.0.1 DB_PORT=3306 DB_ROOT_USER=root DB_ROOT_PASS=xxx \
-#   MIRROR=cn \                   # cn=国内镜像(默认) | official=官方源
+#   RELEASE_SOURCE=gitee \        # gitee(默认，国内快) | github
+#   RELEASE_TAG=latest \          # latest=最新 Release | 指定 tag 如 v0.10.3
 #   bash install.sh
+#
+# 发行包资产（由 scripts/package-release.sh 产出并上传 Release 附件）：
+#   modernchat-<版本>-linux-<架构>.tar.gz（bin/ + web/dist/ + server/migrations/ + deploy/ + scripts/update.sh）+ .sha256
+#   GitHub 仓库与 Gitee 不同时，用 RELEASE_REPO_GITHUB=<owner>/<repo> 指定。
 #
 # 断点续跑：安装失败后重新运行同一命令，已完成的阶段自动跳过，参数不再重复
 # 询问（进度与参数存 /var/lib/modernchat/install-state）。--force 全部重跑。
@@ -37,8 +43,10 @@
 set -euo pipefail
 
 # ---------------- 可预设参数 ----------------
-REPO_URL="${REPO_URL:-https://gitee.com/Sun-Si-Cheng/modern-chat-new.git}"
-BRANCH="${BRANCH:-main}"
+RELEASE_SOURCE="${RELEASE_SOURCE:-gitee}"    # gitee | github
+RELEASE_REPO_GITEE="${RELEASE_REPO_GITEE:-Sun-Si-Cheng/modern-chat-new}"
+RELEASE_REPO_GITHUB="${RELEASE_REPO_GITHUB:-Sun-Si-Cheng/modern-chat-new}"
+RELEASE_TAG="${RELEASE_TAG:-latest}"         # latest | 指定 tag（v0.10.3）
 INSTALL_DIR="${INSTALL_DIR:-}"
 DOMAIN="${DOMAIN:-}"
 SITE_PORT="${SITE_PORT:-}"
@@ -51,12 +59,21 @@ DB_ROOT_PASS="${DB_ROOT_PASS:-}"
 DB_NAME="${DB_NAME:-modernchat}"
 DB_USER="${DB_USER:-}"
 DB_PASS="${DB_PASS:-}"
-MIRROR="${MIRROR:-cn}"           # cn | official
-GO_VERSION="${GO_VERSION:-1.26.0}"
-NODE_VERSION="${NODE_VERSION:-22.20.0}"
 INSTALL_MYSQL="${INSTALL_MYSQL:-}"   # yes/no：没有 MySQL 时是否自动安装
 INSTALL_NGINX="${INSTALL_NGINX:-}"   # yes/no：没有 nginx 时是否自动安装
 FORCE="${FORCE:-0}"                  # 1=忽略断点记录，全部阶段重跑
+
+# Release API / 下载前缀（也可直接用 RELEASE_API_URL / RELEASE_DL_URL 显式覆盖）
+if [ -z "${RELEASE_API_URL:-}" ]; then
+  if [ "$RELEASE_SOURCE" = "github" ]; then
+    RELEASE_API_URL="https://api.github.com/repos/${RELEASE_REPO_GITHUB}/releases/latest"
+    RELEASE_DL_URL="https://github.com/${RELEASE_REPO_GITHUB}/releases/download"
+  else
+    RELEASE_API_URL="https://gitee.com/api/v5/repos/${RELEASE_REPO_GITEE}/releases/latest"
+    RELEASE_DL_URL="https://gitee.com/${RELEASE_REPO_GITEE}/releases/download"
+  fi
+fi
+RELEASE_DL_URL="${RELEASE_DL_URL:-https://gitee.com/${RELEASE_REPO_GITEE}/releases/download}"
 
 # ---------------- 目录约定 ----------------
 STATE_DIR="/var/lib/modernchat"          # 断点续跑状态与参数（600 权限）
@@ -141,7 +158,7 @@ if [ -f "$STATE_FILE" ]; then
       PARAM_DB_USER)      [ -z "$DB_USER" ] && DB_USER="$v" ;;
       PARAM_DB_PASS)      [ -z "$DB_PASS" ] && DB_PASS="$v" ;;
       PARAM_DB_NAME)      [ "$DB_NAME" = "modernchat" ] && DB_NAME="$v" ;;
-      PARAM_MIRROR)       [ "$MIRROR" = "cn" ] && MIRROR="$v" ;;
+      PARAM_RELEASE_TAG)  [ "$RELEASE_TAG" = "latest" ] && RELEASE_TAG="$v" ;;
       PARAM_PUBLIC_URL)   PUBLIC_URL="${PUBLIC_URL:-$v}" ;;
       PARAM_JWT_SECRET)   JWT_SECRET="${JWT_SECRET:-$v}" ;;
       PARAM_RUN_MODE)     RUN_MODE="${RUN_MODE:-$v}" ;;
@@ -155,10 +172,10 @@ fi
 # 交互问答：env 预设 > state 恢复 > 询问
 echo
 printf "${C_B}=============================================================${C_0}\n"
-printf "${C_B}        ModernChat 一键安装（代码仓库 → 编译 → 部署）${C_0}\n"
+printf "${C_B}        ModernChat 一键安装（发行版下载 → 部署）${C_0}\n"
 printf "${C_B}=============================================================${C_0}\n\n"
 
-if [ -f "$STATE_FILE" ] && grep -q "^STAGE_repo=done$" "$STATE_FILE" 2>/dev/null; then
+if [ -f "$STATE_FILE" ] && grep -q "^STAGE_release=done$" "$STATE_FILE" 2>/dev/null; then
   info "检测到上次安装进度，已完成阶段将自动跳过（--force 可全部重跑）"
 fi
 
@@ -215,81 +232,20 @@ on_fail() {
 }
 trap on_fail ERR
 
-# npm 依赖走 npmmirror（国内服务器快一个数量级）—— 在任何阶段前定义：
-# deps 阶段可能被断点续跑跳过，而 build 阶段要用 NPM_REGISTRY
-if [ "$MIRROR" = "cn" ]; then
-  export GOPROXY="https://goproxy.cn,direct"
-  NPM_REGISTRY="https://registry.npmmirror.com"
-else
-  export GOPROXY="https://proxy.golang.org,direct"
-  NPM_REGISTRY="https://registry.npmjs.org"
-fi
-
 # ============================================================================
-# 阶段 1：基础工具 + 运行环境（Go / Node / MySQL）——幂等
+# 阶段 1：基础工具 + MySQL —— 幂等（发行版模式无需 Go / Node / git）
 # ============================================================================
 CURRENT_STAGE="环境安装(deps)"
 stage_deps() {
   NEED_BASE=()
-  command -v git   >/dev/null 2>&1 || NEED_BASE+=(git)
-  command -v curl  >/dev/null 2>&1 || NEED_BASE+=(curl)
-  command -v tar   >/dev/null 2>&1 || NEED_BASE+=(tar)
+  command -v curl >/dev/null 2>&1 || NEED_BASE+=(curl)
+  command -v tar  >/dev/null 2>&1 || NEED_BASE+=(tar)
   if [ "${#NEED_BASE[@]}" -gt 0 ]; then
     info "安装基础工具：${NEED_BASE[*]}"
     pkg_update; pkg_install "${NEED_BASE[@]}"
   fi
 
-  fetch() { # fetch <输出文件> <国内URL> <官方URL>
-    local out="$1" cn="$2" of="$3"
-    if [ "$MIRROR" = "official" ]; then
-      curl -fL --retry 3 -o "$out" "$of" || curl -fL --retry 3 -o "$out" "$cn"
-    else
-      curl -fL --retry 3 -o "$out" "$cn" || curl -fL --retry 3 -o "$out" "$of"
-    fi
-  }
-
-  install_go() {
-    local v="$GO_VERSION" tmp; tmp="$(mktemp -d)"
-    info "安装 Go ${v} → /usr/local/go"
-    fetch "$tmp/go.tgz" \
-      "https://mirrors.aliyun.com/golang/go${v}.linux-${GO_ARCH}.tar.gz" \
-      "https://go.dev/dl/go${v}.linux-${GO_ARCH}.tar.gz"
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf "$tmp/go.tgz"
-    ln -sf /usr/local/go/bin/go /usr/local/bin/go
-    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
-    rm -rf "$tmp"
-    go version
-  }
-
-  install_node() {
-    local v="$NODE_VERSION" tmp; tmp="$(mktemp -d)"
-    info "安装 Node.js v${v} → /usr/local/node"
-    fetch "$tmp/node.tgz" \
-      "https://npmmirror.com/mirrors/node/v${v}/node-v${v}-linux-${NODE_ARCH}.tar.xz" \
-      "https://nodejs.org/dist/v${v}/node-v${v}-linux-${NODE_ARCH}.tar.xz"
-    rm -rf /usr/local/node
-    mkdir -p /usr/local/node
-    tar -xJf "$tmp/node.tgz" -C /usr/local/node --strip-components=1
-    ln -sf /usr/local/node/bin/node /usr/local/bin/node
-    ln -sf /usr/local/node/bin/npm  /usr/local/bin/npm
-    rm -rf "$tmp"
-    node -v
-  }
-
-  info "检测 Go / Node / MySQL …"
-
-  command -v go >/dev/null 2>&1 || install_go
-  GO_MAJOR="$(go env GOVERSION 2>/dev/null | sed 's/^go//' | cut -d. -f1-2 || true)"
-  if [ -n "$GO_MAJOR" ] && [ "$GO_MAJOR" != "$(echo "$GO_VERSION" | cut -d. -f1-2)" ]; then
-    warn "已有 Go $GO_MAJOR，与要求的 ${GO_VERSION%.*}.x 不同；继续使用现有版本（go.mod 要求 ${GO_VERSION%.*}+）"
-  fi
-
-  command -v node >/dev/null 2>&1 || install_node
-  NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  if [ "$NODE_MAJOR" -lt 20 ]; then
-    die "Node.js 版本过低（$NODE_MAJOR.x），需要 ≥ 20；请升级后重跑"
-  fi
+  info "检测 MySQL …"
 
   MYSQL_CLI=""
   if command -v mysql >/dev/null 2>&1; then MYSQL_CLI="mysql"; fi
@@ -372,43 +328,49 @@ SQL
 mark_stage db
 
 # ============================================================================
-# 阶段 3：拉取代码
+# 阶段 3：下载发行包（GitHub / Gitee Release，含前端/后端/迁移/部署脚本）
 # ============================================================================
-CURRENT_STAGE="拉取代码(repo)"
-stage_done repo && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：拉取代码"; } || {
-  if [ -d "$INSTALL_DIR/.git" ]; then
-    info "目录已存在，拉取最新代码：$INSTALL_DIR"
-    git -C "$INSTALL_DIR" fetch --all --prune
-    git -C "$INSTALL_DIR" checkout "$BRANCH"
-    git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
+CURRENT_STAGE="下载发行版(release)"
+stage_done release && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：下载发行版"; } || {
+  # 解析版本：latest → 查 Release API；指定 tag 直接用
+  if [ "$RELEASE_TAG" = "latest" ]; then
+    info "查询最新 Release：$RELEASE_API_URL"
+    RESP="$(curl -fsS --max-time 30 "$RELEASE_API_URL")" || die "查询 Release 失败（检查网络 / RELEASE_SOURCE）"
+    TAG_NAME="$(printf '%s' "$RESP" | grep -o '"tag_name"[^,}]*' | head -n1 | sed 's/.*: *"//;s/"$//')"
+    [ -n "$TAG_NAME" ] || die "未解析到最新 tag（仓库是否已发布 Release？见 scripts/package-release.sh）"
   else
-    info "克隆仓库（分支 ${BRANCH}）→ $INSTALL_DIR"
-    rm -rf "$INSTALL_DIR"
-    git clone --depth=1 -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    TAG_NAME="$RELEASE_TAG"
   fi
+  info "安装版本：$TAG_NAME"
+  save_state "PARAM_RELEASE_TAG" "$TAG_NAME"
+
+  ASSET="modernchat-${TAG_NAME#v}-linux-$GO_ARCH.tar.gz"
+  info "下载 $ASSET …"
+  mkdir -p "$INSTALL_DIR.tmp"
+  curl -fL --retry 3 -o "$INSTALL_DIR.tmp/$ASSET" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET" \
+    || die "下载失败：$RELEASE_DL_URL/${TAG_NAME}/$ASSET（Release 是否有该架构附件？）"
+
+  info "校验 sha256 …"
+  if curl -fsS --max-time 30 -o "$INSTALL_DIR.tmp/$ASSET.sha256" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET.sha256" 2>/dev/null; then
+    EXPECTED="$(awk '{print $1}' "$INSTALL_DIR.tmp/$ASSET.sha256")"
+    ACTUAL="$(sha256sum "$INSTALL_DIR.tmp/$ASSET" | awk '{print $1}')"
+    [ "$EXPECTED" = "$ACTUAL" ] || die "sha256 不匹配：期望 $EXPECTED，实际 $ACTUAL（下载损坏或被篡改）"
+    info "校验通过"
+  else
+    warn "无 .sha256 附件，跳过校验"
+  fi
+
+  # 首次安装清空残留；重装/续跑只覆盖包内文件（保留 server/.env、data/、logs/）
+  if [ ! -f "$INSTALL_DIR/server/.env" ]; then
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+  fi
+  tar -xzf "$INSTALL_DIR.tmp/$ASSET" -C "$INSTALL_DIR"
+  rm -rf "$INSTALL_DIR.tmp"
+  info "发行包已就位：bin/ + web/dist/ + server/migrations/ + scripts/update.sh"
 }
-mark_stage repo
+mark_stage release
 cd "$INSTALL_DIR"
-
-VERSION="$(git describe --tags --always 2>/dev/null || echo "$(git rev-parse --short HEAD)")"
-COMMIT="$(git rev-parse --short HEAD)"
-BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-# ============================================================================
-# 阶段 4：编译
-# ============================================================================
-CURRENT_STAGE="编译(build)"
-stage_done build && ! [ "$FORCE" = "1" ] && { info "跳过已完成阶段：编译"; } || {
-  info "编译后端 $VERSION"
-  mkdir -p bin
-  (cd server && go build -trimpath -ldflags \
-    "-s -w -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=${VERSION} -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=${COMMIT} -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=${BUILD_TIME}" \
-    -o ../bin/modernchat-server ./cmd/server)
-
-  info "编译前端（npm ci + build，首次约 1-3 分钟）"
-  (cd web && npm ci --no-audit --no-fund --registry="$NPM_REGISTRY" && npm run build)
-}
-mark_stage build
 
 # ============================================================================
 # 阶段 5：写配置（server/.env）——JWT_SECRET 固化到 state，续跑不再换
@@ -449,6 +411,9 @@ SMTP_PORT=465
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
+# 在线更新（Release 发行版）：后台图形化更新与 scripts/update.sh 共用
+RELEASE_API_URL=$RELEASE_API_URL
+RELEASE_DL_URL=$RELEASE_DL_URL
 ENV
   chmod 600 server/.env
   info "已写入 server/.env（MIGRATE=true，首次启动自动建表）"
@@ -711,11 +676,11 @@ echo "  首个账号 ： 打开上面地址直接注册，第一个注册的账�
 echo "  数据库   ： $DB_NAME@$DB_HOST:$DB_PORT（用户 $DB_USER，密码在 server/.env 的 DB_DSN 里）"
 if [ "$RUN_MODE" = "systemd" ]; then
   echo "  服务管理 ： systemctl status|restart|stop modernchat@$BACKEND_PORT"
-  echo "  热更新   ： bash $INSTALL_DIR/scripts/update.sh（默认不停机：新旧实例蓝绿切换）"
+  echo "  图形化更新： 站长后台 → 在线更新（或命令行 bash $INSTALL_DIR/scripts/update.sh）"
 else
   echo "  服务管理 ： nohup 模式（无 systemd）——停止：kill \$(cat $INSTALL_DIR/server/server.pid)；启动：cd $INSTALL_DIR/server && nohup ../bin/modernchat-server >> logs/server.out 2>&1 &"
 fi
-echo "  升级     ： bash $INSTALL_DIR/scripts/update.sh（日志：$INSTALL_DIR/logs/update-*.log）"
+echo "  升级     ： 命令行 bash $INSTALL_DIR/scripts/update.sh（下载新发行包并重启）"
 echo "  卸载     ： bash $INSTALL_DIR/scripts/uninstall.sh（停服务/删配置，可选删库删文件）"
 echo "  后台地址 ： $PUBLIC_URL/admin（用站长账号登录后可见）"
 echo
