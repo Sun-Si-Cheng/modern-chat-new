@@ -104,6 +104,20 @@ function hostAllowed(hostname: string, patterns: string[]): boolean {
 
 // ===== 权限映射（§8.3） =====
 
+/** 只含定位信息的消息摘要：未声明 message:read 的插件只能拿到这些 */
+function messageMeta(message: unknown): Record<string, unknown> | null {
+  if (!message || typeof message !== 'object') return null
+  const m = message as Record<string, unknown>
+  return {
+    id: m.id,
+    conversationId: m.conversationId,
+    senderId: m.senderId,
+    msgType: m.msgType,
+    createdAt: m.createdAt,
+    isRecalled: m.isRecalled,
+  }
+}
+
 const API_PERMISSION: Record<string, string> = {
   on: 'message:read',
   send: 'message:send',
@@ -134,9 +148,40 @@ export interface PluginMessageAction {
 
 // ===== 沙箱引导 HTML =====
 
-function bootHtml(pluginCode: string): string {
-  const safeCode = pluginCode.replace(/<\/script/gi, '<\\/script')
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body><script>
+/**
+ * 构造沙箱 CSP：把插件自身网络出口收敛到 manifest 的 allowed_hosts。
+ * 之前插件可以直接在自己的 iframe 里 fetch()，完全绕过宿主 request() 的白名单；
+ * 有了 connect-src 后 fetch/XHR/WebSocket/beacon 只能到达这些主机，未声明则全部禁止。
+ * 注意不能加 allow-same-origin：插件拿不到父页面 localStorage/JWT 是硬约束。
+ */
+function buildSandboxCsp(allowedHosts: string[]): string {
+  const hosts = allowedHosts
+    .map((h) => h.trim().toLowerCase())
+    // 只接受主机名或 *.子域形式，避免把端口/路径/引号拼进 CSP 指令
+    .filter((h) => /^(\*\.)?[a-z0-9][a-z0-9.-]*$/.test(h))
+  const connect = hosts.length ? hosts.join(' ') : "'none'"
+  return [
+    "default-src 'none'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    'img-src data:',
+    `connect-src ${connect}`,
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "worker-src 'none'",
+  ].join('; ')
+}
+
+function bootHtml(pluginCode: string, allowedHosts: string[]): string {
+  // `</script>` 与 `<script` 都必须转义：否则插件代码里的字符串可在 HTML 解析阶段
+  // 提前闭合引导脚本，或进入 script-data double-escaped 状态
+  const safeCode = pluginCode
+    .replace(/<\/script/gi, '<\\/script')
+    .replace(/<script/gi, '<\\script')
+  const csp = buildSandboxCsp(allowedHosts)
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script>
 "use strict";
 (function () {
   var handlers = {}, callSeq = 0, pending = new Map(), renderers = new Map();
@@ -217,9 +262,8 @@ interface Runtime {
   rendererTypes: Set<string>
   renderSeq: number
   pendingRenders: Map<number, { resolve: (d: PanelDesc) => void; reject: (e: Error) => void }>
-  /** window message 监听器与 iframe load 监听器：卸载运行时必须解绑，否则泄漏 */
+  /** window message 监听器：卸载运行时必须解绑，否则泄漏 */
   onMessage: (ev: MessageEvent) => void
-  onLoad: () => void
   /** 插件通过 theme.apply 改过的 --td-* 变量及其原值：停用时要还原 */
   themeVars: Map<string, string>
 }
@@ -497,8 +541,21 @@ function createHost() {
 
   // ----- 事件分发 -----
 
+  /**
+   * 事件 -> 接收方必须持有的权限。
+   * message:new/recall 的 payload 是整条消息（含正文），只发给声明 message:read 的插件；
+   * presence 同样带 userId 列表，按同一权限收敛。
+   */
+  const EVENT_PERMISSION: Record<string, string> = {
+    'message:new': 'message:read',
+    'message:recall': 'message:read',
+    presence: 'message:read',
+  }
+
   function dispatchEvent(event: string, payload: unknown) {
+    const required = EVENT_PERMISSION[event]
     for (const rt of runtimes.values()) {
+      if (required && !rt.plugin.permissions.includes(required)) continue
       rt.iframe.contentWindow?.postMessage({ __mc: 'event', event, payload }, '*')
     }
   }
@@ -542,7 +599,7 @@ function createHost() {
 
   // ----- 生命周期 -----
 
-  function mountRuntime(plugin: Plugin) {
+  function mountRuntime(plugin: Plugin, code: string) {
     if (runtimes.has(plugin.id)) return
     const iframe = document.createElement('iframe')
     iframe.setAttribute('sandbox', 'allow-scripts')
@@ -551,11 +608,6 @@ function createHost() {
     // 这里必须先声明后赋值：onMessage 回调内部要引用 runtime（互相引用），无法合并为 const
     // eslint-disable-next-line prefer-const
     let runtime: Runtime
-    const onLoad = () => {
-      iframe.contentWindow?.document.open()
-      iframe.contentWindow?.document.write(bootHtml(pluginCodeCache.get(plugin.id) ?? ''))
-      iframe.contentWindow?.document.close()
-    }
     const onMessage = (ev: MessageEvent) => handleSandboxMessage(runtime, ev)
     runtime = {
       plugin,
@@ -564,21 +616,22 @@ function createHost() {
       renderSeq: 0,
       pendingRenders: new Map(),
       onMessage,
-      onLoad,
       themeVars: new Map(),
     }
-    iframe.addEventListener('load', onLoad)
+    // 用 srcdoc 注入：sandbox 未给 allow-same-origin 时，父页面无权访问
+    // iframe.contentWindow.document，document.open/write 会直接抛 SecurityError，
+    // 插件永远不会启动；srcdoc 在挂载前写入即可正常执行且仍是 opaque origin
+    iframe.srcdoc = bootHtml(code, plugin.allowedHosts ?? [])
     window.addEventListener('message', onMessage)
     document.body.appendChild(iframe)
     runtimes.set(plugin.id, runtime)
   }
 
-  /** 卸载单个运行时：解绑 window message / iframe load 监听器，再移除 iframe */
+  /** 卸载单个运行时：解绑 window message 监听器，再移除 iframe */
   function unmountRuntime(pluginId: number) {
     const rt = runtimes.get(pluginId)
     if (!rt) return
     window.removeEventListener('message', rt.onMessage)
-    rt.iframe.removeEventListener('load', rt.onLoad)
     for (const p of rt.pendingRenders.values()) p.reject(new Error('runtime unmounted'))
     rt.pendingRenders.clear()
     rt.iframe.remove()
@@ -592,9 +645,6 @@ function createHost() {
     delete state.panels[pluginId]
     delete state.actions[pluginId]
   }
-
-  /** srcdoc 不便直接塞大代码，用 document.write 注入；代码在加载插件清单时缓存 */
-  const pluginCodeCache = new Map<number, string>()
 
   async function start() {
     if (state.started) return
@@ -626,8 +676,7 @@ function createHost() {
     )
     for (const row of loaded) {
       if (!row) continue
-      pluginCodeCache.set(row.p.id, row.code)
-      mountRuntime(row.p)
+      mountRuntime(row.p, row.code)
     }
     if (failed.length) {
       void MessagePlugin.warning(
@@ -647,7 +696,6 @@ function createHost() {
     offFrame = null
     // unmountRuntime 会删除当前项，Map 迭代器按序遍历时这是安全的
     for (const id of runtimes.keys()) unmountRuntime(id)
-    pluginCodeCache.clear()
     state.panels = {}
     state.started = false
   }
@@ -671,8 +719,7 @@ function createHost() {
       return
     }
     unmountRuntime(plugin.id)
-    pluginCodeCache.set(plugin.id, code)
-    mountRuntime(plugin)
+    mountRuntime(plugin, code)
   }
 
   /** 侧边栏 UI 动作回传（§8.2 button/input 的 action） */
@@ -693,13 +740,18 @@ function createHost() {
     return out
   }
 
-  /** 触发某个插件的消息动作：只投递给该插件的运行时，不广播给其他插件 */
+  /**
+   * 触发某个插件的消息动作：只投递给该插件的运行时，不广播给其他插件。
+   * 只声明 ui:actions 的插件不能拿到整条消息（含正文），只能拿到定位信息；
+   * 需要正文必须同时声明 message:read。
+   */
   function runMessageAction(pluginId: number, actionId: string, message: unknown) {
     const rt = runtimes.get(pluginId)
-    rt?.iframe.contentWindow?.postMessage(
-      { __mc: 'event', event: 'message:action', payload: { actionId, message } },
-      '*',
-    )
+    if (!rt || !rt.plugin.permissions.includes('ui:actions')) return
+    const payload = rt.plugin.permissions.includes('message:read')
+      ? { actionId, message }
+      : { actionId, message: messageMeta(message) }
+    rt.iframe.contentWindow?.postMessage({ __mc: 'event', event: 'message:action', payload }, '*')
   }
 
   return {
