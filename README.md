@@ -110,7 +110,18 @@ modernchat-new/
 
 ## 快速开始
 
-### 方式一：Docker 一键起后端（推荐）
+### 方式零：生产服务器一键安装（宝塔面板风格）
+
+全新 Linux 服务器（root）一条命令完成「装环境 → 拉代码 → 编译 → 建库 → 部署 → 给出访问地址」：
+
+```bash
+curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
+bash install.sh
+```
+
+缺什么装什么（Go / Node / MySQL 8 / nginx，国内镜像），自动建库、生成 `JWT_SECRET`、注册 systemd 服务并配置 nginx，最后输出 `http://域名` 或 `http://公网IP:端口`。详见 [运维手册 §3.1](docs/运维手册.md)。
+
+### 方式一：Docker 一键起后端（本地开发）
 
 ```bash
 docker compose up -d --build           # MySQL 8 + 后端（:8080），首次启动自动建表
@@ -155,7 +166,7 @@ cd server && go test -tags integration ./test/   # 需要本机 MySQL
 - **首个注册账号自动成为站长**（`role=admin`），之后注册的均为普通用户。站长后台提供用户封禁 / 解封 / 随机重置密码、插件全局下架。
 - **忘记用户名**：系统不提供用户名找回。站长可在后台为该用户重置密码，再线下告知。
 - **找回密码**：走注册邮箱。未配置 SMTP 时，重置链接只打印到服务端日志（见 `server/README.md` 的「日志」一节），需运维从日志取值转交用户。界面统一提示"若该邮箱已注册，重置链接将发送至该邮箱"，不暴露邮箱是否存在。
-- **邮箱仅用于找回密码**：本版本没有邮箱验证流程，`email_verified` 始终为 `false`；修改邮箱会在数据层重置该标记。
+- **邮箱用途**：注册邮箱验证（默认开启，可后台关闭；未配 SMTP 自动降级）、找回密码、换绑邮箱验证。首个注册账号豁免验证码但仍必须填邮箱。
 - **升级**：部署机执行 `scripts/update.sh`（详见「更新与升级」），界面只显示当前构建版本，不显示运维命令。
 
 ## 插件开发
@@ -262,7 +273,7 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 代码推到 Gitee 后，在部署机上**一条命令**从远端拉取并重建（不用手动上传文件）：
 
 ```bash
-./scripts/update.sh                          # 拉 master → 构建前后端 → 重启
+./scripts/update.sh                          # 拉 main → 构建前后端 → 重启
 ./scripts/update.sh dev                      # 指定分支
 ./scripts/update.sh --no-restart             # 只构建产物，稍后自己挑时间重启
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
@@ -278,6 +289,7 @@ Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
 
 ## 部署
 
+- **一键安装**：`scripts/install.sh`（宝塔面板风格：环境自检补装 → 拉代码 → 编译 → 建库 → systemd + nginx → 输出站点地址，详见运维手册 §3.1）
 - **Docker**：`docker compose up -d --build` 起 MySQL + 后端；前端构建后可由 `deploy/nginx.compose.conf` 的 nginx 容器托管（用法见 `docker-compose.yml` 末尾注释）
 - **裸机**：`go build -o modernchat-server ./cmd/server`；前端 `npm run build` 产物交 Nginx，`/api` 反代 `:8080`，`/ws` 加 `Upgrade` / `Connection` 头（`deploy/nginx.conf.example`）
 - 生产必须设置：`GIN_MODE=release`、`JWT_SECRET`（≥32 字节，缺省拒绝启动）、`FRONTEND_URL`（WS Origin 白名单 + 找回密码链接）、`MIGRATE=true`
@@ -286,7 +298,7 @@ Windows 本地：`.\scripts\update.ps1`（支持 `-Branch` / `-NoRestart`）。
 
 ## 仓库
 
-- 远端：<https://gitee.com/Sun-Si-Cheng/modern-chat-new>（分支 `master`）
+- 远端：<https://gitee.com/Sun-Si-Cheng/modern-chat-new>（分支 `main`）
 - 提交约定：每完成一个模块 `git add -A` → commit → push
 
 ## 许可证

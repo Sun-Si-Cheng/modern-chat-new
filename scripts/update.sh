@@ -11,7 +11,7 @@
 # 那等于给管理员账号挂上远程代码执行，账号一旦泄露就等于丢服务器。
 set -euo pipefail
 
-BRANCH="${BRANCH:-master}"
+BRANCH="${BRANCH:-main}"
 NO_RESTART=0
 for arg in "$@"; do
   case "$arg" in

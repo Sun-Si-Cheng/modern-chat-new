@@ -1,11 +1,11 @@
 # ModernChat 一键升级（Windows / PowerShell）：从 Gitee 拉取 → 重建前后端 → 提示重启
 #
 # 用法（在仓库根目录）：
-#   .\scripts\update.ps1                    # 拉 master
+#   .\scripts\update.ps1                    # 拉 main
 #   .\scripts\update.ps1 -Branch dev        # 拉指定分支
 #   .\scripts\update.ps1 -NoRestart         # 只构建，稍后手动重启
 param(
-    [string]$Branch = "master",
+    [string]$Branch = "main",
     [switch]$NoRestart
 )
 
