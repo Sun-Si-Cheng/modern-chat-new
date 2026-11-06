@@ -51,6 +51,9 @@ func setup(t *testing.T) *env {
 	if err := store.AutoMigrate(db); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
+	if err := store.EnsureMessageFulltext(db); err != nil {
+		t.Fatalf("ensure fulltext: %v", err)
+	}
 	for _, table := range []string{"system_settings", "message_reactions", "message_reports", "user_blocks", "push_subscriptions", "conversation_invites", "password_resets", "plugins", "friends", "message_favorites", "message_deletions", "user_conversations", "messages", "conversation_members", "conversations", "users"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("清理表 %s: %v", table, err)
@@ -111,7 +114,9 @@ type user struct {
 
 func register(t *testing.T, e *env, username string) (token string, u user) {
 	t.Helper()
-	body := fmt.Sprintf(`{"username":%q,"password":"secret123","nickname":"昵-%s"}`, username, username)
+	// 0.10.0 起「注册需邮箱验证」默认开：邮箱必填；SMTP 未配置时自动免验证码，
+	// 所以这里带 email 就能注册，无需验证码
+	body := fmt.Sprintf(`{"username":%q,"password":"secret123","nickname":"昵-%s","email":"%s@test.local"}`, username, username, username)
 	resp, err := http.Post(e.ts.URL+"/api/auth/register", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("register %s: %v", username, err)

@@ -59,6 +59,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// FULLTEXT ngram 索引：迁移 0022 在生产负责，这里幂等兜底（AutoMigrate 不建全文索引）
+	if err := store.EnsureMessageFulltext(db); err != nil {
+		slog.Warn("ensure message fulltext index", "err", err)
+	}
 
 	// 初始公开群：首次启动时创建并把现有用户加入；之后注册的新用户自动加入
 	if err := store.BootstrapDefaultGroup(db); err != nil {

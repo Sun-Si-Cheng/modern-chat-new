@@ -299,6 +299,22 @@ function recall(m: Message) {
   void MessagePlugin.success(t('message.recallOk'))
 }
 
+// ===== 图片缩略图 =====
+
+// 服务端为 kind=image 上传生成 ≤480px 的 `_t.jpg` 缩略图（service/thumbnail.go）。
+// 老消息、GIF 与生成失败的图片没有缩略图（404）→ 回退原图；灯箱始终用原图。
+// 以 content 为 key：乐观消息 id=0 会互相串，URL 才是稳定标识。
+const thumbFailed = reactive(new Set<string>())
+
+function thumbUrl(u: string): string {
+  const m = /\.[a-z0-9]+$/i.exec(u)
+  return m ? u.slice(0, -m[0].length) + '_t.jpg' : u
+}
+
+function imageSrc(m: Message): string {
+  return thumbFailed.has(m.content) ? m.content : thumbUrl(m.content)
+}
+
 // ===== 编辑 =====
 
 const EDIT_WINDOW = 5 * 60 * 1000
@@ -1175,9 +1191,10 @@ const senderName = (m: Message) => {
                        图片未加载时高度为 0 → 永远进不了视口 → 永远不会加载（死循环）。
                        虚拟滚动本身已经保证只渲染视口附近的消息，无需再 lazy。 -->
                   <img
-                    :src="item.msg.content"
+                    :src="imageSrc(item.msg)"
                     alt=""
                     decoding="async"
+                    @error="thumbFailed.add(item.msg.content)"
                     @click="onMediaClick(item.msg, $event)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />

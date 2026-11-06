@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -238,6 +239,10 @@ func (s *LocalStorage) SaveStream(kind string, r io.Reader, maxBytes int64) (str
 		_ = os.Remove(tmpName)
 		return "", err
 	}
+	// 图片消息异步生成缩略图：响应不等待；缩略图未就绪时前端 404 回退原图
+	if kind == "image" {
+		go writeLocalThumb(s.root, path.Join(rel, name), total)
+	}
 	return path.Join(s.baseURL, rel, name), nil
 }
 
@@ -379,6 +384,19 @@ func (s *S3Storage) SaveStream(kind string, r io.Reader, maxBytes int64) (string
 		minio.PutObjectOptions{ContentType: mimeOfExt(kind, ext)})
 	if err != nil {
 		return "", fmt.Errorf("上传到对象存储失败: %w", err)
+	}
+	// 图片消息缩略图：主文件已成功，缩略图失败只记日志（前端 404 回退原图）
+	if kind == "image" {
+		if thumb, ok, terr := makeThumbJPEG(tmpName, total); terr != nil {
+			slog.Warn("make thumbnail failed", "key", key, "err", terr.Error())
+		} else if ok {
+			tKey := ThumbPath(key)
+			_, terr = s.client.PutObject(ctx, s.bucket, tKey, bytes.NewReader(thumb), int64(len(thumb)),
+				minio.PutObjectOptions{ContentType: "image/jpeg"})
+			if terr != nil {
+				slog.Warn("upload thumbnail failed", "key", tKey, "err", terr.Error())
+			}
+		}
 	}
 	return s.publicBase + "/" + key, nil
 }

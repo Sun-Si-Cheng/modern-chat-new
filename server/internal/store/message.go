@@ -2,7 +2,10 @@ package store
 
 import (
 	"sort"
+	"strings"
 	"time"
+
+	"log/slog"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -361,24 +364,16 @@ func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, 
 }
 
 // Search 消息搜索：只搜索调用者已加入的会话，排除已撤回与本人「仅自己删除」的消息。
-// convID=0 表示全局搜索。中文场景下使用 LIKE 即可（不需要额外全文索引），
-// 数据量大时可替换为 FULLTEXT ngram 索引而不改变调用方。
+// convID=0 表示全局搜索。≥2 字符的关键词走 FULLTEXT ngram 短语匹配（中文按连续
+// 子串匹配），单字符回退 LIKE（ngram 最小 token 是 2 字符）；FULLTEXT 异常时也
+// 回退 LIKE，保证搜索永远可用。
 func (s *MessageStore) Search(userID, convID uint, kw string, limit int) ([]model.SearchHitView, error) {
-	pat := "%" + likeEscape(kw) + "%"
-	q := s.db.Table("messages m").
-		Select(`m.id AS message_id, m.conversation_id, c.type AS conv_type,
-			COALESCE(c.name, '') AS conv_name, m.sender_id, u.nickname AS sender_nickname,
-			m.msg_type, m.content, m.created_at`).
-		Joins("JOIN conversations c ON c.id = m.conversation_id").
-		Joins("JOIN users u ON u.id = m.sender_id").
-		Where("m.is_recalled = ? AND m.admin_deleted_at IS NULL AND m.content LIKE ?", false, pat).
-		Where("EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = m.conversation_id AND cm.user_id = ?)", userID).
-		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID)
-	if convID > 0 {
-		q = q.Where("m.conversation_id = ?", convID)
+	rows, err := s.searchOnce(userID, convID, kw, limit, true)
+	if err != nil {
+		slog.Warn("message search fulltext failed, fallback to LIKE", "err", err.Error())
+		rows, err = s.searchOnce(userID, convID, kw, limit, false)
 	}
-	var rows []model.SearchHitView
-	if err := q.Order("m.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
+	if err != nil {
 		return nil, err
 	}
 	// 单聊没有群名：用对方昵称补全会话名
@@ -402,9 +397,7 @@ func (s *MessageStore) Search(userID, convID uint, kw string, limit int) ([]mode
 		}
 		names := make(map[uint]string, len(peers))
 		for _, p := range peers {
-			if names[p.ConversationID] == "" {
-				names[p.ConversationID] = p.Nickname
-			}
+			names[p.ConversationID] = p.Nickname
 		}
 		for i := range rows {
 			if rows[i].ConvType == 1 {
@@ -413,6 +406,41 @@ func (s *MessageStore) Search(userID, convID uint, kw string, limit int) ([]mode
 		}
 	}
 	return rows, nil
+}
+
+// searchOnce 执行一次搜索查询。fulltext=true 且关键词 ≥2 字符时走 FULLTEXT
+// 短语匹配（保留 LIKE 的连续性语义），否则 LIKE。
+func (s *MessageStore) searchOnce(userID, convID uint, kw string, limit int, fulltext bool) ([]model.SearchHitView, error) {
+	var cond string
+	var args []any
+	if fulltext && len([]rune(kw)) >= 2 {
+		cond = "m.is_recalled = ? AND m.admin_deleted_at IS NULL AND MATCH(m.content) AGAINST(? IN BOOLEAN MODE)"
+		args = []any{false, fulltextPhrase(kw)}
+	} else {
+		cond = "m.is_recalled = ? AND m.admin_deleted_at IS NULL AND m.content LIKE ?"
+		args = []any{false, "%" + likeEscape(kw) + "%"}
+	}
+	q := s.db.Table("messages m").
+		Select(`m.id AS message_id, m.conversation_id, c.type AS conv_type,
+			COALESCE(c.name, '') AS conv_name, m.sender_id, u.nickname AS sender_nickname,
+			m.msg_type, m.content, m.created_at`).
+		Joins("JOIN conversations c ON c.id = m.conversation_id").
+		Joins("JOIN users u ON u.id = m.sender_id").
+		Where(cond, args...).
+		Where("EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = m.conversation_id AND cm.user_id = ?)", userID).
+		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID)
+	if convID > 0 {
+		q = q.Where("m.conversation_id = ?", convID)
+	}
+	var rows []model.SearchHitView
+	err := q.Order("m.id DESC").Limit(limit).Scan(&rows).Error
+	return rows, err
+}
+
+// fulltextPhrase 把关键词包装成 BOOLEAN MODE 短语：引号内是连续短语，近似
+// LIKE 的子串语义；去掉关键词里的引号，避免提前闭合短语。
+func fulltextPhrase(kw string) string {
+	return `"` + strings.ReplaceAll(kw, `"`, "") + `"`
 }
 
 // UpdateContent 编辑消息正文并记录编辑时间。调用方先校验发送者、类型与时限。

@@ -83,6 +83,26 @@ func AutoMigrate(db *gorm.DB) error {
 	)
 }
 
+// EnsureMessageFulltext 确保消息正文存在 FULLTEXT ngram 索引（幂等）。
+//
+// 生产由迁移 0022 负责；开发期 AutoMigrate 不会建 FULLTEXT 索引（GORM 不支持），
+// 这里按 information_schema 探测后补建，两种模式都在启动时调用。
+func EnsureMessageFulltext(db *gorm.DB) error {
+	var count int64
+	if err := db.Raw(
+		"SELECT COUNT(*) FROM information_schema.statistics " +
+			"WHERE table_schema = DATABASE() AND table_name = 'messages' AND index_name = 'idx_messages_content_ft'",
+	).Scan(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	return db.Exec(
+		"ALTER TABLE messages ADD FULLTEXT INDEX idx_messages_content_ft (content) WITH PARSER ngram",
+	).Error
+}
+
 // Close 释放连接池。
 func Close(db *gorm.DB) {
 	if sqlDB, err := db.DB(); err == nil {
