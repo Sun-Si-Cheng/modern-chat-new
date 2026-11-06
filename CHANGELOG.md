@@ -26,6 +26,23 @@
 - **`FRONTEND_URL` 全为空白项时启动后找回密码 panic**：形如 `FRONTEND_URL=","` 或全空格时解析结果为空，WS Origin 白名单拒绝所有浏览器来源，且 `Forgot` 取 `FrontendURLs[0]` 会越界。现在启动阶段直接报错并提示至少配置一个来源（附单元测试）。
 - **发版版本号漂移**：`web/package.json` / `web/package-lock.json` 停在 `0.10.2`，官网 `website/package.json`、`package-lock.json` 与首页 Hero 徽标停在 `0.9.0`，与 CHANGELOG 已定版的 `0.10.3` 不一致。已统一对齐为 `0.10.3`；新增 `scripts/check-version.sh`（以 CHANGELOG 最新正式版本为基准核对各包版本与官网徽标，并提示最新 git tag），发版流程说明已补进 README 与运维手册。
 - **Docker 镜像版本号恒为 `dev`**：`server/Dockerfile` 构建时只传 `-s -w`，未注入 ldflags，`docker compose` 下 `/api/version` 永远返回 `dev`。现新增 `VERSION` / `COMMIT` / `BUILD_TIME` 三个 build arg（`docker-compose.yml` 已接好，未设置时回退 `dev` / `unknown`），构建上下文没有 `.git` 也能按需传入，不需要为了版本号挂载仓库元数据。
+- **插件沙箱在 Chrome 中永不启动（严重）**：`mountRuntime` 用 `contentWindow.document.open/write` 向 `sandbox="allow-scripts"`（无 `allow-same-origin`）的 iframe 写文档，父页对该窗口的文档写入被 `SecurityError` 拒绝，插件代码从未执行——`__mcActivate` 不触发，面板、消息渲染器、侧栏与消息动作全部失效。现改用 `iframe.srcdoc = bootHtml(code)` 注入，**保留无 `allow-same-origin` 的隔离**（插件仍读不到 JWT 与 localStorage）；`ev.source !== iframe.contentWindow` 的来源校验在 `srcdoc` 下继续有效。已用最小插件桩实测：`__mcActivate` 正常执行、双向 `postMessage`、事件分发与 RPC 全部通过。
+- **沙箱启动后暴露的权限越界（中等）**：`message:new` / `message:recall` / `presence` 广播未做接收方过滤，只声明 `ui:actions` 的插件也能收到整条消息正文；现按 `permissions.includes('message:read')` 过滤，`runMessageAction` 对无 `message:read` 的插件只下发消息元信息（id / 会话 / 发送者 / 类型 / 时间 / 撤回态）。
+- **沙箱无 CSP，插件可裸 `fetch` 绕过 `allowed_hosts`（中等）**：启动 HTML 注入 `Content-Security-Policy`（`default-src 'none'`、脚本/样式仅内联、`connect-src` 只含 `net` 权限声明的主机、禁用 frame/object/worker/form），`net` 权限的主机白名单这才真正生效。
+- **实时消息让会话历史不再拉取（中等）**：以 `messagesByConv[convId]` 是否存在判断「已加载首屏」，未打开的会话收到 WS 消息也会建数组，点开时跳过历史拉取（表现为「历史没了」）。改用独立 `loadedFirstPageByConv` 标记区分「已完整加载」与「仅有增量」。
+- **首屏 REST 结果覆盖并发 WS 消息（中等）**：首屏返回直接整表赋值，`await` 期间到达的新消息会被覆盖直到重开会话；现首屏也走 `mergeServerPage` 合并。
+- **断线补齐顺序错乱（中等）**：`catchUp` 补齐的缺口消息 id 小于已加载最新页，直接 append 会把旧消息排到最新消息之后；合并后统一按 id 归并排序（pending 固定在末尾），积压超一页也不会错序。
+- **`fetchMe()` 失败导致聊天页半死（中等）**：非 401 失败（断网 / 502 / 超时）直接在 `onMounted` 抛出，会话列表、通知监听与插件宿主都不会初始化且只能刷新；现单独 try/catch，顶部给出可重试的「重新加载」入口，帧监听与快捷键只在引导成功后绑定且不会重复注册。
+- **退出登录不联动 WS 与服务端（中等）**：本地 `logout()` 只清 localStorage，内存中的 Pinia 登录态与 WS 连接仍在收消息；现 `logout()` 通知订阅方断开 WS，`api/client` 的 401 分支同步清空 store。**说明**：后端没有「单会话登出」接口（仅 `POST /api/me/logout-others`），因此未新增服务端调用，接口契约保持不变。
+- **已读水位先记后发（中等）**：`markRead` 先写 `lastReportedRead` 再发帧，WS 未连接时 `sendFrame` 返回 false、帧被丢弃，重连 `resync` 也不会补发，服务端未读永远清不掉；现仅在发送成功后记录水位，重连补齐后自动补发。
+- **旧 socket 的 `onclose` 误标新连接（中等）**：快速切页时旧连接处于 CLOSING，`connect()` 新建连接后旧回调仍会把 `connected` 置 false、清空在线列表并再排一次重连；现每个回调先判断 `ws === socket`，`disconnect()` 先摘引用再关闭。
+- **插件 API 裸 `fetch` 无超时、无 401 处理（中等）**：代码下载、octet-stream 上传、按 URL 安装在代理挂住时永久 pending，401 也不回登录页；现统一走新增的 `rawFetch`（15s 超时、上传 60s，带 Bearer 与 401 同步登出）。
+- **消息缓存只增不减**：单会话本地缓存保留最新 800 条，裁剪后保持 `hasMore=true`，仍可继续上翻历史。
+- **他端 `read` 帧无条件清零未读**：只有 `upToId` 覆盖本端最新消息时才清未读，避免误清本端尚未看到的消息。
+- **桌面通知固定 tag**：改为按会话设置 tag，不同会话的通知不再互相覆盖，同一会话只保留最新一条。
+- **缓存用量文案不准确**：`navigator.storage.estimate()` 减去 localStorage 得到的数值含 IndexedDB 等其他存储，而清理只删 PWA 静态缓存；文案改为「站点存储近似值，清理只删除静态缓存」。
+- **fire-and-forget 无 catch**：通知点击打开会话、群成员刷新、通知权限请求、`?panel=plugins` 跳转补上 `.catch`，避免未处理的 Promise rejection。
+- **上传共用布尔标志**：图片 / 视频 / 语音共用 `uploading`，并发时先完成的一条会提前解除禁用；改为并发计数器。
 
 ### 文档
 
