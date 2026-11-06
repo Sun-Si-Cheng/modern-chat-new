@@ -13,6 +13,7 @@ bin/
 node_modules/
 web/dist/
 dist/
+dist-release/
 web/.env.local
 web/.env.*.local
 web/.eslintcache
