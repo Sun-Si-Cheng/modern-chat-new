@@ -4,6 +4,7 @@ package router
 import (
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/gin-contrib/gzip"
 	"gorm.io/gorm"
@@ -131,12 +132,23 @@ func New(d Deps) *gin.Engine {
 		// 静态服务**始终**挂载：改用对象存储后，历史消息里的 /uploads/... 仍要能打开
 		// （否则老图片/语音全部 404，而数据库里还留着这些 URL）。
 		// 新文件走当前存储，本地目录只服务历史文件，留空也只是 404，无副作用。
-		r.Group("/uploads").
-			Use(func(c *gin.Context) {
-				c.Header("Cache-Control", "public, max-age=31536000, immutable")
-				c.Next()
-			}).
-			StaticFS("/", http.Dir(service.UploadsDir(d.Cfg.DataDir)))
+		uploads := r.Group("/uploads",
+			// 必须登录才能读取：历史消息里的 URL 不带签名，浏览器 <img>/<video>
+			// 依靠同源 HttpOnly cookie 通过校验，旧数据无需迁移。
+			middleware.UploadAuth(users, d.Cfg.JWTSecret),
+			// 维护模式下与 API 一致的受控行为（管理员仍可访问）
+			middleware.Maintenance(settings),
+		)
+		serveUpload := func(c *gin.Context) {
+			// 不再使用一年期 public 缓存：未鉴权时公开缓存会把私人图片留在代理/浏览器；
+			// 现在受 cookie 保护，短私有缓存足够（文件名随机不可变，命中即可复用）。
+			c.Header("Cache-Control", "private, max-age=3600")
+			c.Header("X-Content-Type-Options", "nosniff")
+			fs := onlyFilesFS{http.Dir(service.UploadsDir(d.Cfg.DataDir))}
+			http.StripPrefix("/uploads", http.FileServer(fs)).ServeHTTP(c.Writer, c.Request)
+		}
+		uploads.GET("/*filepath", serveUpload)
+		uploads.HEAD("/*filepath", serveUpload)
 	}
 
 	api := r.Group("/api")
@@ -299,4 +311,27 @@ func New(d Deps) *gin.Engine {
 	}
 
 	return r
+}
+
+// onlyFilesFS 只允许打开普通文件，目录一律返回不存在。
+//
+// http.FileServer 对目录会列出文件名；上传目录里全是私人图片/语音/视频，
+// 一旦可枚举就等于把全站附件公开。这里让目录 Open 直接失败，列表页变成 404。
+type onlyFilesFS struct{ http.FileSystem }
+
+func (o onlyFilesFS) Open(name string) (http.File, error) {
+	f, err := o.FileSystem.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if st.IsDir() {
+		_ = f.Close()
+		return nil, os.ErrNotExist
+	}
+	return f, nil
 }

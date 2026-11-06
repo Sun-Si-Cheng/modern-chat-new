@@ -15,6 +15,10 @@ import (
 
 const TokenTTL = 7 * 24 * time.Hour
 
+// authCookieName 与 localStorage 里的 token 是同一个 JWT。
+// 浏览器 <img>/<video> 无法附带 Authorization 头，上传文件访问只能靠同源 cookie。
+const authCookieName = "mc_auth"
+
 type userCtxKey struct{}
 
 // UserFrom 从上下文取当前用户（Auth 之后可用）。
@@ -91,10 +95,66 @@ func Auth(users *store.UserStore, secret string) gin.HandlerFunc {
 			abort401(c)
 			return
 		}
+		// 顺带写入 HttpOnly cookie，供同源的 <img>/<video> 读取 /uploads 时鉴权。
+		// 只用于只读文件访问；REST 接口仍只认 Authorization，避免引入 CSRF 面。
+		setAuthCookie(c, strings.TrimPrefix(h, "Bearer "))
 		c.Set("user", u)
 		c.Set("uid", u.ID)
 		c.Next()
 	}
+}
+
+// UploadAuth 上传文件访问鉴权。
+//
+// 与 Auth 的区别：额外接受 HttpOnly cookie（浏览器加载 <img>/<video> 时无法带
+// Authorization 头）。历史消息里的 /uploads/... 不含签名，登录用户打开旧消息时
+// 同源请求会自动带上 cookie，因此不需要迁移数据；未登录访问一律 401。
+func UploadAuth(users *store.UserStore, secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := ""
+		if h := c.GetHeader("Authorization"); strings.HasPrefix(h, "Bearer ") {
+			token = strings.TrimPrefix(h, "Bearer ")
+		} else if v, err := c.Cookie(authCookieName); err == nil {
+			token = v
+		}
+		if token == "" {
+			abort401(c)
+			return
+		}
+		cl, err := ParseToken(token, secret)
+		if err != nil {
+			abort401(c)
+			return
+		}
+		u, err := users.ByID(cl.UID)
+		if err != nil {
+			slog.Error("upload auth load user", "err", err)
+			abort401(c)
+			return
+		}
+		if u == nil || u.TokenVersion != cl.TV {
+			abort401(c)
+			return
+		}
+		if u.IsBanned() {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "账号已被封禁"})
+			return
+		}
+		c.Set("user", u)
+		c.Set("uid", u.ID)
+		c.Next()
+	}
+}
+
+// setAuthCookie 写入与 Bearer token 相同的 HttpOnly cookie。
+// Secure 仅在 HTTPS（含反代 X-Forwarded-Proto）时开启，避免 HTTP 部署拿不到 cookie。
+func setAuthCookie(c *gin.Context, token string) {
+	if v, err := c.Cookie(authCookieName); err == nil && v == token {
+		return
+	}
+	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(authCookieName, token, int(TokenTTL.Seconds()), "/", "", secure, true)
 }
 
 func abort401(c *gin.Context) {
