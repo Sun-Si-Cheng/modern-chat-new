@@ -789,7 +789,6 @@ export default {
     cacheLimit: '缓存上限',
     cacheLimitHint: '超过上限时自动清理静态缓存',
     cacheLimitMB: '{mb} MB',
-    cacheUnlimited: '不限制',
     cacheClear: '清空本地缓存',
     cacheClearHint: '保留登录状态与偏好，只清理静态缓存',
     cacheClearConfirmTitle: '清空本地缓存',

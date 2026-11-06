@@ -788,7 +788,6 @@ export default {
     cacheLimit: 'Cache limit',
     cacheLimitHint: 'Static cache is cleared automatically above this limit',
     cacheLimitMB: '{mb} MB',
-    cacheUnlimited: 'Unlimited',
     cacheClear: 'Clear local cache',
     cacheClearHint: 'Keeps you signed in and preserves preferences; clears static caches only',
     cacheClearConfirmTitle: 'Clear local cache',

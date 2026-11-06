@@ -9,8 +9,8 @@
 export const CACHE_LIMIT_KEY = 'mc_cache_limit_mb'
 export const DEFAULT_CACHE_LIMIT_MB = 50
 
-/** 设置页的上限选项；0 = 不限制 */
-export const CACHE_LIMIT_OPTIONS = [10, 20, 50, 100, 0] as const
+/** 设置页的上限选项（MB） */
+export const CACHE_LIMIT_OPTIONS = [10, 20, 50, 100] as const
 
 export interface LocalCacheUsage {
   /** Cache Storage 中静态资源的字节数（可清理） */
@@ -22,12 +22,15 @@ export interface LocalCacheUsage {
 export function getCacheLimitMB(): number {
   const raw = localStorage.getItem(CACHE_LIMIT_KEY)
   const n = Number(raw)
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_CACHE_LIMIT_MB
+  // 历史版本存过 0（不限制）：现在必须有限额，回落到默认值
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_CACHE_LIMIT_MB
   return Math.floor(n)
 }
 
 export function setCacheLimitMB(mb: number): void {
-  localStorage.setItem(CACHE_LIMIT_KEY, String(Math.max(0, Math.floor(mb))))
+  const n = Math.floor(mb)
+  // 必须有明确上限：非法值（含历史遗留的 0）一律回落默认值
+  localStorage.setItem(CACHE_LIMIT_KEY, String(n > 0 ? n : DEFAULT_CACHE_LIMIT_MB))
 }
 
 export function formatBytes(n: number): string {
@@ -110,7 +113,7 @@ export async function clearStaticCache(): Promise<void> {
 
 /**
  * 超过上限时清空静态缓存；返回是否发生了清理。
- * 上限 0 = 不限制；传入 cacheBytes 可复用刚测到的值，避免重复遍历缓存。
+ * 传入 cacheBytes 可复用刚测到的值，避免重复统计。
  */
 export async function applyCacheLimit(limitMB: number, cacheBytes?: number): Promise<boolean> {
   if (limitMB <= 0 || !cacheSupported()) return false

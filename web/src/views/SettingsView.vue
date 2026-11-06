@@ -53,10 +53,9 @@ const notifySupported = notificationsSupported()
 const cacheUsage = ref<LocalCacheUsage | null>(null)
 const cacheBusy = ref(false)
 const cacheLimit = ref(getCacheLimitMB())
-const cacheLimitOptions = computed(() => [
-  ...[10, 20, 50, 100].map((mb) => ({ label: t('settings.cacheLimitMB', { mb }), value: mb })),
-  { label: t('settings.cacheUnlimited'), value: 0 },
-])
+const cacheLimitOptions = computed(() =>
+  [10, 20, 50, 100].map((mb) => ({ label: t('settings.cacheLimitMB', { mb }), value: mb })),
+)
 
 async function refreshCacheUsage() {
   try {
@@ -79,7 +78,7 @@ async function initCache() {
 
 async function onCacheLimitChange(v: unknown) {
   const mb = Number(v)
-  if (!Number.isFinite(mb) || mb < 0) return
+  if (!Number.isFinite(mb) || mb <= 0) return
   // 先落值：即使后面的统计/清理失败，用户的选择也不会丢
   cacheLimit.value = mb
   setCacheLimitMB(mb)
