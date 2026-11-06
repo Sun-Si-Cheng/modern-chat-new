@@ -381,11 +381,17 @@ stage_done release && ! [ "$FORCE" = "1" ] && { skip_stage "下载发行版" rel
     || die "下载失败：$RELEASE_DL_URL/${TAG_NAME}/$ASSET（Release 是否有该架构附件？）"
 
   info "校验 sha256 …"
-  if curl -fsS --max-time 30 -o "$INSTALL_DIR.tmp/$ASSET.sha256" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET.sha256" 2>/dev/null; then
+  if curl -fsSL --max-time 30 -o "$INSTALL_DIR.tmp/$ASSET.sha256" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET.sha256" 2>/dev/null; then
     EXPECTED="$(awk '{print $1}' "$INSTALL_DIR.tmp/$ASSET.sha256")"
     ACTUAL="$(sha256sum "$INSTALL_DIR.tmp/$ASSET" | awk '{print $1}')"
-    [ "$EXPECTED" = "$ACTUAL" ] || die "sha256 不匹配：期望 $EXPECTED，实际 $ACTUAL（下载损坏或被篡改）"
-    info "校验通过"
+    # 附件可能被平台重定向到 HTML 页（反盗链/登录页）；64 位十六进制才算有效清单
+    if ! printf '%s' "$EXPECTED" | grep -Eqi '^[0-9a-f]{64}$'; then
+      warn "sha256 附件内容异常（返回了 HTML？），跳过校验；本包哈希：$ACTUAL"
+    elif [ "$EXPECTED" = "$ACTUAL" ]; then
+      info "校验通过"
+    else
+      die "sha256 不匹配：期望 $EXPECTED，实际 $ACTUAL（下载损坏或被篡改）"
+    fi
   else
     warn "无 .sha256 附件，跳过校验"
   fi

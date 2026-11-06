@@ -303,6 +303,19 @@ func (u *Updater) runReleaseUpdate() {
 	sumURL := url + ".sha256"
 	u.log("==> 校验 sha256")
 	if expected, err := u.fetchText(sumURL); err == nil && strings.TrimSpace(expected) != "" {
+		expected = strings.TrimSpace(expected)
+		// 附件可能被平台重定向到 HTML 反盗链/登录页；64 位十六进制才算有效清单
+		valid := len(expected) >= 64
+		for i := 0; valid && i < 64; i++ {
+			c := expected[i]
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				valid = false
+			}
+		}
+		if !valid {
+			u.log("    （sha256 附件内容异常，跳过校验）")
+			return
+		}
 		f, err := os.Open(archive)
 		if err != nil {
 			u.fail("打开下载文件失败：%v", err)
@@ -312,8 +325,8 @@ func (u *Updater) runReleaseUpdate() {
 		_, _ = io.Copy(h, f)
 		_ = f.Close()
 		actual := hex.EncodeToString(h.Sum(nil))
-		if !strings.HasPrefix(strings.TrimSpace(expected), actual) {
-			u.fail("sha256 不匹配：期望 %s，实际 %s（下载损坏或被篡改）", strings.TrimSpace(expected)[:12], actual[:12])
+		if expected[:64] != actual {
+			u.fail("sha256 不匹配：期望 %s，实际 %s（下载损坏或被篡改）", expected[:12], actual[:12])
 			return
 		}
 		u.log("    校验通过")

@@ -66,11 +66,17 @@ info "下载 $ASSET …"
 curl -fL --retry 3 -o "$TMP/$ASSET" "$DL_BASE/${LATEST_TAG}/$ASSET" || die "下载失败：$DL_BASE/${LATEST_TAG}/$ASSET"
 
 info "校验 sha256 …"
-if curl -fsS --max-time 30 -o "$TMP/$ASSET.sha256" "$DL_BASE/${LATEST_TAG}/$ASSET.sha256" 2>/dev/null; then
+if curl -fsSL --max-time 30 -o "$TMP/$ASSET.sha256" "$DL_BASE/${LATEST_TAG}/$ASSET.sha256" 2>/dev/null; then
   EXPECTED="$(awk '{print $1}' "$TMP/$ASSET.sha256")"
   ACTUAL="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
-  [ "$EXPECTED" = "$ACTUAL" ] || die "sha256 不匹配：期望 $EXPECTED，实际 $ACTUAL"
-  info "校验通过"
+  # 附件可能被平台重定向到 HTML 页（反盗链/登录页）；64 位十六进制才算有效清单
+  if ! printf '%s' "$EXPECTED" | grep -Eqi '^[0-9a-f]{64}$'; then
+    warn "sha256 附件内容异常（返回了 HTML？），跳过校验；本包哈希：$ACTUAL"
+  elif [ "$EXPECTED" = "$ACTUAL" ]; then
+    info "校验通过"
+  else
+    die "sha256 不匹配：期望 $EXPECTED，实际 $ACTUAL"
+  fi
 else
   warn "无 sha256 附件，跳过校验（建议发布时附带 .sha256）"
 fi
