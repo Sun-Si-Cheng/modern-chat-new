@@ -151,6 +151,26 @@ curl http://127.0.0.1:8080/api/version
 # 直接构建镜像：docker build --build-arg VERSION=v0.10.3 -t modernchat-server ./server
 ```
 
+镜像源默认全部走官方源；国内网络可用 build args 覆盖（以下为第三方加速源示例，可用性与可信度请自行确认）：
+
+```bash
+GO_IMAGE=docker.m.daocloud.io/library/golang:1.26-alpine \
+RUNTIME_IMAGE=docker.m.daocloud.io/library/alpine:3.20 \
+GOPROXY=https://goproxy.cn,direct \
+APK_MIRROR=mirrors.aliyun.com \
+VERSION=$(git describe --tags --always) COMMIT=$(git rev-parse --short HEAD) \
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+docker compose up -d --build
+
+# 直接构建镜像同理
+docker build --build-arg GOPROXY=https://goproxy.cn,direct \
+  --build-arg APK_MIRROR=mirrors.aliyun.com -t modernchat-server ./server
+```
+
+- `GO_IMAGE` / `RUNTIME_IMAGE`：构建阶段与运行阶段的基础镜像
+- `GOPROXY`：Go module 代理，默认 `https://proxy.golang.org,direct`
+- `APK_MIRROR`：Alpine 软件源域名（只填域名），默认 `dl-cdn.alpinelinux.org`
+
 ### 方式二：手动运行
 
 ```bash

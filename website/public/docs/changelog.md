@@ -8,8 +8,35 @@
 
 ## [未发布]
 
+### 新增
+
+- **Docker 构建镜像源可配置**：`server/Dockerfile` 新增 `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` 四个 build arg，分别覆盖基础镜像、Go module 代理与 Alpine 软件源，默认值全部保持官方源（不传参时行为与之前一致）；`docker-compose.yml` 已透传，README 与运维手册补充国内网络示例（第三方源需自行确认可信度）。
+
 ### 修复
 
+- **`/uploads` 改 cookie 鉴权后的存量用户兼容与退出清理**：`mc_auth` cookie 此前只在已登录 REST 请求的响应里下发，存量用户（localStorage 有 JWT、浏览器无 cookie）存在窗口期看不到图片。现在登录/注册响应、WS 握手（部署重启后客户端必然重连）都会回授 cookie，带 Authorization 访问文件时也补发；浏览器正常刷新时首屏 `GET /api/me` 仍会自动获得 cookie，**无需重新登录、旧消息 URL 无需迁移**。另外新增 `POST /api/auth/logout`（免鉴权，维护模式可用）清除 HttpOnly cookie，前端登出时调用，避免退出后 7 天内同浏览器仍能直接打开 `/uploads`。**接口变化**：仅新增一个可选接口，请求/响应结构与既有接口均未改变。
+- **好友关系 / 邮箱验证码缺唯一约束（轻微）**：并发发好友申请会插出同方向重复行（申请列表/好友列表出现重复人），邮箱验证码的「查冷却 → 插入」也不是原子的，同一邮箱可同时存在多个有效码并绕过 60 秒冷却。现在 `friends (user_id, friend_id)`、`email_codes (email, purpose)` 加唯一索引；同意好友时反向记录改 upsert（避免互发申请时撞索引），验证码发码改为事务内行锁 + 原地重置单行。**升级需执行迁移 0025**（迁移会先清理同方向重复行，保留已通过 > 待处理 > 已拒绝、同级保留最早一条）。接口契约不变（并发重复申请仍返回 409）。
+- **审计日志按字节截断（轻微）**：`Detail[:500]` / `TargetName[:120]` 按字节切，中文会被切成半个多字节字符，写库出现乱码或在严格模式下报错；改为按字符（rune）截断。
+- **Web Push 退订可越权（轻微）**：退订接口只按 endpoint 删除，任何登录用户知道别人的 endpoint 就能替对方退订。现在按 `user_id + endpoint` 限定，越权请求影响 0 行；失效端点的服务端清理仍按 endpoint 删除。**接口契约不变**（请求参数不变，仅行为收紧）。
+- **重连补齐消息不带引用摘要（轻微）**：断线重连走的 `AfterID` 增量接口没有装配 `reply` 摘要（首屏分页有），增量消息里的引用块会空白到下次刷新。现在补齐路径同样调用 `AttachReply`。
+- **HTTP Server 缺超时（轻微）**：`http.Server` 只设了 Addr/Handler，未设 `ReadHeaderTimeout`，慢速发送请求头可长期占用连接（Slowloris）；keep-alive 空闲连接也没有回收上限。现补 `ReadHeaderTimeout=10s`、`IdleTimeout=90s`；**刻意不设** `ReadTimeout/WriteTimeout`（WebSocket 与文件上传下载是长连接，整体超时会误杀正常会话）。
+- **WS 握手 token 走 query 进入访问日志（轻微，未改契约）**：保留 `?token=` 兼容现有前端，同时新增同源 `mc_auth` cookie 回退——前端后续可改为不带 token 握手，避免 token 留在反向代理/访问日志里。**本项只是增加兼容路径**，握手参数与帧格式均未变化，前端无需改动。
+- **要求邮箱验证但 SMTP 未配置时静默跳过（轻微，行为收紧）**：此前当站点开启「注册必须验证邮箱」而 SMTP 未配置时，注册会降级为免验证，攻击者可借此绕过站点策略。现在除首账号（部署引导）外，这种情况直接返回 503「邮件服务未配置，请联系站长」。**行为变化**：该误配置状态下注册会失败而不是成功；正常配置或关闭该开关的站点不受影响。
+- **缩略图解码无尺寸上限（解压炸弹，中等）**：缩略图生成直接 `image.Decode` 整图，几 KB 的图片头声明超大边长时解码器按声明尺寸分配内存（例如 2 万 × 2 万约 1.6 GB），可导致进程 OOM。现在先用 `image.DecodeConfig` 只读头部，像素总数超过 4000 万（约 6325×6325）直接跳过缩略图（前端回退原图），并对整条缩略图生成路径加 `recover`，畸形图片触发解码器 panic 时只记日志、不影响上传。
+- **全站公告多步写入无事务（中等）**：`Announce` 依次「取/建系统会话、补齐成员、写消息、全员收件箱、未读 +1」共 5 次独立写入，中途失败会留下「消息已入库但成员/收件箱没更新」的永久不一致，未读 +1 失败还只打日志继续广播。现在 `ConversationStore.Announce` 用单个事务完成全部步骤，任一步失败整体回滚且不广播；无用户时返回 400（接口与前端契约不变）。
+- **最后一名站长保护存在并发漏洞（中等）**：`SetRole` 原为「先 `CountByRole` 再 `Save`」，两个站长同时降级对方时都看到还剩 2 人并各自成功，最终一个站长都不剩。现在 `UserStore.SetRole` 在事务内按 id 顺序 `FOR UPDATE` 锁定全部 admin 行，降级判断与写入原子完成；并发请求串行化，第二个会收到「至少需要保留一个站长」。接口与前端契约不变。
+- **`MarkRead` 游标可回退（中等）**：条件里带 `unread_count > 0` 兜底历史数据不一致，但更新时直接写入 `last_read_message_id = upToID`——端上补报一个更小的 id 会把游标拽回去，历史消息重新变未读、取新消息分页重复。现在改用 `GREATEST(last_read_message_id, upToID)`，游标只前进；未读清零与 @ 标记清理行为不变。
+- **自动更新「假成功」与 tar 解压路径穿越（中等）**：sha256 附件异常时只记日志并 `return`，外层 defer 仍把 phase 置为 `done`，界面显示更新成功但实际未替换；发行包解压依赖外部 `tar -xzf`，恶意/损坏包里的 `../`、绝对路径或链接条目可写到安装目录之外。现在哈希异常调用 `fail` 并中止；改为 Go 内解压，逐条校验路径必须落在目标目录内、拒绝符号/硬链接、解压总量限制 1 GB，并补正常包与恶意包的回归测试。
+- **密码重置令牌 TOCTOU、验证码尝试计数非原子（中等）**：`PasswordResetStore.Use` 只做 `Update("used", true)`，不校验令牌是否仍有效，两个并发请求拿同一链接都能改密码；邮箱验证码失败次数是「读-改-写」，并发错误提交会丢计数、5 次上限可被绕过。现在令牌核销改为事务内条件更新（`used=false AND expires_at>now`），`RowsAffected=0` 返回 `ErrResetTokenUsed`，接口回 400「重置链接已失效」；验证码改为单条原子 UPDATE（`attempts = attempts + 1`，达到上限同时写 `used_at`）。
+- **Web Push 无并发上限、无超时、endpoint 可任意填（中等）**：`webpush-go` 默认使用无超时的 `http.Client`，端点不响应会长期占用连接；大群群发时每个收件人一个 goroutine、无限并发外连；订阅接口只检查了 `https://` 前缀，endpoint 可被填成内网地址（服务端 SSRF）。现在：① 推送客户端固定 10s 超时；② 全局最多 16 个并发推送，满了直接丢弃（消息本身已在库中）；③ endpoint 必须是 https、无 userinfo、域名属于主流浏览器推送网关（FCM / Mozilla / WNS / Apple），订阅接口与发送侧共用同一校验。**注意**：自建/私有推送网关不在白名单内，如需支持需在 `service.pushEndpointHosts` 增加域名。
+- **发消息多步写入无事务、失败仍广播（中等）**：`Create / UpsertInbox / BumpUnread / MarkMention` 各用独立连接，失败只 `slog` 后继续 fan-out，会造成「消息已入库但收件箱 last/未读没更新」「客户端收到消息却对不上库」。现在 `MessageStore.CreateWithInbox` 用一个事务提交全部四步，任一步失败整体回滚并通过 error 帧告知客户端，不再广播。
+- **并发创建单聊会生成重复会话（中等）**：单聊创建原为「查重 → 建会话 → 加成员 → 初始化收件箱」四步且无事务、无唯一约束，双击或双方同时发起时可能各建一个会话，之后消息/未读分裂到两条会话。现在新增 `conversations.direct_key`（`小ID:大ID`）唯一索引，`EnsureSingle` 把查重、建会话、加成员、收件箱初始化包进同一事务；并发插入时只有一个成功，失败方回滚后复用已有会话。**升级需执行迁移 0024**；存量单聊 `direct_key` 保持 NULL（不影响现有数据，新会话才开始写入）。
+- **插件 URL 安装的 SSRF DNS rebinding（中等）**：`plugin.Fetch` 先 `LookupIP` 校验、再交给 `http.Client` 重新解析并连接，攻击者可让两次解析返回不同地址（校验时公网、连接时内网）。现在校验与连接都在自定义 `DialContext` 内完成：解析后直接拨号已校验的 IP，重定向的每一跳同样受控；并显式禁用环境代理。保留段补上 `100.64.0.0/10`（CGNAT）、`192.0.0.0/24`、`198.18.0.0/15`、`240.0.0.0/4`、文档网段、NAT64 `64:ff9b::/96` 及 IPv4-mapped 地址。
+- **「退出所有设备」不踢已连 WS 连接，且多数上行帧不复核连接状态（中等）**：`LogoutOthers` 只把 `token_version+1`，已建立的 WebSocket 仍缓存旧 tv，可继续收发；`Dispatch` 里也只有 `chat` 帧复核封禁/tv，`typing/read/recall/edit/reaction/delivered/ping` 全部绕过。现在：①「退出所有设备」与邮箱重置密码成功后主动 `KickUser` 断开全部连接；②`Dispatch` 在路由任何帧之前统一复核封禁与 `token_version`，失败回 error 帧并断开。握手/接口契约不变（帧格式不变，仅新增 `kicked` 断开行为）。
+- **单条消息长度上限与列宽不一致（中等）**：后台允许把「单条消息长度」调到 5000 字符，但 `messages.content` 是 `VARCHAR(1000)`——严格模式下发长消息报 1406、非严格模式静默截断。迁移 `0023` 把列扩为 `TEXT`（5000 个多字节字符约 15KB，远低于 64KB 上限），GORM 模型同步改为 `type:text`。**升级需执行迁移 0023**，回滚为 `VARCHAR(1000)` 会截断超长消息，回滚前先备份。
+- **`/uploads` 未鉴权、可列目录、公开缓存一年（严重）**：上传目录原先对所有匿名请求开放，Gin 的 `StaticFS` 还会列出目录内容，私人图片/语音/视频可被枚举；响应携带 `public, max-age=31536000, immutable`，会长期留在代理/共享缓存。现在：① 目录一律 404（`onlyFilesFS`）；② 缓存改为 `private, max-age=3600`；③ 读取必须登录——`Auth` 中间件在已认证响应里顺带下发同源 `HttpOnly` cookie，`/uploads` 同时接受 `Authorization` 与 cookie，历史消息里的旧 URL 无需迁移即可继续打开；④ 维护模式下与 API 一样受控（管理员可访问）。**取舍与限制**：未做逐会话成员校验（文件 URL 不含会话信息，需新增文件归属映射表），登录用户知道 URL 仍可读取；使用 S3 对象存储时，文件由桶策略/CDN 控制，不在本中间件范围内。
+- **附件 GC 误删视频与缩略图（严重）**：运维「清理孤儿附件」只把 `image/audio/sticker` 消息算作引用，前端已支持发送视频，导致仍在使用的视频被批量删除；图片派生缩略图（`xxx_t.jpg`）也会被单独判成孤儿。现改为收集所有 `content` 以 `/uploads/` 开头的消息（不再按 `msg_type` 枚举，后续新增消息类型不会漏），并让缩略图跟随原文件生命周期；补 dryRun / 真实删除两种模式的回归测试。
+- **所有流式上传丢前 512 字节（严重）**：`LocalStorage.SaveStream` / `S3Storage.SaveStream` 用 `io.ReadFull` 读文件头做类型嗅探后，只把剩余内容写入临时文件，前 512 字节从未写回；S3 分支的 `PutObject` 大小也用的是剩余长度。结果是图片打不开、语音无声音、视频只剩后半段（小于 512 字节的文件甚至直接失败）。现已写回头部、上传长度改用含头总长，并补本地与 S3 分支的逐字节 round-trip 回归测试。
 - **昵称/头像实时同步未生效**：服务端一直广播 `user_change` 帧，前端 `ServerFrame` 未声明该类型也没有处理分支，导致对方改了昵称/头像后必须刷新页面才更新。现由 `stores/ws.ts` 统一分发，更新单聊 peer、群成员缓存、好友/申请列表与本人多端。
 - **自己发出的消息不更新会话列表**：发送者本端收不到「纯新消息」的 `conv_change`，消息回显分支漏写 `lastMessageId/At/Preview/Type`，列表预览、时间与排序会停在旧消息；同时移除「发送即记已读水位」的错误优化，避免把消息转发到仍有未读的会话后，服务端未读数永远清不掉。
 - **WS 上行 4 KB 限制误伤长消息**：`chat.maxMessageLength` 可配到 5000 字符（UTF-8 下超过 4 KB），原 `maxMsgSize=4096` 会让合法长消息在 gorilla 读限制处直接断连且收不到 `error` 帧；上限改为 64 KB。
@@ -17,6 +44,23 @@
 - **`FRONTEND_URL` 全为空白项时启动后找回密码 panic**：形如 `FRONTEND_URL=","` 或全空格时解析结果为空，WS Origin 白名单拒绝所有浏览器来源，且 `Forgot` 取 `FrontendURLs[0]` 会越界。现在启动阶段直接报错并提示至少配置一个来源（附单元测试）。
 - **发版版本号漂移**：`web/package.json` / `web/package-lock.json` 停在 `0.10.2`，官网 `website/package.json`、`package-lock.json` 与首页 Hero 徽标停在 `0.9.0`，与 CHANGELOG 已定版的 `0.10.3` 不一致。已统一对齐为 `0.10.3`；新增 `scripts/check-version.sh`（以 CHANGELOG 最新正式版本为基准核对各包版本与官网徽标，并提示最新 git tag），发版流程说明已补进 README 与运维手册。
 - **Docker 镜像版本号恒为 `dev`**：`server/Dockerfile` 构建时只传 `-s -w`，未注入 ldflags，`docker compose` 下 `/api/version` 永远返回 `dev`。现新增 `VERSION` / `COMMIT` / `BUILD_TIME` 三个 build arg（`docker-compose.yml` 已接好，未设置时回退 `dev` / `unknown`），构建上下文没有 `.git` 也能按需传入，不需要为了版本号挂载仓库元数据。
+- **插件沙箱在 Chrome 中永不启动（严重）**：`mountRuntime` 用 `contentWindow.document.open/write` 向 `sandbox="allow-scripts"`（无 `allow-same-origin`）的 iframe 写文档，父页对该窗口的文档写入被 `SecurityError` 拒绝，插件代码从未执行——`__mcActivate` 不触发，面板、消息渲染器、侧栏与消息动作全部失效。现改用 `iframe.srcdoc = bootHtml(code)` 注入，**保留无 `allow-same-origin` 的隔离**（插件仍读不到 JWT 与 localStorage）；`ev.source !== iframe.contentWindow` 的来源校验在 `srcdoc` 下继续有效。已用最小插件桩实测：`__mcActivate` 正常执行、双向 `postMessage`、事件分发与 RPC 全部通过。
+- **沙箱启动后暴露的权限越界（中等）**：`message:new` / `message:recall` / `presence` 广播未做接收方过滤，只声明 `ui:actions` 的插件也能收到整条消息正文；现按 `permissions.includes('message:read')` 过滤，`runMessageAction` 对无 `message:read` 的插件只下发消息元信息（id / 会话 / 发送者 / 类型 / 时间 / 撤回态）。
+- **沙箱无 CSP，插件可裸 `fetch` 绕过 `allowed_hosts`（中等）**：启动 HTML 注入 `Content-Security-Policy`（`default-src 'none'`、脚本/样式仅内联、`connect-src` 只含 `net` 权限声明的主机、禁用 frame/object/worker/form），`net` 权限的主机白名单这才真正生效。
+- **实时消息让会话历史不再拉取（中等）**：以 `messagesByConv[convId]` 是否存在判断「已加载首屏」，未打开的会话收到 WS 消息也会建数组，点开时跳过历史拉取（表现为「历史没了」）。改用独立 `loadedFirstPageByConv` 标记区分「已完整加载」与「仅有增量」。
+- **首屏 REST 结果覆盖并发 WS 消息（中等）**：首屏返回直接整表赋值，`await` 期间到达的新消息会被覆盖直到重开会话；现首屏也走 `mergeServerPage` 合并。
+- **断线补齐顺序错乱（中等）**：`catchUp` 补齐的缺口消息 id 小于已加载最新页，直接 append 会把旧消息排到最新消息之后；合并后统一按 id 归并排序（pending 固定在末尾），积压超一页也不会错序。
+- **`fetchMe()` 失败导致聊天页半死（中等）**：非 401 失败（断网 / 502 / 超时）直接在 `onMounted` 抛出，会话列表、通知监听与插件宿主都不会初始化且只能刷新；现单独 try/catch，顶部给出可重试的「重新加载」入口，帧监听与快捷键只在引导成功后绑定且不会重复注册。
+- **退出登录不联动 WS 与服务端（中等）**：本地 `logout()` 只清 localStorage，内存中的 Pinia 登录态与 WS 连接仍在收消息；现 `logout()` 通知订阅方断开 WS，`api/client` 的 401 分支同步清空 store。**说明**：后端没有「单会话登出」接口（仅 `POST /api/me/logout-others`），因此未新增服务端调用，接口契约保持不变。
+- **已读水位先记后发（中等）**：`markRead` 先写 `lastReportedRead` 再发帧，WS 未连接时 `sendFrame` 返回 false、帧被丢弃，重连 `resync` 也不会补发，服务端未读永远清不掉；现仅在发送成功后记录水位，重连补齐后自动补发。
+- **旧 socket 的 `onclose` 误标新连接（中等）**：快速切页时旧连接处于 CLOSING，`connect()` 新建连接后旧回调仍会把 `connected` 置 false、清空在线列表并再排一次重连；现每个回调先判断 `ws === socket`，`disconnect()` 先摘引用再关闭。
+- **插件 API 裸 `fetch` 无超时、无 401 处理（中等）**：代码下载、octet-stream 上传、按 URL 安装在代理挂住时永久 pending，401 也不回登录页；现统一走新增的 `rawFetch`（15s 超时、上传 60s，带 Bearer 与 401 同步登出）。
+- **消息缓存只增不减**：单会话本地缓存保留最新 800 条，裁剪后保持 `hasMore=true`，仍可继续上翻历史。
+- **他端 `read` 帧无条件清零未读**：只有 `upToId` 覆盖本端最新消息时才清未读，避免误清本端尚未看到的消息。
+- **桌面通知固定 tag**：改为按会话设置 tag，不同会话的通知不再互相覆盖，同一会话只保留最新一条。
+- **缓存用量文案不准确**：`navigator.storage.estimate()` 减去 localStorage 得到的数值含 IndexedDB 等其他存储，而清理只删 PWA 静态缓存；文案改为「站点存储近似值，清理只删除静态缓存」。
+- **fire-and-forget 无 catch**：通知点击打开会话、群成员刷新、通知权限请求、`?panel=plugins` 跳转补上 `.catch`，避免未处理的 Promise rejection。
+- **上传共用布尔标志**：图片 / 视频 / 语音共用 `uploading`，并发时先完成的一条会提前解除禁用；改为并发计数器。
 
 ### 文档
 

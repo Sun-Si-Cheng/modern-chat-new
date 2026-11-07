@@ -12,6 +12,8 @@
 #     VERSION=$(git describe --tags --always) COMMIT=$(git rev-parse --short HEAD) \
 #     BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
 #   核对：curl http://127.0.0.1:8080/api/version
+# - 镜像源可配置：GO_IMAGE / RUNTIME_IMAGE / GOPROXY / APK_MIRROR 透传给 Dockerfile，
+#   默认均为官方源；国内网络用法见 README
 
 services:
   mysql:
@@ -43,6 +45,11 @@ services:
         VERSION: "${VERSION:-dev}"
         COMMIT: "${COMMIT:-unknown}"
         BUILD_TIME: "${BUILD_TIME:-unknown}"
+        # 镜像源：默认官方源，可按网络环境覆盖
+        GO_IMAGE: "${GO_IMAGE:-golang:1.26-alpine}"
+        RUNTIME_IMAGE: "${RUNTIME_IMAGE:-alpine:3.20}"
+        GOPROXY: "${GOPROXY:-https://proxy.golang.org,direct}"
+        APK_MIRROR: "${APK_MIRROR:-dl-cdn.alpinelinux.org}"
     container_name: modernchat-server
     restart: unless-stopped
     depends_on:

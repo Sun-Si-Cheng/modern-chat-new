@@ -8,6 +8,10 @@
 
 ## [未发布]
 
+### 新增
+
+- **Docker 构建镜像源可配置**：`server/Dockerfile` 新增 `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` 四个 build arg，分别覆盖基础镜像、Go module 代理与 Alpine 软件源，默认值全部保持官方源（不传参时行为与之前一致）；`docker-compose.yml` 已透传，README 与运维手册补充国内网络示例（第三方源需自行确认可信度）。
+
 ### 修复
 
 - **`/uploads` 改 cookie 鉴权后的存量用户兼容与退出清理**：`mc_auth` cookie 此前只在已登录 REST 请求的响应里下发，存量用户（localStorage 有 JWT、浏览器无 cookie）存在窗口期看不到图片。现在登录/注册响应、WS 握手（部署重启后客户端必然重连）都会回授 cookie，带 Authorization 访问文件时也补发；浏览器正常刷新时首屏 `GET /api/me` 仍会自动获得 cookie，**无需重新登录、旧消息 URL 无需迁移**。另外新增 `POST /api/auth/logout`（免鉴权，维护模式可用）清除 HttpOnly cookie，前端登出时调用，避免退出后 7 天内同浏览器仍能直接打开 `/uploads`。**接口变化**：仅新增一个可选接口，请求/响应结构与既有接口均未改变。
