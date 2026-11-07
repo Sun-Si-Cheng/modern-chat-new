@@ -1,5 +1,7 @@
 # ============================================================
-# 同步仓库文档 → website/public/docs/（中文副本，Vite 会原样拷进 dist）
+# 同步仓库文档 → website/public/content/docs/（中文副本，Vite 会原样拷进 dist）
+# 注意：不放 public/docs/ —— 那会与前端路由 /docs/:file 撞路径，
+# 静态服务器会优先返回 .md 原文，刷新文档页就变成"裸 Markdown"。
 # 用法：在仓库根目录执行  .\website\scripts\sync-docs.ps1
 # - 中文副本直接覆盖拷贝（仓库文档是唯一真源）
 # - 英文译本无法自动生成：若中文源比 en/ 译本新，仅提示需要人工修订
@@ -15,11 +17,12 @@ $map = [ordered]@{
   'docs/后端需求规格.md'  = 'api-spec.md'
   'docs/前端技术方案.md'  = 'frontend-guide.md'
   'docs/运维手册.md'      = 'ops-guide.md'
+  'docs/安全与迁移指南.md' = 'security-migration-guide.md'
   'server/README.md'     = 'server-readme.md'
   'web/README.md'        = 'web-readme.md'
 }
 
-$dst = 'website/public/docs'
+$dst = 'website/public/content/docs'
 $en  = Join-Path $dst 'en'
 New-Item -ItemType Directory -Force -Path $en | Out-Null
 

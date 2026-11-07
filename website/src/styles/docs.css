@@ -1,0 +1,346 @@
+/* ============================================================
+   文档站
+   ============================================================ */
+.doc {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: var(--sp-12);
+  align-items: start;
+  padding: var(--sp-10) 0 var(--sp-20);
+}
+
+/* ---------------- 侧边导航 ---------------- */
+.doc__side {
+  position: sticky;
+  top: calc(var(--nav-h) + var(--sp-5));
+}
+
+.doc__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.doc__group {
+  margin: var(--sp-5) 0 var(--sp-2);
+  padding-left: 10px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: var(--fs-200);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.doc__group:first-child {
+  margin-top: 0;
+}
+
+.doc__link {
+  padding: 5px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  color: var(--ink-2);
+  font-size: var(--fs-300);
+  line-height: 1.5;
+  transition:
+    color var(--dur-instant) var(--ease-out),
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
+}
+
+.doc__link:hover {
+  color: var(--ink);
+  background: var(--bg-sunken);
+}
+
+.doc__link.is-on {
+  border-left-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 560;
+}
+
+.doc__side-note {
+  margin-top: var(--sp-5);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  font-size: var(--fs-200);
+  line-height: 1.6;
+}
+
+/* ---------------- 正文 ---------------- */
+.doc__main {
+  min-width: 0;
+}
+
+.doc__crumb {
+  font-family: var(--mono);
+  font-size: var(--fs-200);
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+.doc__title {
+  margin: var(--sp-2) 0 var(--sp-2);
+  font-size: var(--fs-800);
+}
+
+.doc__desc {
+  margin-bottom: var(--sp-6);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-400);
+}
+
+.doc__loading {
+  padding: var(--sp-8) 0;
+  color: var(--ink-3);
+  font-size: var(--fs-400);
+}
+
+.doc__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-12);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------------- Markdown 排版 ---------------- */
+.md {
+  max-width: 780px;
+  color: var(--ink-2);
+}
+
+.md > *:first-child {
+  margin-top: 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  color: var(--ink);
+  scroll-margin-top: calc(var(--nav-h) + 16px);
+}
+
+.md h1 {
+  margin: var(--sp-8) 0 var(--sp-3);
+  font-size: var(--fs-700);
+}
+
+.md h2 {
+  margin: var(--sp-10) 0 var(--sp-3);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-600);
+}
+
+.md h3 {
+  margin: var(--sp-6) 0 var(--sp-2);
+  font-size: var(--fs-500);
+}
+
+.md h4 {
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--fs-400);
+}
+
+.md p {
+  margin: var(--sp-3) 0;
+  font-size: var(--fs-400);
+  line-height: 1.85;
+}
+
+.md strong {
+  color: var(--ink);
+  font-weight: 620;
+}
+
+.md a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-color: var(--brand-line);
+  text-underline-offset: 3px;
+}
+
+.md a:hover {
+  text-decoration-color: var(--brand);
+}
+
+.md ul,
+.md ol {
+  margin: var(--sp-3) 0;
+  padding-left: var(--sp-5);
+}
+
+.md li {
+  margin: 5px 0;
+  font-size: var(--fs-400);
+  line-height: 1.8;
+}
+
+.md li > p {
+  margin: 2px 0;
+}
+
+.md hr {
+  margin: var(--sp-8) 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.md blockquote {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 2px solid var(--brand-line);
+  background: var(--bg-sunken);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.md blockquote p {
+  margin: var(--sp-1) 0;
+  color: var(--ink-2);
+  font-size: var(--fs-300);
+}
+
+/* 行内代码 */
+.md code {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+/* 代码块：固定深色，不随主题（与产品一致） */
+.md pre {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-md);
+  background: var(--code-bg);
+  overflow-x: auto;
+}
+
+.md pre code {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--code-ink);
+  font-size: var(--fs-300);
+  line-height: 1.7;
+}
+
+/* 表格：内容按容器换行；只有真正放不下时才在外层横向滚动 */
+.md-table {
+  margin: var(--sp-4) 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+/* width: auto + min-width: 100%：列宽按内容自然分配（否则「是（生产）」这类短列
+   会被压缩成竖排），表格整体至少撑满容器；超出时由 .md-table 横向滚动 */
+.md table {
+  width: auto;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-300);
+}
+
+.md th,
+.md td {
+  min-width: 84px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 变量名 / 字段名这类短标识不换行，换行反而难读 */
+.md td:first-child {
+  white-space: nowrap;
+}
+
+.md th {
+  background: var(--bg-sunken);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.md td {
+  color: var(--ink-2);
+}
+
+.md img {
+  max-width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+
+.md input[type='checkbox'] {
+  margin-right: 6px;
+  accent-color: var(--brand);
+}
+
+/* 英文回退提示 */
+.docs-fallback {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-300);
+}
+
+/* ---------------- 响应式 ---------------- */
+@media (max-width: 980px) {
+  .doc {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-6);
+    padding-top: var(--sp-6);
+  }
+  .doc__side {
+    position: static;
+  }
+  /* 侧栏在窄屏变成横向滑动的胶囊行，不占满首屏 */
+  .doc__nav {
+    flex-direction: row;
+    gap: var(--sp-2);
+    overflow-x: auto;
+    padding-bottom: var(--sp-2);
+    scrollbar-width: none;
+  }
+  .doc__nav::-webkit-scrollbar {
+    display: none;
+  }
+  .doc__group {
+    display: none;
+  }
+  .doc__link {
+    flex: none;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--bg);
+  }
+  .doc__link.is-on {
+    border-color: var(--brand-line);
+  }
+  .doc__side-note {
+    display: none;
+  }
+  .md pre,
+  .md table {
+    border-radius: var(--r-sm);
+  }
+}

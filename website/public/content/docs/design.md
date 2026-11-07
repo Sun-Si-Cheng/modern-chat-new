@@ -137,8 +137,8 @@
 modernchat-new/
 ├── docs/                   设计文档 / 后端需求规格 / 前端技术方案 / 运维手册 / UI 设计方案 / 插件开发 / 协议正文
 ├── deploy/                 nginx.conf.example（裸机） nginx.compose.conf（容器）
-├── website/                官网（落地页 / 文档站 / 插件市场）
-│   ├── public/docs/        由仓库文档同步生成（scripts/sync-docs.sh|ps1）
+├── website/                官网（落地页 / 文档站 / 插件市场，Vue 3 + Vite，无组件库）
+│   ├── public/content/     静态内容：docs（文档副本）/ plugins（示例插件下载）
 │   └── scripts/            sync-docs.sh / sync-docs.ps1
 ├── plugins/examples/       weather / dice / word-count / conv-stats 示例插件
 ├── scripts/                install.sh / package-release.sh / update.sh / update-release.sh / uninstall.sh / coverage.sh

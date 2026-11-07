@@ -24,9 +24,20 @@ export function isDark(mode: ThemeMode = readMode()): boolean {
   return mode === 'dark' || (mode === 'auto' && systemDark())
 }
 
-/** 应用到 <html theme-mode>，TDesign 的 --td-* 令牌随之切换 */
+const EVENT = 'mc-theme-change'
+
+/** 应用到 <html theme-mode>；同时广播事件，让内嵌的产品预览跟随站点亮暗 */
 export function applyTheme(mode: ThemeMode = readMode()) {
-  document.documentElement.setAttribute('theme-mode', isDark(mode) ? 'dark' : 'light')
+  const dark = isDark(mode)
+  document.documentElement.setAttribute('theme-mode', dark ? 'dark' : 'light')
+  window.dispatchEvent(new CustomEvent<boolean>(EVENT, { detail: dark }))
+}
+
+/** 订阅主题变化（返回取消订阅函数） */
+export function onThemeChange(fn: (dark: boolean) => void) {
+  const handler = (e: Event) => fn((e as CustomEvent<boolean>).detail)
+  window.addEventListener(EVENT, handler)
+  return () => window.removeEventListener(EVENT, handler)
 }
 
 export function saveMode(mode: ThemeMode) {

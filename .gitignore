@@ -92,4 +92,4 @@ web/dist.old/
 .diag-*.mjs
 .playwright-cli/
 .workbuddy/
-
+.shots/

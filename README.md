@@ -79,8 +79,8 @@
 modernchat-new/
 ├── docs/                       # 设计文档 / 后端规格 / 前端方案 / 运维手册 / UI 方案 / 插件开发 / 协议正文
 ├── deploy/                     # nginx 配置示例（裸机 / compose 两版）
-├── website/                    # 官网（Vue 3 + Vite + TDesign）：落地页 / 文档站 / 插件市场
-│   ├── public/docs/            # 由仓库文档同步生成的文档站内容（website/scripts/sync-docs.*）
+├── website/                    # 官网（Vue 3 + Vite，无组件库）：落地页 / 文档站 / 插件市场
+│   ├── public/content/docs/    # 由仓库文档同步生成的文档站内容（website/scripts/sync-docs.*）
 │   └── scripts/sync-docs.*     # 把 README / docs / server / web 文档同步到官网
 ├── plugins/examples/           # 示例插件（weather / dice / word-count / conv-stats）
 ├── scripts/                    # install.sh（发行版一键安装）/ package-release.sh（构建机打包）

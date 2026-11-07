@@ -1,0 +1,170 @@
+/* ============================================================
+   官网设计令牌
+   ------------------------------------------------------------
+   与产品站（web/）共用一套语言：7 档字号、4 档圆角、三档动效、
+   三级 elevation。差异只在「尺度」——官网需要更大的标题阶梯，
+   因此额外提供 --fs-800 / --fs-900 两档展示级字号。
+
+   硬约束：
+   1. 组件里不写死颜色，一律取本文件的令牌；
+   2. 过渡只走 --dur-* / --ease-*，不写裸 ease-out；
+   3. 圆角只用 --r-*，字号只用 --fs-*。
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------- 品牌 ----------
+     --brand 用于文字 / 图标 / 描边；--brand-solid 用于实底按钮。
+     两者在暗色下分开取值：亮蓝文字在深底上看得清，但白字压在亮蓝
+     按钮上对比度不够，所以实底另用一档更深的蓝。 */
+  --brand: #0052d9;
+  --brand-hover: #0043b8;
+  --brand-press: #003a9e;
+  --brand-solid: #0052d9;
+  --brand-solid-hover: #0043b8;
+  --brand-fg: #ffffff;
+  --brand-soft: #eaf1ff;
+  --brand-line: #bcd0fb;
+  /* 深色导航 / 代码块上的品牌色（对比度足够，不刺眼） */
+  --brand-on-dark: #7fadff;
+
+  /* ---------- 表面 ---------- */
+  --bg: #ffffff;
+  --bg-page: #f7f8fa;
+  --bg-sunken: #eff2f7;
+  --bg-inverse: #101216;
+
+  /* ---------- 文字 ---------- */
+  --ink: #141821;
+  --ink-2: #4b5464;
+  --ink-3: #79818f;
+  --ink-4: #a2a9b5;
+  --ink-inverse: #ffffff;
+  --ink-inverse-2: #a6adba;
+
+  /* ---------- 描边 ---------- */
+  --line: #e5e8ef;
+  --line-2: #d5dae4;
+  --line-soft: #eef1f5;
+  --line-inverse: rgba(255, 255, 255, 0.1);
+
+  /* ---------- 语义色 ---------- */
+  --ok: #0f8a5f;
+  --ok-soft: #e7f6ef;
+  --warn: #a86500;
+  --warn-soft: #fdf1e0;
+  --danger: #c92a2a;
+  --danger-soft: #fdecec;
+
+  /* ---------- 代码 ---------- */
+  --code-bg: #0b0f16;
+  --code-head: #141b26;
+  --code-line: rgba(255, 255, 255, 0.07);
+  --code-ink: #c9d4e4;
+  --code-dim: #6f7f96;
+  --tok-key: #7fb2ff;
+  --tok-str: #9ee0a4;
+  --tok-com: #62738a;
+  --tok-num: #f2b880;
+  --tok-fn: #cdb8ff;
+
+  /* ---------- 字号：7 档 + 2 档展示级 ---------- */
+  --fs-100: 11px; /* 极次要标注 */
+  --fs-200: 12px; /* 标签、脚注 */
+  --fs-300: 13px; /* 正文小、导航 */
+  --fs-400: 14px; /* 列表标题 */
+  --fs-500: 15px; /* 正文 */
+  --fs-600: 17px; /* 小节标题 */
+  --fs-700: 20px; /* 区块标题（小） */
+  --fs-800: clamp(24px, 2.4vw, 30px); /* 区块标题 */
+  --fs-900: clamp(36px, 4.4vw, 54px); /* 首屏主标题 */
+
+  /* ---------- 圆角：4 档 + 胶囊 ---------- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ---------- 间距（4pt 栅格） ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* ---------- 层次 ---------- */
+  --elev-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 6px -2px rgba(15, 23, 42, 0.06);
+  --elev-2: 0 8px 24px -14px rgba(15, 23, 42, 0.2), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --elev-3: 0 28px 64px -28px rgba(15, 23, 42, 0.32), 0 2px 8px -4px rgba(15, 23, 42, 0.08);
+
+  /* ---------- 动效 ---------- */
+  --dur-instant: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 280ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------- 布局 ---------- */
+  --container: 1160px;
+  --gutter: 24px;
+  --nav-h: 60px;
+
+  /* ---------- 字体 ---------- */
+  --font: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --mono: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace;
+}
+
+/* ============================================================
+   暗色：只覆盖色值，尺度令牌复用
+   ============================================================ */
+:root[theme-mode='dark'] {
+  color-scheme: dark;
+
+  --brand: #6fa8ff;
+  --brand-hover: #93beff;
+  --brand-press: #4d8bf0;
+  --brand-solid: #2f6fd8;
+  --brand-solid-hover: #3d7ce4;
+  --brand-fg: #ffffff;
+  --brand-soft: #17243a;
+  --brand-line: #2b4c7e;
+
+  --bg: #16181d;
+  --bg-page: #101216;
+  --bg-sunken: #1c1f26;
+  --bg-inverse: #0b0d11;
+
+  --ink: #e9ecf2;
+  --ink-2: #a8b0be;
+  --ink-3: #7d8696;
+  --ink-4: #5d6675;
+  --ink-inverse: #ffffff;
+  --ink-inverse-2: #9aa3b2;
+
+  --line: #262a33;
+  --line-2: #333844;
+  --line-soft: #1e222a;
+
+  --ok: #3fbf8f;
+  --ok-soft: #10241d;
+  --warn: #e0a34a;
+  --warn-soft: #2a2013;
+  --danger: #f0736f;
+  --danger-soft: #2c1618;
+
+  --code-bg: #0b0f16;
+  --code-head: #141b26;
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.36), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+  --elev-2: 0 10px 26px -14px rgba(0, 0, 0, 0.7), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --elev-3: 0 30px 72px -30px rgba(0, 0, 0, 0.78), 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+}

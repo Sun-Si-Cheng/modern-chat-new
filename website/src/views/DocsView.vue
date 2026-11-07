@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
-import { Button as TButton } from 'tdesign-vue-next'
 
 import { currentLang } from '@/i18n'
 
@@ -27,7 +26,7 @@ const DOCS: DocItem[] = [
   { group: true, zh: '入门', en: 'Getting started' },
   {
     file: 'getting-started.md',
-    zh: '项目总览（README）',
+    zh: '项目总览',
     en: 'Project overview',
     descZh: '定位、快速开始、插件开发与升级部署',
     descEn: 'Positioning, quick start, plugin dev, upgrades',
@@ -133,9 +132,11 @@ async function loadDoc() {
   failed.value = false
   html.value = ''
 
+  // 文档实体放在 content/docs 下：/docs/xxx.md 留给前端路由，
+  // 否则静态服务器会直接返回 md 原文，刷新即"裸 Markdown"
   const file = activeFile.value
-  const enPath = `docs/en/${file}`
-  const zhPath = `docs/${file}`
+  const enPath = `content/docs/en/${file}`
+  const zhPath = `content/docs/${file}`
   const path = lang.value === 'en' ? enPath : zhPath
 
   try {
@@ -160,7 +161,12 @@ async function loadDoc() {
 }
 
 function renderMd(md: string, fallbackNote: boolean) {
-  const body = marked.parse(md, { async: false }) as string
+  // 文档自身的 h1 与页面标题重复，去掉首个 h1（正文从 h2 开始层级也正确）
+  const body = (marked.parse(md, { async: false }) as string)
+    .replace(/^\s*<h1[^>]*>[\s\S]*?<\/h1>/, '')
+    // 表格套一层滚动容器：宽表（环境变量全表）在窄屏上横向滚动，而不是把页面撑宽
+    .replace(/<table>/g, '<div class="md-table"><table>')
+    .replace(/<\/table>/g, '</table></div>')
   // 仓库内 md 链接改写为站内路由，避免 404（点击由 onBodyClick 走前端路由）
   const rewritten = body.replace(/href="([^"]+\.md)(#[^"]*)?"/g, (_m, file: string, hash = '') => {
     const base = file.split('/').pop() ?? file
@@ -194,54 +200,49 @@ watch(
 </script>
 
 <template>
-  <main class="container docs-layout">
-    <aside class="docs-side">
-      <nav class="docs-nav" aria-label="Docs">
+  <main class="container doc">
+    <aside class="doc__side">
+      <nav class="doc__nav" aria-label="Docs">
         <template v-for="(item, i) in DOCS" :key="i">
-          <div v-if="item.group" class="docs-group">{{ label(item) }}</div>
-          <RouterLink
-            v-else
-            :to="`/docs/${item.file}`"
-            :class="{ 'is-active': item.file === activeFile }"
-          >
+          <div v-if="item.group" class="doc__group">{{ label(item) }}</div>
+          <RouterLink v-else :to="`/docs/${item.file}`" class="doc__link" :class="{ 'is-on': item.file === activeFile }">
             {{ label(item) }}
           </RouterLink>
         </template>
       </nav>
-      <p class="docs-side-note">{{ t('docs.zhNote') }}</p>
+      <p class="doc__side-note">{{ t('docs.zhNote') }}</p>
     </aside>
 
-    <article class="docs-main">
-      <div class="docs-meta">
-        <span class="docs-crumb">{{ t('docs.crumb') }}</span>
-      </div>
-      <h1 class="docs-title">{{ label(items[activeIndex] ?? items[0]) }}</h1>
-      <p class="docs-desc">{{ descOf(items[activeIndex] ?? items[0]) }}</p>
+    <article class="doc__main">
+      <p class="doc__crumb">{{ t('docs.crumb') }}</p>
+      <h1 class="doc__title">{{ label(items[activeIndex] ?? items[0]) }}</h1>
+      <p class="doc__desc">{{ descOf(items[activeIndex] ?? items[0]) }}</p>
 
-      <div class="md-body" @click="onBodyClick">
-        <p v-if="loading" class="docs-loading">{{ t('docs.loading') }}</p>
-        <p v-else-if="failed" class="docs-loading">{{ t('docs.failed') }}</p>
+      <div class="md" @click="onBodyClick">
+        <p v-if="loading" class="doc__loading">{{ t('docs.loading') }}</p>
+        <p v-else-if="failed" class="doc__loading">{{ t('docs.failed') }}</p>
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="html" />
       </div>
 
-      <nav class="docs-pager">
-        <TButton
+      <nav class="doc__pager">
+        <button
           v-if="prevItem"
-          variant="outline"
-          size="small"
+          class="btn btn--ghost btn--sm"
+          type="button"
           @click="router.push(`/docs/${prevItem.file}`)"
         >
           ← {{ label(prevItem) }}
-        </TButton>
+        </button>
         <span v-else />
-        <TButton
+        <button
           v-if="nextItem"
-          variant="outline"
-          size="small"
+          class="btn btn--ghost btn--sm"
+          type="button"
           @click="router.push(`/docs/${nextItem.file}`)"
         >
           {{ label(nextItem) }} →
-        </TButton>
+        </button>
       </nav>
     </article>
   </main>

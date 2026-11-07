@@ -10,6 +10,8 @@
 
 ### 新增
 
+- **官网重构**：落地页从"看板式介绍"改为以产品本身为中心——首屏用 HTML/CSS 复刻真实四栏界面（可切会话、开合详情面板、切暗色，不是截图），信息架构重排为「核心能力 → 插件系统 → 部署 → 生态」，文档站与插件市场同步换新。视觉改用与 `web/` 同源的设计令牌（7 档字号 / 4 档圆角 / 三档动效 / 三级阴影），图标改为内联 SVG，**移除 TDesign 依赖**：JS 776 KB → 249 KB（gzip 234 KB → 90 KB），CSS 200 KB → 38 KB（gzip 25 KB → 8 KB）。产品预览默认跟随站点亮暗，点预览内的主题按钮后转为手动。
+- **官网路径与文档修正**：文档与示例插件的静态文件从 `public/docs/`、`public/plugins/` 移到 `public/content/`，`/docs/xxx.md` 刷新时不再直接返回裸 Markdown（静态服务器以前会抢在 SPA 路由前面命中真实文件），`/plugins` 也不再与目录同名；文档站补齐「安全与迁移指南」（英文译本已存在但中文副本一直没同步），并去掉正文与页面标题重复的一级标题。**运维影响**：`scripts/check-version.sh` 的官网版本校验从"首页徽标文本"改为读 `website/src/links.ts`，发版文档同步更新。
 - **Docker 构建镜像源可配置**：`server/Dockerfile` 新增 `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` 四个 build arg，分别覆盖基础镜像、Go module 代理与 Alpine 软件源，默认值全部保持官方源（不传参时行为与之前一致）；`docker-compose.yml` 已透传，README 与运维手册补充国内网络示例（第三方源需自行确认可信度）。
 
 ### 修复

@@ -1,359 +1,417 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import {
-  Button as TButton,
-  Input as TInput,
-  Table as TTable,
-  TabPanel as TTabPanel,
-  Tabs as TTabs,
-  Tag as TTag,
-} from 'tdesign-vue-next'
 
-import DemoChat from '@/components/DemoChat.vue'
-import { currentLang, pickList } from '@/i18n'
+import CodeCard from '@/components/CodeCard.vue'
+import ProductPreview from '@/components/ProductPreview.vue'
+import UiIcon from '@/components/UiIcon.vue'
+import { REPO } from '@/links'
 
 const { t } = useI18n()
 
-const qsTab = ref('docker')
+/** 去掉高亮标签得到可复制的纯文本 */
+const plain = (html: string) => html.replace(/<[^>]*>/g, '')
 
-const qsDocker = `git clone https://gitee.com/Sun-Si-Cheng/modern-chat-new.git
-cd modern-chat-new
-docker compose up -d --build        # MySQL 8 + backend :8080，首次启动自动建表
-cd web && npm install && npm run dev  # frontend :5173`
+/* ---------------- 首屏 ---------------- */
+const INSTALL = 'curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh | bash'
 
-const qsManual = `# backend：自备 MySQL 8.0
-cd server
-cp .env.example .env      # 填 DB_DSN / JWT_SECRET / FRONTEND_URL
-go run ./cmd/server       # :8080
+const copied = ref(false)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
 
-# frontend
-cd ../web
-npm install
-npm run dev               # :5173，已代理 /api 与 /ws`
+async function copyInstall() {
+  try {
+    await navigator.clipboard.writeText(INSTALL)
+    copied.value = true
+    clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => (copied.value = false), 1600)
+  } catch {
+    /* 非安全上下文：忽略，用户可手动选中 */
+  }
+}
 
-const qsVerify = `curl http://127.0.0.1:8080/api/health    # {"status":"ok"}
-curl http://127.0.0.1:8080/api/version   # {version, commit, buildTime}
+const facts = computed(() => [t('hero.f1'), t('hero.f2'), t('hero.f3'), t('hero.f4')])
 
-# 打开 http://localhost:5173 → 注册首个账号（自动成为站长）
-# 上传 plugins/examples/weather.plugin.js 体验插件系统`
-
-const pluginSample = `/* {
-  "name": "weather-demo",
-  "version": "1.0.0",
-  "permissions": ["message:read", "message:send",
-                  "message:render", "ui:panel", "storage"],
-  "allowedHosts": ["*.openweathermap.org"]
-} */
-function __mcActivate(api) {
-  // 注册自定义消息类型：主站在气泡内渲染
-  api.registerMessageRenderer('weather', (p) => ({
-    body: [{ component: 'text',
-             props: { content: p.city + ' ' + p.sky + ' ' + p.temp + '°C' } }],
-  }));
-
-  // 侧边栏面板（描述式 UI）
-  api.addSidePanel({
-    title: 'Weather',
-    body: [
-      { component: 'text', props: { content: 'Hangzhou · Sunny 22°C' } },
-      { component: 'button', props: { text: 'Refresh' }, action: 'refresh' },
+/* ---------------- 能力 ---------------- */
+const capGroups = computed(() => [
+  {
+    title: t('cap.g1'),
+    items: [
+      { icon: 'chat', title: t('cap.1t'), desc: t('cap.1d') },
+      { icon: 'users', title: t('cap.2t'), desc: t('cap.2d') },
+      { icon: 'layers', title: t('cap.3t'), desc: t('cap.3d') },
+      { icon: 'bolt', title: t('cap.4t'), desc: t('cap.4d') },
     ],
-  });
-}`
-
-/** SDK 表（用 TDesign Table 渲染，列定义见 sdkColumns） */
-const sdkRows = computed(() => [
-  { api: 'api.on(event, fn)', role: t('sdk.r1'), perm: 'message:read' },
-  { api: 'api.send(convId, payload, msgType?)', role: t('sdk.r2'), perm: 'message:send' },
-  { api: 'api.registerMessageRenderer(type, fn)', role: t('sdk.r3'), perm: 'message:render' },
-  { api: 'api.addSidePanel(desc)', role: t('sdk.r4'), perm: 'ui:panel' },
-  { api: 'api.storage.get / set', role: t('sdk.r5'), perm: 'storage' },
-  { api: 'api.request(url, opts?)', role: t('sdk.r6'), perm: 'net' },
-  { api: 'api.theme.apply(cssVars)', role: t('sdk.r7'), perm: 'ui:theme' },
+  },
+  {
+    title: t('cap.g2'),
+    items: [
+      { icon: 'lock', title: t('cap.5t'), desc: t('cap.5d') },
+      { icon: 'shield', title: t('cap.6t'), desc: t('cap.6d') },
+      { icon: 'settings', title: t('cap.7t'), desc: t('cap.7d') },
+    ],
+  },
+  {
+    title: t('cap.g3'),
+    items: [
+      { icon: 'terminal', title: t('cap.8t'), desc: t('cap.8d') },
+      { icon: 'refresh', title: t('cap.9t'), desc: t('cap.9d') },
+      { icon: 'cpu', title: t('cap.10t'), desc: t('cap.10d') },
+    ],
+  },
 ])
 
-const sdkColumns = computed(() => [
-  { colKey: 'api', title: t('sdk.api'), width: 300 },
-  { colKey: 'role', title: t('sdk.role') },
-  { colKey: 'perm', title: t('sdk.perm'), width: 160 },
-])
+/* ---------------- 插件 ---------------- */
+/** 代码块里的注释与示例文案也要跟着语言走，否则英文页里全是中文注释 */
+const com = (key: string) => `<span class="tok-com">${t(key)}</span>`
+const str = (s: string) => `<span class="tok-str">${s}</span>`
 
-// ===== 在线演示（纯前端模拟，数据不出浏览器） =====
-interface PgMsg {
-  id: number
-  me: boolean
-  text: string
+const pluginHtml = computed(() => `${com('plug.codeManifest')}
+{
+  <span class="tok-key">"name"</span>: ${str('"weather-demo"')},
+  <span class="tok-key">"version"</span>: ${str('"1.0.0"')},
+  <span class="tok-key">"permissions"</span>: [
+    ${str('"ui:panel"')}, ${str('"message:render"')}, ${str('"storage"')}
+  ],
+  <span class="tok-key">"allowedHosts"</span>: [${str('"*.openweathermap.org"')}]
 }
+<span class="tok-com">*/</span>
 
-const pgDark = ref(false)
-const pgActive = ref(0)
-const pgText = ref('')
-const pgPanel = ref(false)
-const pgMsgs = ref<Record<number, PgMsg[]>>({})
-const pgBody = ref<HTMLElement | null>(null)
-let pgSeq = 0
-let botTimer: ReturnType<typeof setTimeout> | null = null
-
-const pgConvs = computed(() => {
-  const names = pickList(currentLang(), 'pg.names')
-  const hues = [210, 150, 330]
-  return names.map((name, i) => ({ id: i, name, hue: hues[i] ?? 210 }))
-})
-
-const pgCurrent = computed(() => pgConvs.value[pgActive.value] ?? { id: 0, name: '?', hue: 210 })
-const pgMessages = computed(() => pgMsgs.value[pgActive.value] ?? [])
-
-function pgScroll() {
-  nextTick(() => {
-    const el = pgBody.value
-    if (el) el.scrollTop = el.scrollHeight
+<span class="tok-key">function</span> <span class="tok-fn">__mcActivate</span>(api) {
+  ${com('plug.codePanel')}
+  api.<span class="tok-fn">addSidePanel</span>({
+    title: ${str(`'${t('plug.codeTitle')}'`)},
+    body: [
+      {
+        component: ${str("'text'")},
+        props: { content: ${str(`'${t('plug.codeCity')}'`)} },
+      },
+      {
+        component: ${str("'button'")},
+        props: { text: ${str(`'${t('plug.codeRefresh')}'`)} },
+        action: ${str("'refresh'")},
+      },
+    ],
   })
-}
+}`)
 
-function pgSend() {
-  const text = pgText.value.trim()
-  if (!text) return
-  const id = pgActive.value
-  ;(pgMsgs.value[id] ??= []).push({ id: ++pgSeq, me: true, text })
-  pgText.value = ''
-  pgScroll()
-
-  // 模拟对方在 0.8s 后回复（取本地化语料）
-  if (botTimer) clearTimeout(botTimer)
-  botTimer = setTimeout(() => {
-    const pool = pickList(currentLang(), 'pg.bot')
-    const reply = pool[Math.floor(Math.random() * pool.length)] ?? '…'
-    ;(pgMsgs.value[id] ??= []).push({ id: ++pgSeq, me: false, text: reply })
-    pgScroll()
-  }, 800)
-}
-
-function pgSwitch(id: number) {
-  pgActive.value = id
-  pgScroll()
-}
-
-function pgReset() {
-  pgMsgs.value = {}
-  pgText.value = ''
-  pgDark.value = false
-  pgPanel.value = false
-  pgActive.value = 0
-}
-
-// ===== 功能特性 =====
-const features = computed(() => {
-  const icons = ['🔐', '⚡', '💬', '🧩', '🛠️', '📦']
-  return icons.map((icon, i) => ({
-    icon,
-    title: t(`f${i + 1}.t`),
-    desc: t(`f${i + 1}.d`),
-  }))
-})
+const security = computed(() => [
+  { t: t('plug.s1t'), d: t('plug.s1d') },
+  { t: t('plug.s2t'), d: t('plug.s2d') },
+  { t: t('plug.s3t'), d: t('plug.s3d') },
+  { t: t('plug.s4t'), d: t('plug.s4d') },
+])
 
 const whitelist = ['text', 'image', 'button', 'input', 'card', 'list', 'divider', 'link']
-const stackBadges = [
-  'Vue 3', 'Vite', 'TypeScript', 'Pinia', 'TDesign', 'vue-i18n',
-  'Go', 'Gin', 'GORM', 'gorilla/websocket', 'MySQL 8.0', 'JWT HS256',
-]
+
+const perms = computed(() => [
+  { name: 'message:read', desc: t('plug.p1') },
+  { name: 'message:send', desc: t('plug.p2') },
+  { name: 'message:render', desc: t('plug.p3') },
+  { name: 'ui:panel', desc: t('plug.p4') },
+  { name: 'storage', desc: t('plug.p5') },
+  { name: 'net', desc: t('plug.p6') },
+])
+
+/* ---------------- 部署 ---------------- */
+type TabKey = 'script' | 'docker' | 'manual'
+const tab = ref<TabKey>('script')
+
+const tabCode = computed<Record<TabKey, { name: string; html: string }>>(() => ({
+  script: {
+    name: 'install.sh',
+    html: `${com('dep.c1')}
+curl -fsSL ${str('https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh')} | bash
+
+${com('dep.c2')}
+${com('dep.c3')}`,
+  },
+  docker: {
+    name: 'docker-compose.yml',
+    html: `docker compose up -d --build           <span class="tok-com">${t('dep.c4')}</span>
+
+cd web && npm install && npm run dev   <span class="tok-com">${t('dep.c5')}</span>
+
+<span class="tok-com">${t('dep.c6')}</span>`,
+  },
+  manual: {
+    name: 'terminal',
+    html: `<span class="tok-com">${t('dep.c7')}</span>
+cd server
+cp .env.example .env       <span class="tok-com"># DB_DSN / JWT_SECRET / FRONTEND_URL</span>
+go run ./cmd/server        <span class="tok-com"># :8080</span>
+
+<span class="tok-com">${t('dep.c9')}</span>
+cd ../web && npm install && npm run dev`,
+  },
+}))
+
+const tabs = computed(() => [
+  { key: 'script' as const, label: t('dep.tabScript') },
+  { key: 'docker' as const, label: t('dep.tabDocker') },
+  { key: 'manual' as const, label: t('dep.tabManual') },
+])
+
+const ops = computed(() => [
+  { icon: 'shield', title: t('dep.o1t'), desc: t('dep.o1d') },
+  { icon: 'refresh', title: t('dep.o2t'), desc: t('dep.o2d') },
+  { icon: 'cpu', title: t('dep.o3t'), desc: t('dep.o3d') },
+  { icon: 'server', title: t('dep.o4t'), desc: t('dep.o4d') },
+])
+
+/* ---------------- 生态 ---------------- */
+const eco = computed(() => [
+  {
+    icon: 'book',
+    title: t('eco.1t'),
+    desc: t('eco.1d'),
+    to: '/docs',
+    external: false,
+  },
+  {
+    icon: 'puzzle',
+    title: t('eco.2t'),
+    desc: t('eco.2d'),
+    to: '/plugins',
+    external: false,
+  },
+  {
+    icon: 'lifetime',
+    title: t('eco.3t'),
+    desc: t('eco.3d'),
+    to: '/docs/changelog.md',
+    external: false,
+  },
+  {
+    icon: 'globe',
+    title: t('eco.4t'),
+    desc: t('eco.4d'),
+    to: REPO,
+    external: true,
+  },
+])
 </script>
 
 <template>
   <main>
-    <!-- ============ Hero ============ -->
+    <!-- ============ 首屏 ============ -->
     <section class="hero">
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <div class="hero-badges">
-            <TTag theme="primary" variant="light" size="small">v0.10.3</TTag>
-            <TTag variant="outline" size="small">Apache-2.0</TTag>
-            <TTag variant="outline" size="small">{{ t('hero.badge-open') }}</TTag>
-          </div>
-          <h1 v-html="t('hero.h1')" />
-          <p class="hero-sub">{{ t('hero.sub') }}</p>
-          <div class="hero-cta">
-            <a class="btn btn-primary" href="#quickstart">{{ t('hero.cta-start') }}</a>
-            <RouterLink class="btn btn-outline" to="/docs">{{ t('hero.cta-docs') }}</RouterLink>
-          </div>
-          <ul class="hero-points">
-            <li>{{ t('hero.p1') }}</li>
-            <li>{{ t('hero.p2') }}</li>
-            <li>{{ t('hero.p3') }}</li>
-          </ul>
-        </div>
-
-        <DemoChat />
-      </div>
-    </section>
-
-    <!-- ============ 在线演示 ============ -->
-    <section id="playground" class="section section-alt">
+      <div class="hero__backdrop" aria-hidden="true" />
       <div class="container">
-        <h2 class="sec-title">{{ t('pg.title') }}</h2>
-        <p class="sec-sub">{{ t('pg.sub') }}</p>
+        <div class="hero__inner">
+          <p class="hero__eyebrow">
+            <span class="pill">{{ t('hero.badge') }}</span>
+            {{ t('hero.eyebrow') }}
+          </p>
 
-        <div class="pg-toolbar">
-          <TButton size="small" variant="outline" @click="pgDark = !pgDark">
-            {{ pgDark ? '☀️' : '🌙' }} {{ t('pg.dark') }}
-          </TButton>
-          <TButton size="small" variant="outline" @click="pgReset">↻ {{ t('pg.reset') }}</TButton>
-          <span class="pg-note">{{ t('pg.note') }}</span>
-        </div>
+          <h1>{{ t('hero.h1a') }}<span>{{ t('hero.h1b') }}</span></h1>
+          <p class="hero__sub">{{ t('hero.sub') }}</p>
 
-        <div class="pg-app" :class="{ 'is-dark': pgDark }">
-          <div class="pg-rail">
-            <span class="pg-me">我</span>
-            <button class="pg-rail-btn" type="button" title="Chats">💬</button>
-            <button class="pg-rail-btn" type="button" title="Plugins" @click="pgPanel = !pgPanel">
-              🧩
-            </button>
+          <div class="hero__cta">
+            <a class="btn btn--primary btn--lg" href="#deploy">
+              {{ t('hero.ctaStart') }}
+              <UiIcon name="arrow-right" :size="16" />
+            </a>
+            <RouterLink class="btn btn--ghost btn--lg" to="/docs">{{ t('hero.ctaDocs') }}</RouterLink>
           </div>
 
-          <div class="pg-list">
+          <div class="hero__install">
+            <code class="mono"><span class="tok-prompt">$</span>{{ INSTALL }}</code>
             <button
-              v-for="c in pgConvs"
-              :key="c.id"
+              class="hero__copy"
               type="button"
-              class="pg-conv"
-              :class="{ 'is-active': c.id === pgActive }"
-              @click="pgSwitch(c.id)"
+              :class="{ 'is-done': copied }"
+              :aria-label="t('copy.action')"
+              @click="copyInstall"
             >
-              <span class="pg-avatar" :style="{ background: `hsl(${c.hue}, 62%, 52%)` }">
-                {{ c.name.charAt(0) }}
-              </span>
-              <span class="pg-conv-name">{{ c.name }}</span>
+              <UiIcon :name="copied ? 'check' : 'copy'" :size="14" />
             </button>
           </div>
 
-          <div class="pg-chat">
-            <div class="pg-chat-head">
-              <strong>{{ pgCurrent.name }}</strong>
-              <span class="text-placeholder">{{ t('pg.online') }}</span>
-            </div>
-
-            <div ref="pgBody" class="pg-msgs">
-              <div v-for="m in pgMessages" :key="m.id" class="pg-msg" :class="{ 'is-me': m.me }">
-                {{ m.text }}
-              </div>
-              <p v-if="!pgMessages.length" class="pg-hint">{{ t('pg.hint') }}</p>
-            </div>
-
-            <div class="pg-inputrow">
-              <TInput v-model="pgText" :placeholder="t('pg.placeholder')" @enter="pgSend" />
-              <TButton theme="primary" @click="pgSend">{{ t('pg.send') }}</TButton>
-            </div>
+          <div class="hero__facts">
+            <span v-for="f in facts" :key="f">{{ f }}</span>
           </div>
+        </div>
 
-          <aside v-if="pgPanel" class="pg-panel">
-            <div class="pg-panel-head">
-              <strong>{{ t('pg.pluginTitle') }}</strong>
-              <button class="pg-panel-close" type="button" aria-label="Close" @click="pgPanel = false">
-                ✕
-              </button>
-            </div>
-            <div class="pg-panel-body">
-              <div class="demo-weather">
-                <div class="demo-weather-top">
-                  <span class="demo-weather-icon">🌤️</span>
-                  <span>
-                    <span class="demo-weather-city">{{ t('demo.city') }}</span><br />
-                    <span class="demo-weather-sky">{{ t('demo.sky') }}</span>
-                  </span>
-                </div>
-                <div class="demo-weather-temp">22°C</div>
-              </div>
-            </div>
-            <p class="pg-panel-note">{{ t('pg.pluginBy') }}</p>
-          </aside>
+        <div class="hero__stage">
+          <ProductPreview />
         </div>
       </div>
     </section>
 
-    <!-- ============ 功能特性 ============ -->
-    <section id="features" class="section">
-      <div class="container">
-        <h2 class="sec-title">{{ t('features.title') }}</h2>
-        <p class="sec-sub">{{ t('features.sub') }}</p>
-        <div class="feature-grid">
-          <div v-for="f in features" :key="f.title" class="feature-card">
-            <div class="feature-icon">{{ f.icon }}</div>
-            <h3>{{ f.title }}</h3>
-            <p>{{ f.desc }}</p>
+    <!-- ============ 能力 ============ -->
+    <section id="capabilities" class="section section--plain">
+      <div class="container cap">
+        <div class="cap__side">
+          <p class="eyebrow">{{ t('cap.eyebrow') }}</p>
+          <h2>{{ t('cap.title') }}</h2>
+          <p>{{ t('cap.desc') }}</p>
+          <RouterLink class="link-arrow" to="/docs/design.md">
+            {{ t('cap.more') }}
+            <UiIcon name="arrow-right" :size="15" />
+          </RouterLink>
+        </div>
+
+        <div class="cap__groups">
+          <div v-for="g in capGroups" :key="g.title" class="cap__group">
+            <p class="cap__group-title">{{ g.title }}</p>
+            <ul class="cap__list">
+              <li v-for="item in g.items" :key="item.title" class="cap__item">
+                <span class="cap__icon"><UiIcon :name="item.icon" :size="17" /></span>
+                <div>
+                  <h3>{{ item.title }}</h3>
+                  <p>{{ item.desc }}</p>
+                </div>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ============ 插件系统 ============ -->
-    <section id="plugins" class="section section-alt">
+    <section id="plugins" class="section section--tint">
       <div class="container">
-        <h2 class="sec-title">{{ t('plugin.title') }}</h2>
-        <p class="sec-sub">{{ t('plugin.sub') }}</p>
-
-        <div class="plugin-grid">
-          <div class="plugin-copy">
-            <h3>{{ t('plugin.security-t') }}</h3>
-            <ul class="check-list">
-              <li>{{ t('plugin.s1') }}</li>
-              <li>{{ t('plugin.s2') }}</li>
-              <li>{{ t('plugin.s3') }}</li>
-              <li>{{ t('plugin.s4') }}</li>
-            </ul>
-
-            <h3 class="mt">{{ t('plugin.ui-t') }}</h3>
-            <div class="chips">
-              <TTag v-for="w in whitelist" :key="w" variant="outline" size="small">{{ w }}</TTag>
-            </div>
-            <p class="muted">{{ t('plugin.ui-note') }}</p>
-          </div>
-
-          <div class="plugin-code">
-            <div class="code-head">
-              <span class="dot r" /><span class="dot y" /><span class="dot g" />
-              <span class="code-name">weather.plugin.js</span>
-            </div>
-            <pre><code>{{ pluginSample }}</code></pre>
-          </div>
+        <div class="sec-head">
+          <p class="eyebrow">{{ t('plug.eyebrow') }}</p>
+          <h2>{{ t('plug.title') }}</h2>
+          <p>{{ t('plug.sub') }}</p>
         </div>
 
-        <div class="table-wrap">
-          <TTable
-            row-key="api"
-            :data="sdkRows"
-            :columns="sdkColumns"
-            size="small"
-            :hover="true"
-            table-layout="auto"
-          />
+        <div class="plug">
+          <CodeCard name="weather.plugin.js" :html="pluginHtml" :raw="plain(pluginHtml)" />
+
+          <div class="plug__side">
+            <div class="plug__block">
+              <h3>{{ t('plug.model') }}</h3>
+              <ul class="plug__checks">
+                <li v-for="s in security" :key="s.t">
+                  <UiIcon name="check" :size="15" />
+                  <span><b>{{ s.t }}</b> — {{ s.d }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="plug__block">
+              <h3>{{ t('plug.uiTitle') }}</h3>
+              <p class="plug__hint">{{ t('plug.uiDesc') }}</p>
+              <div class="plug__chips">
+                <span v-for="w in whitelist" :key="w" class="chip">{{ w }}</span>
+              </div>
+            </div>
+
+            <div class="plug__block">
+              <h3>{{ t('plug.permTitle') }}</h3>
+              <div class="table-wrap plug__table">
+                <table class="spec">
+                  <thead>
+                    <tr>
+                      <th>{{ t('plug.permCol') }}</th>
+                      <th>{{ t('plug.permWhat') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in perms" :key="p.name">
+                      <td>{{ p.name }}</td>
+                      <td>{{ p.desc }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- ============ 快速开始 ============ -->
-    <section id="quickstart" class="section">
+    <!-- ============ 部署 ============ -->
+    <section id="deploy" class="section">
       <div class="container">
-        <h2 class="sec-title">{{ t('qs.title') }}</h2>
-        <p class="sec-sub">{{ t('qs.sub') }}</p>
+        <div class="sec-head">
+          <p class="eyebrow">{{ t('dep.eyebrow') }}</p>
+          <h2>{{ t('dep.title') }}</h2>
+          <p>{{ t('dep.sub') }}</p>
+        </div>
 
-        <TTabs v-model="qsTab" class="qs-tabs-td">
-          <TTabPanel value="docker" :label="t('qs.docker')">
-            <pre class="qs-pre"><code>{{ qsDocker }}</code></pre>
-          </TTabPanel>
-          <TTabPanel value="manual" :label="t('qs.manual')">
-            <pre class="qs-pre"><code>{{ qsManual }}</code></pre>
-          </TTabPanel>
-          <TTabPanel value="verify" :label="t('qs.verify')">
-            <pre class="qs-pre"><code>{{ qsVerify }}</code></pre>
-          </TTabPanel>
-        </TTabs>
-
-        <div class="stack">
-          <h3 class="stack-title">{{ t('qs.stack') }}</h3>
-          <div class="stack-badges">
-            <TTag v-for="s in stackBadges" :key="s" variant="outline" size="small">{{ s }}</TTag>
+        <div class="dep">
+          <div>
+            <div class="tabs" role="tablist">
+              <button
+                v-for="x in tabs"
+                :key="x.key"
+                class="tabs__btn"
+                :class="{ 'is-on': tab === x.key }"
+                type="button"
+                role="tab"
+                :aria-selected="tab === x.key"
+                @click="tab = x.key"
+              >
+                {{ x.label }}
+              </button>
+            </div>
+            <CodeCard
+              :name="tabCode[tab].name"
+              :html="tabCode[tab].html"
+              :raw="plain(tabCode[tab].html)"
+            />
+            <p class="dep__note">{{ t('dep.note') }}</p>
           </div>
+
+          <ul class="dep__checks">
+            <li v-for="o in ops" :key="o.title">
+              <UiIcon :name="o.icon" :size="16" />
+              <div>
+                <h3>{{ o.title }}</h3>
+                <p>{{ o.desc }}</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 生态 ============ -->
+    <section class="section section--tint">
+      <div class="container">
+        <div class="sec-head">
+          <p class="eyebrow">{{ t('eco.eyebrow') }}</p>
+          <h2>{{ t('eco.title') }}</h2>
+        </div>
+
+        <div class="eco">
+          <component
+            :is="e.external ? 'a' : RouterLink"
+            v-for="e in eco"
+            :key="e.title"
+            class="eco__row"
+            :to="e.external ? undefined : e.to"
+            :href="e.external ? e.to : undefined"
+            :target="e.external ? '_blank' : undefined"
+            :rel="e.external ? 'noopener' : undefined"
+          >
+            <span class="eco__icon"><UiIcon :name="e.icon" :size="17" /></span>
+            <span class="eco__text">
+              <h3>{{ e.title }}</h3>
+              <p>{{ e.desc }}</p>
+            </span>
+            <UiIcon class="eco__arrow" :name="e.external ? 'arrow-up-right' : 'arrow-right'" :size="16" />
+          </component>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 收尾 ============ -->
+    <section class="band">
+      <div class="container band__inner">
+        <div>
+          <h2>{{ t('band.title') }}</h2>
+          <p>{{ t('band.sub') }}</p>
+        </div>
+        <div class="band__cta">
+          <a class="btn btn--primary" href="#deploy">{{ t('band.cta') }}</a>
+          <RouterLink class="btn btn--ghost" to="/docs/getting-started.md">
+            {{ t('hero.ctaDocs') }}
+          </RouterLink>
         </div>
       </div>
     </section>

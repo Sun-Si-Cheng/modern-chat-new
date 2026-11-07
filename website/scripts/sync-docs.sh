@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
-# 同步仓库文档 → website/public/docs/（中文副本，Vite 会原样拷进 dist）
+# 同步仓库文档 → website/public/content/docs/（中文副本，Vite 会原样拷进 dist）
+# 注意：不放 public/docs/ —— 会与前端路由 /docs/:file 撞路径，刷新会变成裸 Markdown
 # 用法：在仓库根目录执行  bash website/scripts/sync-docs.sh
 # - 中文副本直接覆盖拷贝（仓库文档是唯一真源）
 # - 英文译本无法自动生成：若中文源比 en/ 译本新，仅提示需要人工修订
@@ -15,11 +16,12 @@ declare -A MAP=(
   ["docs/后端需求规格.md"]="api-spec.md"
   ["docs/前端技术方案.md"]="frontend-guide.md"
   ["docs/运维手册.md"]="ops-guide.md"
+  ["docs/安全与迁移指南.md"]="security-migration-guide.md"
   ["server/README.md"]="server-readme.md"
   ["web/README.md"]="web-readme.md"
 )
 
-DST="website/public/docs"
+DST="website/public/content/docs"
 EN="$DST/en"
 mkdir -p "$EN"
 

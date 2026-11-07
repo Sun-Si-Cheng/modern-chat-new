@@ -3,7 +3,7 @@
 # 校验产品版本号一致性
 # 基准：CHANGELOG.md 中最新正式版本（跳过「未发布」）
 # 校验：web/ 与 website/ 的 package.json、package-lock.json，
-#       website 首页 Hero 版本徽标；并提示最新 git tag 是否一致
+#       website 的版本常量（src/links.ts）；并提示最新 git tag 是否一致
 # 用法：sh scripts/check-version.sh
 # 退出码：0 = 一致；1 = 存在不一致或无法解析基准
 # ============================================================
@@ -38,7 +38,7 @@ check "web/package.json"          "$(field_version web/package.json)"
 check "web/package-lock.json"     "$(field_version web/package-lock.json)"
 check "website/package.json"      "$(field_version website/package.json)"
 check "website/package-lock.json" "$(field_version website/package-lock.json)"
-check "website 首页版本徽标"       "$(sed -n 's/.*>v\([0-9][0-9.]*\)<.*/\1/p' website/src/views/HomeView.vue | head -n 1)"
+check "website/src/links.ts"      "$(sed -n "s/.*export const VERSION = '\([0-9][0-9.]*\)'.*/\1/p" website/src/links.ts | head -n 1)"
 
 # git tag 仅提示不判失败：HEAD 可领先于最新 tag（后端版本由 git describe 注入，属正常）
 if command -v git >/dev/null 2>&1; then
