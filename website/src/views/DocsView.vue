@@ -70,6 +70,13 @@ const DOCS: DocItem[] = [
     descEn: 'Env vars, deploy, backup & upgrade, troubleshooting',
   },
   {
+    file: 'security-migration-guide.md',
+    zh: '安全与迁移指南',
+    en: 'Security & migration guide',
+    descZh: '附件鉴权、认证与登出、实时通道、插件安全、迁移与部署',
+    descEn: 'Attachment auth, sessions, realtime, plugin security, migrations',
+  },
+  {
     file: 'server-readme.md',
     zh: '后端运行手册',
     en: 'Server runbook',
@@ -118,6 +125,7 @@ const LINK_MAP: Record<string, string> = {
   '后端需求规格.md': 'api-spec.md',
   '前端技术方案.md': 'frontend-guide.md',
   '运维手册.md': 'ops-guide.md',
+  '安全与迁移指南.md': 'security-migration-guide.md',
 }
 
 async function loadDoc() {
