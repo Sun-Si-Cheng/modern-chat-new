@@ -116,10 +116,12 @@
 - **`storage.publicBase`**：对外访问前缀（CDN 域名），留空则按 `endpoint/bucket` 自动拼接。
 - **配了对象存储后，上传失败会直接报错，不会回退本地**——避免出现"以为在云端、实际在本机"的数据分裂。
 - **切换存储不迁移历史文件**：老消息里的 `/uploads/...` 仍由本地静态服务提供（前提是 `uploads/` 目录还在），新消息走新存储。要全量迁移需自行用 `mc`/`rclone` 搬文件并批量改 `messages.content`。
-- **静态资源长缓存**：文件名是 128 位随机、内容不可变，所以 `/uploads` 下发 `Cache-Control: immutable`，放心缓存一年。
-- **类型按文件头判定**：把 HTML 改名成 `.png` 会被拒（防存储型 XSS）。各类型体积上限在「系统设置 → 上传上限」里可调。
-- **缩略图**：上传图片时异步生成 `_t.jpg`（≤480px），气泡加载缩略图、灯箱加载原图；GIF / 过小图 / 解码失败跳过，透明图垫白底。
-- **总配额与孤儿清理**：`upload.maxStorageMB`（0=不限）限制本地上传目录总量；后台「存储」页签可查看用量并清理未被消息 / 表情 / 群文件引用的孤儿文件。
+- **`/uploads` 必须登录**：支持 `Authorization: Bearer` 或同源 `mc_auth` cookie（`UploadAuth`）；目录列举一律 404；响应为 `Cache-Control: private, max-age=3600` + `nosniff`，不再使用 `public/immutable`，私人附件不会进共享代理缓存。
+- **跨域部署注意**：`mc_auth` 是 `SameSite=Lax`，前端与 API 不同 site 时 `<img src=".../uploads/...">` 不会带 cookie，会 401。推荐同域反代；完全跨站请改用 S3/CDN 公开域名，或由前端带 `Authorization` 拉 blob。
+- **S3 模式边界**：新文件是 `publicBase` 绝对 URL，不经过 `/uploads` 鉴权，访问控制由桶策略/CDN 负责；历史 `/uploads/` 仍由本地静态服务提供。详见 [安全与迁移指南.md](安全与迁移指南.md) §1。
+- **类型按文件头判定**：把 HTML 改名成 `.png` 会被拒（防存储型 XSS）；音频兼容浏览器录音产生的 `video/webm` / `application/ogg` / `video/mp4` 容器。各类型体积上限在「系统设置 → 上传上限」里可调，表情固定 2 MB。
+- **缩略图**：上传图片时异步生成 `_t.jpg`（≤480px），气泡加载缩略图、灯箱加载原图；GIF / 过小图 / 解码失败跳过，透明图垫白底。解码前先读图头，像素总数超过 4000 万直接跳过，防止解压炸弹；生成路径带 panic 兜底。
+- **总配额与孤儿清理**：`upload.maxStorageMB`（0=不限）限制本地上传目录总量；后台「存储」页签可查看用量并清理孤儿文件。GC 按 `/uploads/` 前缀收集消息正文、表情、群文件、群头像、用户头像的引用，**不按消息类型枚举**；派生缩略图跟随原文件；24 小时内的新文件不删；只扫描本地 `DATA_DIR/uploads`，S3 孤儿对象不在范围内。
 
 ### 2.3 维护模式（升级 / 故障时的标准操作）
 
@@ -320,6 +322,7 @@ gzip on;          # 没有预压缩文件时实时压缩兜底
 - **Docker Compose 部署暂不支持热更新**：`docker compose up -d --build` 会重建容器，有秒级中断（前端断线重连机制兜底，消息不丢）。
 - **Docker 构建的版本号**：`docker compose` 把环境变量 `VERSION` / `COMMIT` / `BUILD_TIME` 作为 build args 传给 `server/Dockerfile`（未设置时回退 `dev` / `unknown`）；容器内 `curl http://127.0.0.1:8080/api/version` 可核对。
 - **Docker 构建镜像源可配置**：`GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` 四个 build arg 默认均为官方源，不传参时行为不变；国内网络示例见 README 的 Docker 章节（第三方源需自行确认可信度）。
+- **容器内的附件持久化**：`docker-compose.yml` 默认**没有**为 `DATA_DIR`（默认 `data`）挂载卷，`docker compose up -d --build` 重建容器后本地上传附件会丢失。生产必须挂持久卷，或改用 S3；`/uploads` 静态服务本身在容器内可正常工作。
 - `--no-restart`：只构建并原子替换产物。运行中的老进程继续跑老版本，下次执行 `update.sh`（不带参数）时再完成切换。
 
 脚本会：拉取 Gitee → 构建后端（注入版本号）→ 构建前端 → 切换/重启服务。也可手工执行：
@@ -334,7 +337,7 @@ go build -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/ver
 
 版本号在设置页「关于」与 `/api/version` 可见（`scripts/update.sh` 用 `git describe --tags` 取版本，所以发版即打 tag）。
 
-> **0.10.0 升级必读**：① 执行迁移 `0021_message_sender_index`（低峰）；② nginx `client_max_body_size` ≥ **32 MB**（视频默认 30 MB）；③ 「注册需邮箱验证」默认开启——未配 SMTP 会自动降级、首个账号豁免，如需旧行为在后台关掉。详见 `CHANGELOG.md` 的「升级注意」。
+> **0.10.0 升级必读（历史说明）**：① 执行迁移 `0021_message_sender_index`（低峰）；② nginx `client_max_body_size` ≥ **32 MB**（视频默认 30 MB）；③ 「注册需邮箱验证」默认开启、首个账号豁免。注意：未配 SMTP 时的“自动降级”已在后续版本取消，现改为除首账号外直接 503，详见 [安全与迁移指南.md](安全与迁移指南.md) 与 CHANGELOG「未发布」。
 
 ---
 
@@ -360,6 +363,20 @@ tar xzf uploads_2026-10-25.tar.gz -C server/data
 - `users.avatar` 存的是头像的 data URL（每张约 20–40 KB），会占库空间；用户多时按需清理
 - 升级前建议先备份一次（脚本不会动数据，但迁移 SQL 会改表结构）
 - **新增索引的迁移要在低峰期执行**：如 `0021_message_sender_index`（为 `messages.sender_id` 建索引）。MySQL 8 默认 Online DDL 不锁表，但大表建索引仍会占用 IO；消息表很大时建议放在业务低峰，并观察 `SHOW PROCESSLIST`
+
+### 5.1 迁移 0023 / 0024 / 0025 一次性说明
+
+| 迁移 | 内容 | 影响 | 回滚风险 |
+|---|---|---|---|
+| `0023_message_content_text` | `messages.content` 由 `VARCHAR(1000)` 扩为 `TEXT` | 支持后台最高 5000 字符消息；大表 `ALTER` 可能耗时 | 回滚为 `VARCHAR(1000)` 会截断/失败，回滚前先查 `CHAR_LENGTH(content) > 1000` |
+| `0024_conversation_direct_key` | `conversations.direct_key` + 唯一索引；`EnsureSingle` 事务化 | 并发建单聊不再产生重复会话；存量单聊保持 `NULL` | 删索引再删列，并发重复问题回归 |
+| `0025_friend_email_unique` | `friends` / `email_codes` 唯一索引，含重复好友清理 | 清理按“已通过 > 待处理 > 已拒绝、同状态保留最早 id”；被删行不可恢复 | 只能删索引，脏数据不会回来，**必须备份** |
+
+执行顺序：停写/低峰 → 备份（0025 建议整库）→ 0023 → 0024 → 0025 → 启动新版本（`MIGRATE=true` 会自动按序执行）。
+手工执行使用 `golang-migrate`，版本记录在 `schema_migrations`；回滚顺序相反（0025 → 0024 → 0023）。
+完整动机与验证项见 [安全与迁移指南.md](安全与迁移指南.md) §6。
+
+> 禁止在生产库执行 `go test -tags integration ./test/`：集成测试会先 DELETE 全部业务表。
 
 ---
 

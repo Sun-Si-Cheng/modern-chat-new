@@ -65,6 +65,7 @@
 ### 文档
 
 - 按当前代码回写 `docs/设计文档.md`（功能范围 / 目录 / 数据表 / 完整 REST 与 WS 帧）、`docs/后端需求规格.md`、`docs/前端技术方案.md`、`docs/运维手册.md`、`web/README.md`、`server/README.md`；修复对已删除的 `update.ps1` / `coverage.ps1` 的引用与 CHANGELOG 中串行的条目。
+- 新增 [`docs/安全与迁移指南.md`](docs/安全与迁移指南.md)：把本轮修复整理成接手文档——`/uploads` 鉴权与 cookie 生命周期、登出与 `token_version`、WS 全帧复核与 token 日志风险、插件沙箱/CSP/权限与**裸 `fetch` 已失效**、上传嗅探与 GC 规则、`0023`–`0025` 迁移的上线/回滚、Docker 版本与镜像源参数。README、设计文档、后端需求规格、运维手册、插件开发、前端技术方案同步加入索引并纠正旧描述（`/uploads` 公开长缓存、SMTP 静默降级、`logout-others` 只复核不踢线、单聊“先查后插可接受”等）。
 
 ---
 

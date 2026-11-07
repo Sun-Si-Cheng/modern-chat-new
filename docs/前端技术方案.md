@@ -80,7 +80,7 @@ web/src/
 
 | store | 职责 | 关键点 |
 |---|---|---|
-| `auth` | token、当前用户、是否站长 | token 存 `localStorage.mc_token`，由 `api/client.ts` 统一读写 |
+| `auth` | token、当前用户、是否站长 | token 存 `localStorage.mc_token`，由 `api/client.ts` 统一读写；登出时同时调用 `POST /api/auth/logout` 清除同源 `mc_auth` cookie（只清 localStorage 的话，退出后 7 天内 `/uploads` 仍可被同浏览器直接打开） |
 | `ws` | 连接状态、在线用户集合、收发帧 | `send()` 返回 **boolean**：连接不可用时调用方必须把消息标记为失败，而不是静默丢弃 |
 | `conversations` | 会话列表、按会话的消息缓存、未读数、发送队列 | 乐观消息 + `clientMsgId` 幂等；`resync()` 用于断线重连后补数据 |
 | `friends` | 好友列表、收到的申请、申请计数 | 与 `conversations` 解耦，好友变更单独推送 |
@@ -114,6 +114,8 @@ web/src/
 - **重连后必须补数据**：断线期间服务端不会补发帧，因此 `onopen` 时若非首次连接会调用 `conversations.resync()` → 重拉会话列表 + 当前会话最新消息（按 `clientMsgId` 与本地合并去重）
 - **断开即清空在线集合**：否则会一直显示过期的"在线"绿点
 - **发送失败可见**：`ws.send()` 在连接未就绪时返回 `false`，`conversations.sendText()` 立刻把乐观消息标记为 `failed`，用户可点重发（而不是永远停在"发送中"）
+- **服务端全帧复核**：封禁 / `token_version` 失效会让任意上行帧（连 `ping` 也算）返回 `error` 并断开；客户端必须把 `kicked` 帧与“鉴权类断开”当作**需要重新登录**，不能只按普通断线指数退避重连，否则会陷入“重连成功→立刻被踢”的循环
+- **握手 token**：前端仍使用 `?token=`；服务端已支持缺失时回退同源 `mc_auth` cookie。迁移到 cookie 握手可避免 token 进入访问日志，但要求前端与 API 同域部署
 
 上行帧：`chat` / `read` / `delivered` / `recall` / `edit` / `reaction` / `typing`（详见后端规格 §3.3）。
 - **单聊送达**：收到单聊消息后自动上行 `delivered`，发送方据此展示「已送达」
@@ -237,7 +239,7 @@ UiCheckbox  UiInputNumber  UiTooltip  UiPopup  UiDialog  UiDrawer
 | **群文件** | 详情面板「群文件」：上传（`upload(kind=file)` ≤20 MB）→ 记账 → 列表（名称 / 大小 / 上传者），上传者或群主可删 |
 | **会话内搜索** | 详情面板顶部「搜索聊天记录」分区（L2：针对当前会话）：`UiInput` 输入 → 250ms 防抖调 `searchApi.messages(kw, convId)` → 结果列表（发送者/时间/关键词 `<mark>` 高亮）。点击结果走 `convStore.openConversationAtMessage()` → 写 `pendingJumpId` → `MessagePane` 滚动定位并高亮（历史太旧最多向前翻 10 页，找不到则提示）。**Ctrl/Cmd+F** 保留：经 `layout.requestDetailSearch()` 展开详情抽屉（仅抽屉形态且收起时）并聚焦输入框；切换会话自动清空搜索状态。列表栏全局搜索（人/群/消息混合）仍是 L1 |
 
-> **转发 vs 合并转发**：单条转发照搬 `content + msgType`；合并转发是把选中的多条消息拼成**一条文本**（带「【合并转发】」头，最多 20 条），不是微信的「聊天记录卡片」。后者需要存多条消息快照，而 `messages.content` 上限 1000 字符塞不下，得单开表或加 `msg_meta` JSON 字段——留到有明确需求时再做。
+> **转发 vs 合并转发**：单条转发照搬 `content + msgType`；合并转发是把选中的多条消息拼成**一条文本**（带「【合并转发】」头，最多 20 条），不是微信的「聊天记录卡片」。后者需要存多条消息快照，而 `messages.content` 上限默认 1000、最高 5000 字符（迁移 0023 已扩为 `TEXT`），20 条消息拼进去很容易超限，得单开表或加 `msg_meta` JSON 字段——留到有明确需求时再做。
 
 **发送失败与断线**：失败消息的元信息里有「发送失败 · 重发」（所有会话类型都有，点击走 `convStore.resend`，保留引用与 @）；`ws.connected` 与 `ws.hasConnected` 一起决定是否显示顶部「正在重连」提示条——只在连过一次之后才显示，避免首屏连接中闪一条黄条。
 
@@ -281,7 +283,11 @@ UiCheckbox  UiInputNumber  UiTooltip  UiPopup  UiDialog  UiDrawer
 
 `composables/usePluginHost.ts` 是前端最复杂的部分：
 
-- 每个插件一个**沙箱 iframe**（`sandbox="allow-scripts"`），插件代码不能直接碰主页面 DOM
+- 每个插件一个**沙箱 iframe**（`sandbox="allow-scripts"`，**没有 `allow-same-origin`**），插件代码不能直接碰主页面 DOM；iframe 是 opaque origin，拿不到主站 localStorage / cookie / JWT
+- **必须用 `srcdoc` 注入**：没有 same-origin 时父页面无权操作 iframe 文档，`document.open/write` 会抛 `SecurityError`，blob URL + `document.write` 的旧方式不可用；`bootHtml` 会把插件代码里的 `</script`、`<script` 转义后再写入
+- **CSP 收敛网络出口**：`default-src 'none'`、`script-src/style-src 'unsafe-inline'`、`img-src data:`、`connect-src` 只允许 manifest 的 `allowedHosts`（未声明即 `'none'`），并禁用 `base-uri/form-action/frame-src/object-src/worker-src`
+- **权限过滤**：`API_PERMISSION` 控制每个 SDK 方法；`EVENT_PERMISSION` 使 `message:new` / `message:recall` / `presence` 只投递给有 `message:read` 的插件；`ui:actions` 回调在无 `message:read` 时只给消息元信息，不给正文
+- **裸 `fetch` 已失效**：插件必须改用 `mc.request`（仓库 SDK 对象名 `api.request`），由宿主页面代发并受 `allowedHosts` + 目标站点 CORS 双重约束；宿主侧 `request` 只接受 http(s)，`hostAllowed` 精确匹配或 `*.` 后缀匹配
 - **启动并发**：所有启用插件的代码**并发**拉取（`Promise.all`）后再按顺序挂载——串行 `await` 会让第 N 个插件等前面全部返回（5 个插件 × 200ms ≈ 1 秒）；单个插件失败只记日志并提示，不阻塞其余插件
 - 通信走 `postMessage`，主页面校验来源与消息结构后才处理
 - 插件 UI 用**声明式描述**（`components/declarative/index.ts`）：插件只描述"这里放一个按钮 / 一段文字 / 一张图"，由主页面用白名单组件渲染，插件拿不到任意 HTML；白名单 11 个（含 `table` / `progress` / `badge` 三个数据展示组件）

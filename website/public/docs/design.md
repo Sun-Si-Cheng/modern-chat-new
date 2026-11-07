@@ -209,6 +209,7 @@ modernchat-new/
 | avatar | 群头像地址（上传接口返回的 URL；空=默认头像） |
 | mute_all | 全员禁言（群主 / 管理员不受影响） |
 | owner_id | 群主（单聊 / 初始公共群为空） |
+| direct_key | 单聊去重键 `小ID:大ID`，唯一索引 `idx_conversations_direct_key`（迁移 0024）；群聊与存量单聊为 `NULL` |
 | announcement / announcement_at / announcement_by | 群公告正文（≤500 字）、发布时间、发布者 |
 | created_at | |
 
@@ -225,11 +226,12 @@ modernchat-new/
 | 唯一键 | `(conversation_id, user_id)` |
 
 > 单聊：创建一条 `conversation(type=1)` + 2 行成员；群聊：`type=2` + N 行成员。
-> 单聊幂等：发起前先查"两人是否已有 type=1 会话"，有则复用；"先查后插"存在小概率并发重复，本期接受（客户端按成员去重显示），不加额外约束。
+> 单聊幂等：`EnsureSingle` 在事务内按 `direct_key` 查重/建会话/加成员/初始化收件箱；并发插入时唯一索引只放行一个，失败方回滚后复用已有会话。存量单聊 `direct_key` 为 `NULL`，不影响历史数据。
 
 ### friends（好友关系）
 `id, user_id, friend_id, status(0=待申请 1=已通过 2=已拒绝), created_at`
-> 同意后双方各插一条 `status=1`；已存在 status=0/1 关系时拒绝重复申请；拒绝后可重新申请（更新原记录状态）。
+> 唯一索引 `uk_friends_pair (user_id, friend_id)`（迁移 0025），并发/重复申请不会再插出同方向重复行；同意时反向记录 upsert，避免互发申请撞索引。
+> 同意后双方各插一条 `status=1`；已存在 status=0/1 关系时拒绝重复申请（409）；拒绝后可重新申请（更新原记录状态）。
 > 删除好友：双向删除两条 status=1 记录；已存在的单聊会话与历史消息保留，仅解除好友关系。
 
 ### messages
@@ -240,7 +242,7 @@ modernchat-new/
 | sender_id | |
 | client_msg_id | 客户端生成 UUID，**服务端幂等键**，唯一索引 `(conversation_id, client_msg_id)`，防重连重复发 |
 | msg_type | 内置五类：`text` / `image` / `audio` / `sticker` / `video`；其余为插件注册的自定义类型（字符白名单校验） |
-| content | `text`：≤1000 字正文；`image` / `audio` / `sticker` / `video`：**本站上传的相对地址**（如 `/uploads/2026/11/xxx.png`），WS 落库前会校验必须落在 `Storage.Owns()` 认得的地址下，禁止外链 |
+| content | 列为 `TEXT`（迁移 0023）；`text`：长度上限由后台 `chat.maxMessageLength` 控制（最高 5000 字符）；`image` / `audio` / `sticker` / `video`：**本站上传的地址**（本地为 `/uploads/2026/11/xxx.png`，S3 为 `publicBase` 绝对地址），WS 落库前会校验必须落在 `Storage.Owns()` 认得的地址下，禁止外链 |
 | is_recalled | 撤回软标记 |
 | recalled_at | 撤回时间（服务端写入）；前端据此显示「XXX 撤回了一条消息」并在 **3 分钟后把该提示从聊天记录移除**。为 NULL 的历史撤回消息按已过期处理 |
 | edited_at | 编辑时间（服务端写入）；NULL 表示从未编辑，前端据此显示「已编辑」，并只对自己 **5 分钟内**的文本消息展示「编辑」入口 |
@@ -249,7 +251,7 @@ modernchat-new/
 | forwarded | 是否转发消息。转发是「照搬 content + msgType 发一条新消息」，不引用原消息，原消息撤回/删除不影响它 |
 | admin_deleted_at / admin_deleted_by | 管理员 / 群主删除违规消息的时间与执行人；非 NULL 时对所有成员不可见（本体保留供审计） |
 | created_at | DATETIME(3) |
-| 索引 | `(conversation_id, id)`、`sender_id`（迁移 0021）、FULLTEXT ngram `content`（迁移 0022） |
+| 索引 | `(conversation_id, id)`、`sender_id`（迁移 0021）、FULLTEXT ngram `content`（迁移 0022）；`content` 在迁移 0023 扩为 `TEXT` |
 
 ### user_conversations（收件箱 / 会话列表冗余，性能关键）
 | 字段 | 说明 |
@@ -312,7 +314,8 @@ modernchat-new/
 ### email_codes（注册邮箱验证码）
 `id, email(索引), code_hash, purpose(register / change_email), attempts, expires_at(10 分钟), used_at, created_at`
 > 只存 **HMAC-SHA256 哈希**（密钥由 `JWT_SECRET` 派生），库被读走也拿不到可用验证码。
-> 同一邮箱任何时刻只有一个可用码；连续错 5 次自动作废；校验成功即核销（并发提交同一个码只有一次成功）。
+> 唯一索引 `uk_email_codes_email_purpose (email, purpose)`（迁移 0025）：同一邮箱同一用途只有一行，发码在事务内行锁并原地重置，避免绕过 60 秒冷却。
+> 连续错 5 次自动作废；校验成功即核销（并发提交同一个码只有一次成功）。
 
 ### password_resets
 `id, user_id, token(唯一,crypto/rand 64hex), expires_at(15 分钟), used(bool), created_at`
@@ -357,18 +360,19 @@ modernchat-new/
 
 ## 6. REST 接口（前缀 `/api`）
 
-除注册/登录/forgot/reset 外均需 `Authorization: Bearer <token>`。
+除注册/登录/forgot/reset/logout 外均需 `Authorization: Bearer <token>`。登录态同时会下发同源 `HttpOnly` cookie `mc_auth`，仅用于浏览器加载 `/uploads` 子资源与 WS 握手的免 token 回退；REST 接口仍只认 `Authorization`，避免引入 CSRF 面。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/register` `/api/auth/login` | 返回 `{token, user}`；注册在开启邮箱验证时须带 `email` + `emailCode` |
+| POST | `/api/auth/register` `/api/auth/login` | 返回 `{token, user}`，并下发 `mc_auth` cookie；注册在开启邮箱验证时须带 `email` + `emailCode` |
+| POST | `/api/auth/logout` | **免鉴权**，清除 `mc_auth` cookie；不吊销 JWT、不踢 WS（维护模式可用） |
 | POST | `/api/auth/email-code` `{email}` | 发送注册验证码（6 位、10 分钟、一次性）；同邮箱 60 秒冷却，冷却期内也返回 200 + 剩余秒数 |
 | GET | `/api/me` | 当前用户 |
 | POST | `/api/auth/forgot` `{email}` | 发重置链接（开发期打日志） |
 | POST | `/api/auth/reset` `{token, newPassword}` | 设新密码（token_version+1） |
 | PATCH | `/api/me` `{nickname?, email?, avatar?, emailCode?}` | 改资料；**换绑邮箱须带新邮箱验证码**；avatar 为 ≤256KB 的 png/jpeg/webp data URL |
 | POST | `/api/me/email-code` `{email}` | 发送换绑邮箱验证码（发往新邮箱） |
-| POST | `/api/me/logout-others` | 退出所有设备：`token_version+1`，旧 JWT 全部失效 |
+| POST | `/api/me/logout-others` | 退出所有设备：`token_version+1`，旧 JWT 全部失效；同时 `KickUser` 断开该账号全部已建 WS 连接（含当前设备，需重新登录） |
 | GET | `/api/users/search?kw=` | 搜人 |
 | GET | `/api/friends` `/api/friends/requests` | 好友 / 收到的申请 |
 | POST | `/api/friends/apply` `{toUsername}` | 发申请 |
@@ -407,7 +411,7 @@ modernchat-new/
 | GET | `/api/plugins` `/api/plugins/active` | 我的插件 / 启动拉启用清单 |
 | GET | `/api/plugins/:id/code` | 下发插件 JS 代码（本人已安装且启用；响应 `Content-Type: text/javascript`） |
 | POST | `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart 上传图片 / 语音 / 表情 / 群文件 / 视频，按用户 10 次/分限流。**按文件头判定真实类型**（伪装成 .png 的 HTML 会被拒；视频按 `ftyp` brand / Matroska magic 兜底识别容器）；图片 ≤8 MB、语音 ≤5 MB、表情 ≤2 MB、群文件 ≤20 MB、视频 ≤30 MB（均后台可配）；返回 `{kind,size,url}` |
-| GET | `/uploads/<年>/<月>/<随机名>.<ext>` | 上传文件的静态服务（仅本地存储；`Cache-Control: immutable`）。用对象存储时由 S3/CDN 直接提供 |
+| GET | `/uploads/<年>/<月>/<随机名>.<ext>` | 上传文件的静态服务（始终挂载，兼容历史 URL）。**必须登录**（`Authorization` 或同源 `mc_auth` cookie，`UploadAuth`）；目录列举一律 404；`Cache-Control: private, max-age=3600` + `nosniff`；维护模式下非管理员不可访问。用对象存储时新文件由 S3/CDN 提供，访问控制下沉到桶策略 |
 | GET | `/api/favorites?limit=100` | 我的收藏（按收藏时间倒序），空时为 `[]` 而不是 `null` |
 | POST | `/api/messages/:messageId/favorite` | 收藏一条消息（须为会话成员），幂等 |
 | DELETE | `/api/messages/:messageId/favorite` | 取消收藏 |
@@ -457,9 +461,10 @@ modernchat-new/
 
 ## 7. WebSocket 协议
 
-连接：`GET /ws?token=<JWT>`；校验登录态、`token_version`、封禁状态；心跳 25s（服务端另有协议层 ping 兜底）。
+连接：`GET /ws?token=<JWT>`，token 缺失时回退同源 `mc_auth` cookie（新方式，避免 token 进入访问日志；现有前端仍走 query）；握手校验登录态、`token_version`、封禁状态与维护模式；心跳 25s（服务端另有协议层 ping 兜底）。
 握手额外校验 **Origin 白名单**（`FRONTEND_URL` 配置，防跨站 WebSocket 劫持；无 Origin 的非浏览器客户端放行但同样需要 token）。
-所有上行帧服务端校验"该用户是否为对应会话成员"，非成员一律丢弃并回 `error` 帧。
+**每一帧**在路由前统一复核封禁与 `token_version`（`Dispatch` → `checkConnState`），不通过则回 `error` 帧并断开；不再是“只在 chat 帧复核”。所有上行帧还会校验"该用户是否为对应会话成员"，非成员一律丢弃并回 `error` 帧。
+`?token=` 仍会进入反向代理/应用访问日志，部署时应关闭或脱敏 `/ws` 的 access log；前端后续可迁移到不带 token 的 cookie 握手（要求同源部署）。详见 [安全与迁移指南.md](安全与迁移指南.md) §3。
 
 ### 上行
 ```ts
@@ -504,8 +509,8 @@ type ServerFrame =
 ## 8. 插件系统（方案 A：描述式 UI）
 
 ### 8.1 运行时模型
-- 每个插件 = 一个文件（≤1MB），代码由服务端下发，前端用 **blob/srcdoc 注入到 sandbox iframe**（`sandbox="allow-scripts"`，不给 `allow-same-origin`），不依赖跨域加载。
-- 插件**不接触 DOM、不接触主站 window**，只在沙箱内跑逻辑，通过 `postMessage` 与主站桥接层通信。
+- 每个插件 = 一个文件（≤1MB），代码由服务端下发，前端用 **`srcdoc` 注入到 sandbox iframe**（`sandbox="allow-scripts"`，不给 `allow-same-origin`），不依赖跨域加载。没有 `allow-same-origin` 时父页面无权操作 iframe 文档，`document.open/write` 会抛 `SecurityError`，因此不能用 blob URL + `document.write`。
+- 插件**不接触 DOM、不接触主站 window**，只在沙箱内跑逻辑，通过 `postMessage` 与主站桥接层通信；iframe 是 opaque origin（`Origin: null`），拿不到主站 localStorage / cookie / JWT。
 - **语言**：JavaScript / TypeScript 均可。上传 `.ts`（`?lang=ts`）或安装以 `.ts` 结尾的 URL 时，服务端用内嵌 **esbuild** 逐文件转译成 ES2020 JS 后入库；前端沙箱不承担编译，插件体积与首屏包体都不受影响。manifest 一律从**源码**解析，转译产物若丢失注释会补回。
 - 开发指引见 [`插件开发.md`](插件开发.md)。
 
@@ -542,7 +547,10 @@ type ServerFrame =
 | `api.theme.apply(cssVars)` | 改主题 | `ui:theme` |
 
 ### 8.4 安全
+- 沙箱 `iframe.srcdoc` 注入引导脚本；CSP 为 `default-src 'none'`，仅 `script-src/style-src 'unsafe-inline'`、`img-src data:`，`connect-src` 收敛到 manifest 的 `allowedHosts`（未声明即 `'none'`），并禁用 `base-uri/form-action/frame-src/object-src/worker-src`。`</script` 与 `<script` 在注入前转义，防止提前闭合引导脚本。
 - 桥接层按 manifest 权限 + `allowed_hosts` 双重白名单放行；插件**拿不到 JWT**、读不到主站存储、碰不到别的插件。
+- **事件按权限过滤**：`message:new` / `message:recall` / `presence` 只投递给声明 `message:read` 的插件；`ui:actions` 的回调在插件没有 `message:read` 时只给消息元信息，不给正文。
+- **裸 `fetch` 已失效**：opaque origin + CSP `connect-src` 使插件无法自己发请求，必须改用 `mc.request`（仓库 SDK 对象名 `api.request`）。它仍受 `allowed_hosts` 与目标站点 CORS 双重约束。
 - 安装时弹权限清单，确认才装；站长在后台按插件名全局下架（`plugins.global_disabled=1`，所有用户立即停用）。
 - **升级**：同一用户再次安装同名插件即版本升级——复用记录（id 不变）、保留启停与下架状态、更新代码与权限声明；已启用的插件在前端确认后立即重载新代码。
 - 插件网络请求全部经主站桥接层在浏览器侧执行（§8.3），服务端不出站、无插件侧 SSRF 面；SSRF 防护仅用于 URL 安装。
@@ -590,7 +598,7 @@ type ServerFrame =
 
 | 实现 | 触发条件 | URL 形态 | 静态服务 |
 |---|---|---|---|
-| `LocalStorage` | 后台未配 `storage.endpoint` + `storage.bucket` | `/uploads/2026/11/<128bit>.png` | 后端 `GET /uploads/**`（长缓存） |
+| `LocalStorage` | 后台未配 `storage.endpoint` + `storage.bucket` | `/uploads/2026/11/<128bit>.png` | 后端 `GET /uploads/**`（登录态 + `private, max-age=3600` + 禁止目录列举） |
 | `S3Storage` | 后台配了上述两项（MinIO / AWS S3 / OSS / COS，minio-go） | `<publicBase>/2026/11/<128bit>.png` | 由对象存储 / CDN 提供 |
 
 **关键约束**：
@@ -600,6 +608,7 @@ type ServerFrame =
 3. **WS 落库前校验 URL 归属**：`image` / `audio` 的 content 必须是 `Storage.Owns()` 认得的地址，防止用户塞 `https://evil.com/x.png`（消息看起来正常，但接收方会去加载外部资源 → 泄露 IP、可被打点统计）。
 4. **配了 S3 就不会静默回退本地**：上传失败直接报错，否则会出现「以为在云端、重装机器全丢」的数据分裂。
 5. **切换存储不迁移历史文件**：老消息里的 `/uploads/...` 仍由本地静态服务提供（本地实现保留），新消息走新存储。
+6. **S3 模式下 `/uploads` 鉴权不生效**：新文件是 `publicBase` 绝对 URL，访问控制由桶策略/CDN 负责；本地静态服务只覆盖历史文件。附件 GC 也只扫描本地 `DATA_DIR/uploads`，S3 孤儿对象需另配生命周期规则。
 
 ### 9.5 扩展边界（明确不模糊）
 - **本期只支持单实例**：在线状态、Hub 路由在内存，不做水平扩展。

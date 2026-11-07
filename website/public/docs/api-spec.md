@@ -82,13 +82,14 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 |---|---|---|
 | POST `/api/auth/register` | `{username, password, nickname, inviteCode?, email?, emailCode?}` | `{token, user}`（首个注册者 role=admin）。受维护模式（503）、注册开关（403）、邀请码（400）、邮箱验证（400/409/422）约束；邀请码核销失败自动退还名额。开启邮箱验证时 `email`+`emailCode` 必填，验证码核销失败返回 422「验证码错误或已过期」 |
 | POST `/api/auth/email-code` | `{email}` | `{ok:true, cooldownSeconds}`；未开启邮箱验证→400，邮箱已绑定→409，SMTP 不可用→503；同邮箱 60 秒冷却（冷却期内仍 200，返回剩余秒数） |
-| POST `/api/auth/login` | `{username, password}` | `{token, user}` |
+| POST `/api/auth/login` | `{username, password}` | `{token, user}`，并下发 `mc_auth` cookie |
+| POST `/api/auth/logout` | — | `{ok:true}`；**免鉴权**（维护模式可用），只清 `mc_auth` cookie；不吊销 JWT、不踢 WS |
 | POST `/api/auth/forgot` | `{email}` | `{ok:true}`（无此邮箱也返回成功；开发期打印重置链接到日志） |
 | POST `/api/auth/reset` | `{token, newPassword}` | `{ok:true}`；`token_version+1` 全端失效 |
 | GET `/api/me` | — | `User`（含 email） |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`。**换绑邮箱必须带 `emailCode`**（发往新邮箱、核销通过才落库并置 `email_verified=true`；空串 `email` 表示解绑、不需要验证）；邮箱未变化时不改动验证状态；SMTP 未配置时换绑返回 400。avatar 为 `data:image/(png\|jpeg\|webp);base64,…`，前端压至 256×256，服务端校验前缀与 ≤256KB，空串清除 | 更新后 `User` |
 | POST `/api/me/email-code` | `{email}`（新邮箱） | `{ok:true, cooldownSeconds}`；与当前邮箱相同→400，被他人占用→409，SMTP 不可用→503；每用户 5 次/分，同邮箱 60 秒冷却 |
-| POST `/api/me/logout-others` | — | `{ok:true}`；`token_version+1`，所有旧 JWT 失效（WS 连接在下一次上行时被复核断开） |
+| POST `/api/me/logout-others` | — | `{ok:true}`；`token_version+1`，所有旧 JWT 失效；同时主动 `KickUser` 断开该账号全部已建 WS 连接（发送 `kicked` 帧），当前设备也需重新登录 |
 | GET `/api/users/search` | `?kw=`（≤50） | `User摘要[]`（不含 email，≤20 条） |
 | GET `/api/friends` | — | `FriendItem[]`（已通过的好友；同意后双向记录按对方去重，每人一条） |
 | GET `/api/friends/requests` | — | `FriendRequestItem[]`（status=0 且指向我） |
@@ -127,7 +128,7 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/conversations/:id/mute-all` | `{muted:boolean}` | `{ok:true}`；群主 / 管理员；全员禁言后群主与管理员仍可发言 |
 | POST `/api/conversations/:id/transfer` | `{userId}`（须为成员） | `{ok:true}`；双方 role 互换 |
 | POST `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart `file`（图片 ≤8 MB / 语音 ≤5 MB / 表情 ≤2 MB / 群文件 ≤20 MB / **视频 ≤30 MB，均后台可配**） | `{kind, size, url}`；**按文件头判定真实类型**（伪装扩展名 → 400）；**流式处理**（multipart 分段直接交给存储层，文件不整块进内存）；每用户 10 次/分限流。`kind=image` 时额外生成 ≤480px 的 JPEG 缩略图（`_t.jpg`，GIF / 过小图 / 解码失败跳过；透明图垫白底），响应形状不变——前端按约定从 `url` 派生缩略图地址，缺失时回退原图 |
-| GET `/uploads/<年>/<月>/<文件名>` | — | 静态文件（仅本地存储）；`Cache-Control: public, max-age=31536000, immutable` |
+| GET `/uploads/<年>/<月>/<文件名>` | — | 静态文件（始终挂载，兼容历史 URL）。**必须登录**：`Authorization: Bearer` 或同源 `mc_auth` cookie（`UploadAuth`）；未登录 401，封禁 403；目录列举 404；`Cache-Control: private, max-age=3600`、`X-Content-Type-Options: nosniff`；维护模式下非管理员不可访问。S3 模式的新文件由桶/CDN 提供，不经过此鉴权 |
 | GET `/api/favorites` | `?limit=1..200`（默认 100） | `FavoriteItem[]`（按收藏时间倒序）；**空时返回 `[]` 而非 `null`** |
 | POST `/api/messages/:messageId/favorite` | — | `{ok:true}`；须为该消息所在会话的成员；幂等 |
 | DELETE `/api/messages/:messageId/favorite` | — | `{ok:true}` |
@@ -217,7 +218,7 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | 编辑 | 仅发送者本人、消息创建后 **5 分钟内**、且未撤回的 `text` 消息；新正文长度按 `chat.maxMessageLength` 校验并检查敏感词；落库写 `edited_at`，随 `message_update` 帧广播 |
 | 注册 | 受 `site.allowRegister` 开关（关闭 → 403）与 `site.requireInviteCode`（开启 → 须携带有效邀请码，条件 UPDATE 原子核销，注册失败自动退还名额）约束；首个注册账号自动成为站长 |
 | 换绑邮箱 | 与注册验证分离：`POST /api/me/email-code` 向新邮箱发码（purpose=`change_email`），`PATCH /api/me` 核销通过才落库并把 `email_verified` 置 true。只校验唯一性就落库会让任何人抢占他人邮箱（真实主人之后注册/绑定被 409，重置链接也寄错人） |
-| 邮箱验证 | `site.requireEmailVerify`（默认开）+ SMTP 可用 + 非首个账号三者同时成立才**要求验证码**：注册须带 `email` + 6 位 `emailCode`（10 分钟有效、一次性、同邮箱 60 秒冷却、连错 5 次作废）。**邮箱本身只要开关开启就必填并落库**（首账号也保存，`email_verified=false`），否则该账号永远无法走「忘记密码」。SMTP 未配置时自动降级为不要验证码（`GET /api/site` 按生效值返回）；后台在未配 SMTP 时开启该开关会被 400 拒绝 |
+| 邮箱验证 | `site.requireEmailVerify`（默认开）+ SMTP 可用 + 非首个账号三者同时成立才**要求验证码**：注册须带 `email` + 6 位 `emailCode`（10 分钟有效、一次性、同邮箱 60 秒冷却、连错 5 次作废）。**邮箱本身只要开关开启就必填并落库**（首账号也保存，`email_verified=false`），否则该账号永远无法走「忘记密码」。**SMTP 未配置时不再静默降级**：除首账号（部署引导豁免）外直接返回 503「站点要求邮箱验证但邮件服务未配置，请联系站长」，防止绕过站点策略批量注册；后台在未配 SMTP 时开启该开关会被 400 拒绝 |
 | 登录锁定 | 按 `security.loginMaxAttempts`（0 = 关闭）累计同账号失败次数，达阈值锁定 `security.loginLockMinutes` 分钟（429）；凭据正确即清零；**不泄露账号是否存在**（错误文案恒定） |
 | 收藏 | 须为消息所在会话成员；同一消息重复收藏幂等 |
 | 群人数 | `chat.maxGroupMembers`（后台可配 2–2000，默认 200）；入群容量判断与插入在同一事务内 |
@@ -232,14 +233,15 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | Web Push | 未配置 VAPID 时 `enabled=false`、所有推送静默跳过；端点 410/404 时删除订阅 |
 | 在线更新 | 仅 `role=admin`；`WEB_UPDATE=false` 整体关闭；命令与 URL 固定，不接受用户输入；每次触发写审计 `web_update` |
 | client_msg_id | UUID（≤36），索引 `(conversation_id, client_msg_id)` 唯一 |
-| messages 索引 | `conversation_id`（游标分页）、`(conversation_id, client_msg_id)` 唯一、`sender_id`（后台按发送者统计，迁移 `0021`） |
-| friends | 索引 `(user_id, friend_id)`；同对可存在两条方向相反记录 |
+| messages 索引 | `conversation_id`（游标分页）、`(conversation_id, client_msg_id)` 唯一、`sender_id`（后台按发送者统计，迁移 `0021`）；`content` 在迁移 `0023` 扩为 `TEXT`，支持后台最高 5000 字符 |
+| friends | 唯一索引 `uk_friends_pair (user_id, friend_id)`（迁移 0025）；同对可存在两条方向相反记录，但同一方向不能重复。同意好友时反向记录使用 upsert，避免互发申请撞索引 |
+| email_codes | 唯一索引 `uk_email_codes_email_purpose (email, purpose)`（迁移 0025）；发码在事务内行锁并原地重置单行，冷却不可绕过 |
 | plugin 文件 | ≤1MB；manifest 为代码首个 `/* {...} */` JSON 注释：name 1–30、version `^\d+\.\d+\.\d+$`、permissions ⊆ §SDK 十项（`message:read/send/render`、`ui:panel/actions/host/theme`、`conv:read`、`storage`、`net`）、allowedHosts 每项合法域名（支持 `*.suffix`），≤20 项。**支持 TypeScript**：`?lang=ts` 或 URL 以 `.ts` 结尾时用 esbuild 转译为 ES2020 后入库，语**法错误返回 400 并带行号**；manifest 从源码解析 |
 | 分页 | page≥1，pageSize 1–100 默认 20；limit 1–50 默认 30；beforeId/upToId 正整数 |
 | ban days | 0–3650 整数 |
 
 幂等与一致性要求：
-- 单聊创建"先查后插"，并发重复可接受（不做额外约束）
+- 单聊创建走 `EnsureSingle`：事务内查重 / 建会话 / 加成员 / 初始化收件箱；`conversations.direct_key` 唯一索引保证并发只有一方成功，失败方回滚后复用已有会话（迁移 0024，存量单聊 `direct_key=NULL`）
 - `user_conversations` 在建会话/入群时初始化（last_message 同步当前最新，unread=0，不追溯历史）
 - 未读数以 DB 为唯一真源，WS 推送失败不回滚
 
@@ -266,7 +268,7 @@ HTTP 状态码 + `{"error": "<中文消息>"}`。消息直接展示给用户，�
 - Ban 中间件：查 `banned_until`，未过期返回 403 `账号已被封禁：<原因>`
 - 角色控制：`/api/admin/*` 校验 `role=admin`（403）；群管理操作校验成员表 `role=owner`（403）
 - tv 触发 `+1` 的操作：改密（本期无独立入口）、重置密码、管理员重置、封禁 → 全部旧 token 401，WS 推 `kicked`
-- WS 鉴权：握手时与 REST 同规则；连接建立后每次上行帧不重复查 tv（连接生命周期内信任），tv 变化由 kicked 帧主动关闭
+- WS 鉴权：握手时与 REST 同规则（`?token=` 优先，缺失时回退 `mc_auth` cookie）；**每一帧**在路由前统一复核封禁与 `token_version`（`Dispatch` → `checkConnState`），不通过回 `error` 帧并断开，不再只查 `chat` 帧
 - WS Origin 白名单：握手校验 `Origin` 是否命中 `FRONTEND_URL`（逗号分隔，尾斜杠/大小写归一化）；无 `Origin` 的非浏览器客户端放行（仍受 token 保护）；不在白名单则拒绝升级（防跨站 WebSocket 劫持）
 
 ## 7. 性能与并发

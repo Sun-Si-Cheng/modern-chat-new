@@ -15,6 +15,7 @@
 | [docs/后端需求规格.md](docs/后端需求规格.md) | 接口契约（请求/响应字段）、校验规则、错误码、验收标准 | 改接口 / 做联调 / 验收 |
 | [docs/前端技术方案.md](docs/前端技术方案.md) | 前端结构、状态管理、WS 实时链路、性能约定、易踩的坑 | 改前端 |
 | [docs/运维手册.md](docs/运维手册.md) | 环境变量全表、后台可配置项、对象存储、部署、备份升级、日志、排障 FAQ | 部署与运维 |
+| [docs/安全与迁移指南.md](docs/安全与迁移指南.md) | 附件鉴权、登出与 token_version、WS 复核、插件沙箱、上传链路、0023–0025 迁移、Docker 参数 | 接手项目 / 排查安全与数据一致性 |
 | [docs/UI设计方案.md](docs/UI设计方案.md) | 设计令牌、动效规范、组件手感、验收标准与实施记录 | 改样式 / 加动效 / 新增控件 |
 | [server/README.md](server/README.md) | 后端运行手册（配置、迁移、测试、结构） | 部署与运维后端 |
 | [web/README.md](web/README.md) | 前端结构速览与命令 | 改前端 |
@@ -207,12 +208,14 @@ cd server && go test -tags integration ./test/   # 需要本机 MySQL
 - **首个注册账号自动成为站长**（`role=admin`），之后注册的均为普通用户。站长后台提供用户封禁 / 解封 / 随机重置密码、插件全局下架。
 - **忘记用户名**：系统不提供用户名找回。站长可在后台为该用户重置密码，再线下告知。
 - **找回密码**：走注册邮箱。未配置 SMTP 时，重置链接只打印到服务端日志（见 `server/README.md` 的「日志」一节），需运维从日志取值转交用户。界面统一提示"若该邮箱已注册，重置链接将发送至该邮箱"，不暴露邮箱是否存在。
-- **邮箱用途**：注册邮箱验证（默认开启，可后台关闭；未配 SMTP 自动降级）、找回密码、换绑邮箱验证。首个注册账号豁免验证码但仍必须填邮箱。
+- **邮箱用途**：注册邮箱验证（默认开启，可后台关闭）、找回密码、换绑邮箱验证。首个注册账号豁免验证码但仍必须填邮箱。**开启验证但未配 SMTP 时注册直接 503**（仅首账号豁免，不再静默降级，防止绕过站点策略批量注册）。
 - **升级**：部署机执行 `scripts/update.sh`（详见「更新与升级」），界面只显示当前构建版本，不显示运维命令。
 
 ## 插件开发
 
-每个插件是一个 JS 文件（≤1MB），存于服务端，前端以 sandbox iframe（`allow-scripts`，无 same-origin）加载。插件不接触 DOM、拿不到 JWT，只通过 `postMessage` 与主站桥接层通信，UI 一律以**描述式 JSON** 交由白名单组件渲染。
+每个插件是一个 JS 文件（≤1MB），存于服务端，前端以 `srcdoc` 注入 sandbox iframe（`allow-scripts`，无 same-origin）加载。插件不接触 DOM、拿不到 JWT，只通过 `postMessage` 与主站桥接层通信，UI 一律以**描述式 JSON** 交由白名单组件渲染。
+
+> **依赖裸 `fetch` 的插件已失效，必须改用 `mc.request`**（宿主注入的 SDK 对象名是 `api`，代码写作 `api.request`）。沙箱是 opaque origin，且 CSP `connect-src` 只放行 `allowedHosts`。详见 [插件开发.md](docs/插件开发.md)。
 
 ### 入口约定
 
@@ -305,8 +308,9 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 
 ## 协议概览
 
-- **REST**：前缀 `/api`，除注册/登录/找回/重置/健康检查/版本外均需 `Authorization: Bearer <token>`；错误统一 `{ "error": "msg" }`。全量接口与字段见 [后端需求规格 §3](docs/后端需求规格.md)。
-- **WebSocket**：`GET /ws?token=<JWT>`（Origin 白名单校验）。上行帧 `chat / typing / read / delivered / recall / edit / reaction / ping`，下行帧 `message / message_update / recall / reaction / message_delivered / message_admin_deleted / read / typing / presence / user_change / conv_change / kicked / pong / error`。消息以 `clientMsgId` 幂等去重，单帧上行上限 64 KB。详见 [设计文档 §7](docs/设计文档.md)。
+- **REST**：前缀 `/api`，除注册/登录/登出/找回/重置/健康检查/版本外均需 `Authorization: Bearer <token>`；错误统一 `{ "error": "msg" }`。登录会下发同源 `mc_auth` cookie，仅用于 `/uploads` 子资源与 WS 握手回退，REST 仍只认头。全量接口与字段见 [后端需求规格 §3](docs/后端需求规格.md)。
+- **附件**：`GET /uploads/**` 必须登录（`Authorization` 或 `mc_auth` cookie），禁止目录列举，缓存 `private, max-age=3600`。S3 模式的新文件由桶/CDN 提供，访问控制下沉。
+- **WebSocket**：`GET /ws?token=<JWT>`（兼容旧客户端；token 缺失时回退 `mc_auth` cookie），Origin 白名单校验；**每一帧**都复核封禁与 `token_version`，不通过回 `error` 帧并断开。上行帧 `chat / typing / read / delivered / recall / edit / reaction / ping`，下行帧 `message / message_update / recall / reaction / message_delivered / message_admin_deleted / read / typing / presence / user_change / conv_change / kicked / pong / error`。消息以 `clientMsgId` 幂等去重，单帧上行上限 64 KB。详见 [设计文档 §7](docs/设计文档.md)。
 - **版本**：`GET /api/version` → `{version, commit, buildTime}`，用于核对升级是否生效。
 
 ## 更新与升级
