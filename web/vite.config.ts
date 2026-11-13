@@ -7,6 +7,10 @@ import UnoCSS from 'unocss/vite'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
+  // 部署在 https://<站点>/app/ 下（根路径留给官网），dev / preview / build 统一走同一 base，
+  // 避免「开发时正常、上线后资源 404」。站内跳转统一用 import.meta.env.BASE_URL 前缀；
+  // /api、/ws、/uploads、/_dl 是服务端同源根路径，保持绝对路径不变。
+  base: '/app/',
   // devtools 仅开发启用：生产构建不应包含它（体积与运行时开销）
   plugins: [vue(), UnoCSS(), ...(mode === 'development' ? [vueDevTools()] : [])],
   resolve: {

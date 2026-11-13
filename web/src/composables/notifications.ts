@@ -58,7 +58,12 @@ function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   let reg = await navigator.serviceWorker.getRegistration()
-  if (!reg) reg = await navigator.serviceWorker.register('/sw.js')
+  // 部署在 /app/ 下：必须用 BASE_URL 前缀注册，scope 显式锁在 base 内，别接管根路径官网
+  if (!reg) {
+    reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
+      scope: import.meta.env.BASE_URL,
+    })
+  }
   return reg ?? null
 }
 
@@ -123,7 +128,12 @@ export function showMessageNotification(
 ) {
   if (!notificationsEnabled() || !document.hidden) return
   try {
-    const n = new Notification(title, { body, icon: '/icon-192.png', tag })
+    const n = new Notification(title, {
+      body,
+      // public/ 资源在 /app/ 下，必须带 base 前缀，否则通知图标 404
+      icon: `${import.meta.env.BASE_URL}icon-192.png`,
+      tag,
+    })
     n.onclick = () => {
       window.focus()
       onClick()

@@ -7,12 +7,19 @@ import { usePrefsStore } from '@/stores/prefs'
  * 所有动效仅使用 transform / opacity，避免重绘；尊重 prefers-reduced-motion。
  */
 const prefs = usePrefsStore()
+
+/**
+ * 可选自定义背景：web/public/login-bg.jpg 存在即覆盖基色（404 时无副作用）。
+ * 部署在 /app/ 下，路径必须带 BASE_URL；scoped CSS 里访问不到 import.meta.env，
+ * 所以用行内 style 绑定 background-image。
+ */
+const bgUrl = `${import.meta.env.BASE_URL}login-bg.jpg`
 </script>
 
 <template>
   <div class="auth-scene" aria-hidden="true">
     <!-- 自定义图片（可选）：存在即覆盖基色 -->
-    <div class="auth-scene__img" />
+    <div class="auth-scene__img" :style="{ backgroundImage: `url(${bgUrl})` }" />
 
     <!-- 暗化层：保证任意基色/图片下卡片与文字的对比度 -->
     <div class="auth-scene__shade" />
@@ -54,11 +61,14 @@ const prefs = usePrefsStore()
   background-position: var(--mc-scene-bg-position, center);
 }
 
-/* 自定义图片：放在 web/public/login-bg.jpg 即覆盖基色（404 时无副作用） */
+/* 自定义图片：放在 web/public/login-bg.jpg 即覆盖基色（404 时无副作用）。
+ * 图片地址由组件按 BASE_URL 行内绑定，这里只负责铺满。 */
 .auth-scene__img {
   position: absolute;
   inset: 0;
-  background: url('/login-bg.jpg') center / cover no-repeat;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .auth-scene__shade {

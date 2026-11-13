@@ -140,7 +140,7 @@ internal/handler          HTTP（auth/user/friend/conversation/moderation/plugin
 internal/middleware       logger / jwt / ban / admin / limiter / maintenance / guard
 internal/plugin           manifest 解析校验 + esbuild TS 转译 + URL 拉取（SSRF：逐跳公网 IP 校验）
 internal/ws               hub(64 分片) / serve(握手+读写 pump，上行 64KB) / dispatch(上行帧) / presence
-internal/service          mailer / storage（本地+S3）/ thumbnail / push / backup / updater
+internal/service          mailer / storage（本地+S3）/ push / backup / updater
 internal/logx metrics     日志轮转 / Prometheus 指标
 internal/router           全部路由与中间件装配
 migrations/               版本化 SQL（0001_init … 0022_message_fulltext）

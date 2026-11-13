@@ -93,6 +93,8 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isLoggedIn,
     isAdmin,
+    /** 旧站迁移自动登录等场景：直接用服务端返回的会话写入本地 */
+    applyAuth,
     login,
     register,
     sendRegisterCode,

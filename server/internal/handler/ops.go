@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -179,18 +178,16 @@ func (h *OpsHandler) referencedUploads() (map[string]bool, error) {
 
 // addUploadRefs 把业务引用的 URL 加入集合。
 //
-// 派生文件（图片缩略图 xxx_t.jpg）跟随原文件生命周期：原图仍被引用时
-// 把缩略图地址也标为已引用，否则 GC 会把它单独判成孤儿删掉。
+// 历史遗留的派生缩略图（旧版本生成的 xxx_t.jpg）**故意不标记为引用**：
+// 现在每张图只存一份主图，前端也不再派生 _t.jpg 地址，这些残留文件不会
+// 再被任何消息引用。让它们按普通孤儿走 GC（受 orphanMinAge 24 小时保护）
+// 就能自动回收，不必单独写迁移脚本清理。
 func addUploadRefs(dst map[string]bool, urls []string) {
 	for _, u := range urls {
 		if u == "" {
 			continue
 		}
 		dst[u] = true
-		// 只有本地上传才在磁盘上派生缩略图；S3 缩略图在对象存储里，不在本次扫描范围
-		if strings.HasPrefix(u, "/uploads/") {
-			dst[service.ThumbPath(u)] = true
-		}
 	}
 }
 

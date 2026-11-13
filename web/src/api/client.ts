@@ -45,18 +45,32 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
   query?: Record<string, string | number | boolean | undefined>
+  /**
+   * 公开接口（如旧站迁移自动登录）：不携带 Authorization 头，401 也不清理登录态、
+   * 不跳登录页——失败由调用方就地展示错误（票据失效 ≠ 会话失效）。
+   */
+  skipAuth?: boolean
 }
 
 /**
  * 401 统一回登录页，并带上来源：
  * 不带 redirect 的话，会话中途过期后用户只能落到 /chat，
  * 正在看的 /join/:token、/settings 就回不去了。
+ *
+ * 部署在 /app/ 下：location 里的路径带 base，而 router.push 用的是不含 base 的
+ * 站内路径，所以这里先剥掉 base 再拼 redirect；跳转 URL 本身要带 base。
  */
 function redirectToLogin() {
+  // BASE_URL 一定以 / 结尾（'/app/'）；root 是不带尾斜杠的 '/app'
+  const root = import.meta.env.BASE_URL.replace(/\/$/, '')
+  const loginPath = `${root}/login`
   const p = location.pathname
-  if (p.startsWith('/login')) return
-  const from = p + location.search
-  location.href = from === '/chat' ? '/login' : `/login?redirect=${encodeURIComponent(from)}`
+  if (p === loginPath || p.startsWith(`${loginPath}/`)) return
+  // 只有真正带 base 前缀时才剥；否则（'/'、'/app' 等）一律当成根路径，
+  // 避免盲切 root.length 个字符把 /chatx 切成 htx 这类错路径
+  const relative = p.startsWith(`${root}/`) ? p.slice(root.length) : '/'
+  const from = relative + location.search
+  location.href = from === '/chat' ? loginPath : `${loginPath}?redirect=${encodeURIComponent(from)}`
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -94,7 +108,7 @@ function withTimeout<T>(
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const token = getToken()
+  const token = opts.skipAuth ? '' : getToken()
   const ctrl = new AbortController()
   const run = async (): Promise<T> => {
     let res: Response
@@ -115,8 +129,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       throw new ApiError(0, aborted ? '请求超时，请稍后重试' : '网络连接失败，请检查网络后重试')
     }
 
-    // token 失效/被封禁：清登录态回登录页
-    if (res.status === 401) {
+    // token 失效/被封禁：清登录态回登录页（skipAuth 的公开接口除外）
+    if (res.status === 401 && !opts.skipAuth) {
       setToken('')
       unauthorizedHandler?.()
       redirectToLogin()
@@ -216,7 +230,8 @@ export async function rawFetch(
 export const http = {
   get: <T>(path: string, query?: RequestOptions['query']) => request<T>(path, { query }),
   upload,
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  post: <T>(path: string, body?: unknown, opts?: { skipAuth?: boolean }) =>
+    request<T>(path, { method: 'POST', body, skipAuth: opts?.skipAuth }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

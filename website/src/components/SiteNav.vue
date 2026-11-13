@@ -5,7 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import UiIcon from './UiIcon.vue'
 import { toggleLang } from '@/i18n'
-import { REPO, VERSION } from '@/links'
+import { CHAT_APP, REPO, VERSION } from '@/links'
 import { isDark, toggleTheme } from '@/theme'
 
 const { t } = useI18n()
@@ -77,6 +77,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </nav>
 
       <div class="nav__actions">
+        <a class="nav__app" :href="CHAT_APP">{{ t('nav.enterApp') }}</a>
         <a class="nav__repo" :href="REPO" target="_blank" rel="noopener">
           <span>{{ t('nav.repo') }}</span>
           <UiIcon name="arrow-up-right" :size="14" />
@@ -118,6 +119,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             {{ item.label }}
             <UiIcon name="arrow-right" :size="15" />
           </RouterLink>
+          <a class="nav__sheet-link" :href="CHAT_APP">
+            {{ t('nav.enterApp') }}
+            <UiIcon name="arrow-right" :size="15" />
+          </a>
           <a class="nav__sheet-link" :href="REPO" target="_blank" rel="noopener">
             {{ t('nav.repo') }}
             <UiIcon name="arrow-up-right" :size="15" />

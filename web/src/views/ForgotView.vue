@@ -16,6 +16,9 @@ const router = useRouter()
 const route = useRoute()
 const { t, te } = useAppI18n()
 
+/** public/ 资源部署在 /app/ 下，必须带 BASE_URL 前缀 */
+const faviconUrl = `${import.meta.env.BASE_URL}favicon.ico`
+
 /** 1 = 填写邮箱获取链接；2 = 用邮件中的令牌设置新密码 */
 const step = ref<1 | 2>(1)
 const loading = ref(false)
@@ -111,7 +114,7 @@ onMounted(() => {
 
     <main class="auth-card">
       <div class="auth-card__brand">
-        <img class="auth-card__mark" src="/favicon.ico" alt="" width="32" height="32" />
+        <img class="auth-card__mark" :src="faviconUrl" alt="" width="32" height="32" />
         <span class="auth-card__product">{{ t('app.name') }}</span>
       </div>
 

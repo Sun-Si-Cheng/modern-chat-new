@@ -37,7 +37,7 @@ A **frontend-backend separated, plugin-first** web chat platform. Usable out of 
 - Accounts (bcrypt + JWT + password recovery / email verification code), friends (search/apply/accept/delete), block and report
 - Direct chats, groups (create/search/join/invite/invite link/leave/members), initial public group, conversation list (last message + unread + archive)
 - Read receipts, unread counts, recall (time limit configurable in the admin console; the tip is auto-removed after 3 minutes), message editing (**within 5 minutes, text only**), "peer typing", online/offline, delivered/read status, multi-device read sync
-- **Image / audio / video messages** (images compressed before send + server-side thumbnails; video picks a local file, default ≤30 MB, inline playback with the native player), message favorites, forwarding, delete-for-me, clear history
+- **Image / audio / video messages** (images compressed before send; video picks a local file, default ≤30 MB, inline playback with the native player), message favorites, forwarding, delete-for-me, clear history
 - Group admin (rename / group avatar / kick / transfer / admins / member mute / mute all / group announcement / group files), site admin console (ban/unban/reset password/global plugin takedown/system settings/backup/online update)
 - Plugin sandbox + declarative UI + permission whitelist + upload/URL install + same-name upgrade + server-side TypeScript transpilation
 - UI: Chinese/English switch, light/dark/system theme, drag-resizable regions and drawer form, PWA, desktop notifications / Web Push
@@ -160,7 +160,7 @@ modernchat-new/
 │       ├── handler/                auth/user/friend/conversation/moderation/plugin/admin/
 │       │                           admin_settings/upload/file/sticker/push/ops/site/health/version
 │       ├── middleware/             logger/jwt/ban/admin/limiter/maintenance/guard/bodylimit/securityheaders
-│       ├── service/                mailer (hot reload) / storage (local + S3) / thumbnail / push / backup / updater
+│       ├── service/                mailer (hot reload) / storage (local + S3) / push / backup / updater
 │       ├── ws/                     hub(64 shards)/serve(read-write pumps)/dispatch/presence
 │       ├── plugin/                 manifest validation / esbuild TS transpilation / URL fetch (SSRF protection)
 │       ├── logx/ metrics/          log rotation / Prometheus metrics
@@ -576,7 +576,7 @@ When a plugin wants to show UI, it sends a **UI description JSON** to the host, 
 ### 9.2 Performance
 - The Hub shards by **userID** into 64 locks (`shards[uid%64]`); broadcast only locks the target shard; multi-device per user (`userID->[]*Client`) with reference-counted offline. Sharding by user keeps one user's devices in the same shard so each delivery locks one shard; sharding by conversation would require locking the multiple shards its members live on per fan-out.
 - **Queries do not materialize irrelevant rows**: the conversation list only takes "member count (one `GROUP BY`) + the direct-chat peer" and no longer JOINs all members of all the user's conversations back to `users` (20 full groups drop from ~4000 rows to a few dozen); group search likewise replaces "N hits → N COUNT queries" with one `GROUP BY`.
-- **Image message thumbnails**: uploading with `kind=image` generates a JPEG thumbnail ≤480px (`_t.jpg`; GIFs lose animation, tiny images yield no gain, decode failures are skipped, transparent images get a white backing — JPEG has no alpha). Local storage generates asynchronously; for S3 it appends a PutObject after the main file succeeds; frontend bubbles derive the thumbnail URL by convention, fall back to the original on 404, and the lightbox always uses the original.
+- **One file per image**: the browser compresses to max edge 1600 / webp q0.82 before upload, and the server no longer derives thumbnails. An earlier version generated a ≤480px `_t.jpg` to save bubble traffic, but the trade-off did not pay off (a 76 KB image produced a 50 KB thumbnail — 26 KB saved for one extra object, one extra write and a doubled storage listing), so only the main image is stored and the bubble / lightbox / save / download all use it. Legacy `_t.jpg` files are reclaimed by orphan cleanup.
 - **Message search uses FULLTEXT**: `messages.content` gets an ngram full-text index (migration `0022`; AutoMigrate does not create full-text indexes, so `EnsureMessageFulltext` idempotently adds it at startup based on information_schema). ≥2-character keywords use `MATCH...AGAINST` phrase mode to approximate LIKE substring semantics (a quoted phrase guarantees contiguity); single characters (the ngram minimum token is 2) and index anomalies fall back to LIKE.
 - **Don't COUNT when a boolean will do**: `/api/site` is polled by every online client every 30 seconds, so "does any account exist" uses `SELECT 1 ... LIMIT 1`, sparing InnoDB a full traversal of the smallest index's entries.
 - **Cache parsed config**: `Ops()` is called at least twice per request (maintenance middleware + handler), so the parsed result is cached in an `atomic.Pointer` and cleared on `Save/Invalidate`; otherwise every request would deep-copy the config map and parse ~20 keys.
@@ -693,7 +693,7 @@ Group search/leave/delete-friend APIs (§6), `client_msg_id` unique-key scope (�
 - **Delivery assets**: `docker-compose.yml`, `server/Dockerfile`, dual nginx configs, example plugins, `scripts/install.sh` / `package-release.sh` / `update.sh` / `uninstall.sh`, `/api/version` version verification.
 
 ### 13.3 Deviations from the initial design (adjusted during implementation, written back into this doc)
-- The send pipeline & presence live in `internal/ws` (coupled with the Hub to avoid a ws ↔ service dependency cycle); `internal/service` carries the mailer / storage / thumbnail / push / backup / updater.
+- The send pipeline & presence live in `internal/ws` (coupled with the Hub to avoid a ws ↔ service dependency cycle); `internal/service` carries the mailer / storage / push / backup / updater.
 - Added `internal/version` (build version injection), the admin plugin aggregation API, same-name plugin upgrade semantics, `/api/health` and `/api/version`.
 - The spec document `后端需求规格.md` unified `before_id` / `new_password` to camelCase (`beforeId` / `newPassword`), matching the frontend.
 - Hub shards by **userID** rather than the `conversation_id` written in §9.2 of this doc (`shards[uid%64]`): broadcasting is essentially "deliver by user", and sharding by user keeps one user's devices in the same shard so each delivery locks one shard; sharding by conversation would require locking the multiple shards its members live on per fan-out. Lock granularity and hotspot behavior are the same; only the shard key differs.

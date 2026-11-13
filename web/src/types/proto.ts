@@ -295,6 +295,60 @@ export interface PanelDesc {
   body: UIDescNode[]
 }
 
+// ===== 管理后台：群聊管理（旧站迁移 §8，只读） =====
+
+/** 群列表行 */
+export interface AdminGroupRow {
+  id: number
+  name: string
+  ownerId: number
+  ownerName: string
+  memberCount: number
+  messageCount: number
+  createdAt: string
+}
+
+export interface AdminGroupListResp {
+  total: number
+  items: AdminGroupRow[]
+}
+
+/** 群成员（后台只读视图；按 owner → admin → member 排序展示） */
+export interface AdminGroupMember {
+  userId: number
+  username: string
+  nickname: string
+  role: 'owner' | 'admin' | 'member'
+  joinedAt: string
+}
+
+/** 群详情：群列表行 + 公告 + 成员 */
+export interface AdminGroupDetail extends AdminGroupRow {
+  announcement: string
+  members: AdminGroupMember[]
+}
+
+/** 群消息（后台只读视图，含撤回 / 管理员删除标记） */
+export interface AdminGroupMessage {
+  id: number
+  senderId: number
+  senderName: string
+  content: string
+  /** text / image / file 等，与前端消息类型一致 */
+  msgType: string
+  createdAt: string
+  /** 用户撤回的消息 */
+  isRecalled: boolean
+  /** 被管理员删除的消息 */
+  adminDeleted: boolean
+}
+
+export interface AdminGroupMessagesResp {
+  items: AdminGroupMessage[]
+  /** 是否还有更早的消息（before=当前最早消息 id 继续向上翻） */
+  hasMore: boolean
+}
+
 // ===== 插件 SDK 运行时（沙箱内可用的 api 对象，桥接层注入） =====
 
 export type PluginBridgeMessage =

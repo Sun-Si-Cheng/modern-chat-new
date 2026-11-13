@@ -37,6 +37,8 @@ type AuthHandler struct {
 	loginAttempts *store.LoginAttemptStore
 	// emailCodes 注册邮箱验证码
 	emailCodes *store.EmailCodeStore
+	// migrate 旧站迁移服务（迁移功能关闭时也可为 nil，MigrateLogin 返回 503）
+	migrate *service.MigrateService
 }
 
 func NewAuthHandler(
@@ -50,12 +52,13 @@ func NewAuthHandler(
 	invites *store.InviteStore,
 	loginAttempts *store.LoginAttemptStore,
 	emailCodes *store.EmailCodeStore,
+	migrate *service.MigrateService,
 ) *AuthHandler {
 	return &AuthHandler{
 		cfg: cfg, users: users, resets: resets, mailer: mailer,
 		convs: convs, msgs: msgs, settings: settings,
 		invites: invites, loginAttempts: loginAttempts,
-		emailCodes: emailCodes,
+		emailCodes: emailCodes, migrate: migrate,
 	}
 }
 
@@ -350,6 +353,49 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	middleware.SetAuthCookie(c.Writer, c.Request, token)
 	slog.Info("user login", "uid", u.ID)
+	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
+}
+
+// MigrateLogin 旧站迁移完成后的免密登录（契约 §4.5）。
+//
+// 公开接口：不带 JWT，靠一次性 token+key 换取新站登录态；成功响应与 Login
+// 完全一致（JWT + user），并同样写 mc_auth Cookie。票据由 complete /
+// complete-existing 签发，10 分钟有效且只能消费一次（used_at）。
+func (h *AuthHandler) MigrateLogin(c *gin.Context) {
+	if h.migrate == nil || !h.migrate.Enabled() {
+		fail(c, http.StatusServiceUnavailable, "迁移功能未启用")
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+		Key   string `json:"key"`
+	}
+	if !bind(c, &req) {
+		return
+	}
+	u, err := h.migrate.LoginByTicket(req.Token, req.Key)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrTicketInvalid):
+			fail(c, http.StatusUnauthorized, "登录票据无效或已过期")
+		case errors.Is(err, service.ErrMigrateDisabled):
+			fail(c, http.StatusServiceUnavailable, "迁移功能未启用")
+		default:
+			internal(c, err)
+		}
+		return
+	}
+	if u.IsBanned() {
+		fail(c, http.StatusForbidden, "账号已被封禁")
+		return
+	}
+	token, err := middleware.IssueToken(u.ID, u.TokenVersion, h.cfg.JWTSecret)
+	if err != nil {
+		internal(c, err)
+		return
+	}
+	middleware.SetAuthCookie(c.Writer, c.Request, token)
+	slog.Info("user login via migration ticket", "uid", u.ID, "ip", c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": u})
 }
 

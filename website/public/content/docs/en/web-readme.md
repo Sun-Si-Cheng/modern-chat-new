@@ -81,7 +81,7 @@ src/
 - **Conversations**: pin / mute / archive / remove / clear; drafts; `lastMessageType` drives placeholder previews.
 - **Groups**: announcement, files, avatar, admins, per-member mute, mute-all, invite links, invite friends, kick, transfer ownership.
 - **Realtime**: heartbeat + exponential-backoff reconnect; `resync()` after reconnect; direct-chat delivered/read; multi-device read sync; `user_change` live nickname/avatar sync.
-- **Experience**: desktop notifications, PWA, site-wide announcement dialog, unread tab title, image compression + thumbnails, 16:9 inline video, login-page effects, app-wide page background, zh/en, light/dark themes.
+- **Experience**: desktop notifications, PWA, site-wide announcement dialog, unread tab title, pre-upload image compression, 16:9 inline video, login-page effects, app-wide page background, zh/en, light/dark themes.
 - **Plugins**: sandbox iframe + declarative UI + permission list + TypeScript (server-side transpile) + custom message renderers / side panels / context-menu actions. The SDK object injected by the host is named `api`, so plugin code calls `api.request(url, opts)` (typed as `McApi`); `mc.request` refers to this same method.
 
 ## i18n & theme

@@ -108,6 +108,26 @@
   background: var(--bg-sunken);
 }
 
+/* 主行动按钮：进入聊天室（同源 /app/）。与导航其它项区分开，用品牌色实心块。 */
+.nav__app {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: var(--brand);
+  color: #fff;
+  font-size: var(--fs-300);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.nav__app:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+
 .icon-btn {
   display: grid;
   place-items: center;

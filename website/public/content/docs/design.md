@@ -36,7 +36,7 @@
 - 账号（bcrypt + JWT + 找回密码 / 邮箱验证码）、好友（搜索/申请/同意/删除）、拉黑与举报
 - 单聊、群聊（创建/搜索/加入/邀请/邀请链接/退群/群成员）、初始公共群、会话列表（最后消息 + 未读 + 归档）
 - 已读回执、未读数、撤回（时限后台可配，提示 3 分钟后自动移除）、消息编辑（**5 分钟内、仅文本**）、"对方正在输入"、在线/离线、送达 / 已读状态、多端已读同步
-- **图片 / 语音 / 视频消息**（图片发送前压缩 + 服务端缩略图；视频选本地文件上传，默认 ≤30 MB，原生播放器内联播放）、消息收藏、转发、仅自己删除、清空记录
+- **图片 / 语音 / 视频消息**（图片发送前压缩，每张图只存一份；视频选本地文件上传，默认 ≤30 MB，原生播放器内联播放）、消息收藏、转发、仅自己删除、清空记录
 - 群管理（改群名 / 群头像 / 踢人 / 转让 / 管理员 / 单人禁言 / 全员禁言 / 群公告 / 群文件）、站长后台（封禁/解封/重置密码/插件全局下架/系统设置/备份/在线更新）
 - 插件沙箱 + 描述式 UI + 权限白名单 + 上传/URL 安装 + 同名升级 + TypeScript 服务端转译
 - 界面：中 / 英文切换、亮 / 暗 / 跟随系统主题、区域可拖拽调宽与抽屉形态、PWA、桌面通知 / Web Push
@@ -157,7 +157,7 @@ modernchat-new/
 │       ├── handler/                auth/user/friend/conversation/moderation/plugin/admin/
 │       │                           admin_settings/upload/file/sticker/push/ops/site/health/version
 │       ├── middleware/             logger/jwt/ban/admin/limiter/maintenance/guard/bodylimit/securityheaders
-│       ├── service/                mailer（热更新）/ storage（本地 + S3）/ thumbnail / push / backup / updater
+│       ├── service/                mailer（热更新）/ storage（本地 + S3）/ push / backup / updater
 │       ├── ws/                     hub(64 分片)/serve(读写 pump)/dispatch/presence
 │       ├── plugin/                 manifest 校验 / esbuild TS 转译 / URL 拉取（SSRF 防护）
 │       ├── logx/ metrics/          日志轮转 / Prometheus 指标
@@ -572,7 +572,7 @@ type ServerFrame =
 ### 9.2 性能
 - Hub 按 **userID** 分 64 片锁（`shards[uid%64]`），广播只锁目标分片；每用户多端（`userID->[]*Client`），下线引用计数。按用户分片能让同一用户的多端落在同一片、每次投递只锁一片；按会话分片则一次 fan-out 需要锁住成员所在的多个分片。
 - **查询不物化无关行**：会话列表只取「成员数（一条 `GROUP BY`）+ 单聊对方」，不再把用户所有会话的全部成员行 JOIN `users` 拉回来（20 个满员群从约 4000 行降到几十行）；群搜索同理，一次 `GROUP BY` 取代「命中 N 个群查 N 次 COUNT」。
-- **图片消息缩略图**：上传 `kind=image` 时生成 ≤480px 的 JPEG 缩略图（`_t.jpg`；GIF 丢动画、过小图无收益、解码失败都跳过，透明图垫白底——JPEG 无 alpha）。本地存储异步生成、S3 主文件成功后追加 PutObject；前端气泡按 URL 约定派生缩略图地址，404 回退原图，灯箱始终用原图。
+- **每张图只存一份**：前端上传前已压到最大边 1600 / webp q0.82，服务端不再派生缩略图。早期为省气泡流量生成过 ≤480px 的 `_t.jpg`，实测收益与代价不成比例（76 KB 的图派生出的缩略图仍有 50 KB，只省 26 KB 却多存一个对象、多一次写入），因此统一只留主图，气泡 / 灯箱 / 保存 / 下载同源。存量 `_t.jpg` 由孤儿清理回收。
 - **消息搜索走 FULLTEXT**：`messages.content` 建 ngram 全文索引（迁移 `0022`；AutoMigrate 不建全文索引，启动时 `EnsureMessageFulltext` 按 information_schema 幂等补建）。≥2 字符关键词用 `MATCH...AGAINST` 短语模式近似 LIKE 的子串语义（引号内的短语保证连续性），单字符（ngram 最小 token 为 2）与索引异常回退 LIKE。
 - **只问布尔就别 COUNT**：`/api/site` 每 30 秒被每个在线客户端轮询，判断「是否已有账号」用 `SELECT 1 ... LIMIT 1`，避免 InnoDB 遍历最小索引全量条目。
 - **配置解析结果缓存**：`Ops()` 在每个请求至少被调用两次（维护中间件 + handler），解析结果用 `atomic.Pointer` 缓存，`Save/Invalidate` 时置空；否则每次都要深拷贝配置 map 并解析 ~20 个键。
@@ -689,7 +689,7 @@ cd web && npm install && npm run dev  # :5173，代理 /api 与 /ws 到 :8080
 - **交付配套**：`docker-compose.yml`、`server/Dockerfile`、Nginx 双版配置、示例插件、`scripts/install.sh` / `package-release.sh` / `update.sh` / `uninstall.sh`、`/api/version` 版本核对。
 
 ### 13.3 与初版设计的偏差（实现时调整并已回写本文档）
-- 发消息链路与 presence 的实现落在 `internal/ws`（与 Hub 强耦合，避免 ws ↔ service 循环依赖）；`internal/service` 承载 mailer / storage / thumbnail / push / backup / updater。
+- 发消息链路与 presence 的实现落在 `internal/ws`（与 Hub 强耦合，避免 ws ↔ service 循环依赖）；`internal/service` 承载 mailer / storage / push / backup / updater。
 - 新增 `internal/version`（构建版本注入）、admin 插件聚合接口、插件同名升级语义、`/api/health` 与 `/api/version`。
 - 规格文档 `后端需求规格.md` 中 `before_id` / `new_password` 统一为 camelCase（`beforeId` / `newPassword`），与前端一致。
 - Hub 分片按 **userID** 而非本文 §9.2 写的 `conversation_id`（`shards[uid%64]`）：广播本质是「按用户投递」，按用户分片能让同一用户的多端落在同一片、每次投递只锁一片；若按会话分片，一次 fan-out 需要锁住成员所在的多个分片。锁粒度与热点行为一致，仅分片键不同。

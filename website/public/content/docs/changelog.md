@@ -8,8 +8,35 @@
 
 ## [未发布]
 
+### 变更
+
+- **图片改为「每张只存一份」**：移除服务端 `_t.jpg` 缩略图生成（`service/thumbnail.go` 整体删除，本地与对象存储两条上传路径都不再派生）。原因是收益与代价不成比例——前端上传前已把图压到最大边 1600 / webp q0.82，实测一张 76 KB 的图派生出的缩略图仍有 50 KB，只省 26 KB 却要多存一个对象、多一次写入，后台存储清单里还会显示成「一张图变成两个文件」。现在气泡、灯箱、保存、下载全部使用同一份主图，行为更直观、排查更简单。**存量影响**：历史 `_t.jpg` 不再被任何消息引用，会随「清理孤儿附件」按普通孤儿回收（受 24 小时保护期约束），不需要单独写迁移脚本；旧前端若仍按约定派生缩略图地址，会因为改用了主图而自然失效——两侧已同步修改，无兼容窗口。
+
+- **迁移口径改为「只迁本人数据」**：旧站迁移不再为私聊对端、好友、群成员、群主补建占位账号（早期实现一次迁移能凭空多出几百个空用户，后台用户列表直接被撑爆）。现在一次迁移只落一个人——他自己的账号、他自己发的消息、他加入的群：好友只保留对方已迁移的关系；群照建但只加入已迁移的成员，群主未迁移时群主暂落在迁移用户身上；私聊只保留对端已迁移的会话，群聊按发送者映射落库、发送者未迁移的消息跳过；进度按「扫描过的行数」推进，跳过的消息不会让百分比卡住。**可见后果**：对端还没迁移时，双方私聊记录在新站暂时看不到，等对方自己迁移时会连同两个方向的消息一起带过来。
+
+### 修复
+
+- **安全：清除文档中的明文凭据（含历史重写）**：会话归档 `CHANGES-summary-2026-11-08.md` 与运维笔记 `deploy-notes.md`、`docs/content-audit.md` 里带着数据库明文密码、服务器 IP、SSH 端口与七牛审核回调 token。现已全部换成占位符，并重写受影响的历史提交。**这些凭据曾经进过仓库，必须按已泄露处理**：更换 `modernchat_nc` 的数据库密码、确认 SSH 已禁用 root 密码登录、更换 `JWT_SECRET`（会连带使审核回调 token 失效，需到站长后台重新取一次并更新七牛回调地址）。
+- **旧站迁移跳转地址写死了生产域名**：`service/migrate.go` 里 `migrateLoginURL` 硬编码 `https://newchat.modern-chat.top/app/login`，换域名或本地联调会把用户导向线上站点。改为由 `FRONTEND_URL` 派生：配置已带 `/app` 时只拼 `/login`，未配置时退化为相对路径 `/app/login`。
+- **`/api/migrate/*` 四个端点没有限流**：它们不带 JWT、只校验 `X-Migrate-Secret`，此前对公网可无限次尝试。新增按 IP 限流（120/min、burst 20），同时兜住旧站 PHP 的重试风暴。
+- **从根路径迁到 `/app/` 后旧 Service Worker 继续接管官网**：旧 SW 的 scope 是 `/`，而根路径 `/sw.js` 已不存在，浏览器拿不到脚本更新，于是它一直拦截 `/` 与 `/app/`（断网时会把缓存的旧聊天首页当成官网返回）。现在前端启动时主动注销所有 scope 不在当前 base 下的注册。
+- **401 跳登录的 `redirect` 会盲切路径前缀**：`client.ts` 里 `p.slice(root.length)` 在路径不含 `/app/` 时（如 `/`、`/app`）会白切 4 个字符，只是被 `|| '/'` 兜住。改为非 base 路径一律按根路径处理。
+- **下拉列表一滚动就整块消失**：`UiPopup` 用 `window.addEventListener('scroll', close, { capture: true })` 监听视口滚动来关闭浮层，而 `UiSelect` 的选项列表本身就是 `overflow-auto` 的可滚动容器——scroll 不冒泡但捕获阶段会被 window 拿到，于是选项一滑动浮层就被关掉。修复：滚动处理先判断 `event.target` 是否落在浮层面板或锚点内，是则忽略，只有真正的视口滚动才关闭。
+- **后台「设为站长」应为「设为管理员」**：用户列表行内操作与确认弹窗把 `role=admin` 写成了「站长」，与真正的站长（`role=owner`）混淆。中文文案统一改为「设为管理员 / 取消管理员 / 管理员权限 / 管理员」，英文 `roleAdmin` 由 `Owner` 改为 `Admin`；`roleOwner` 的「站长」不动。
+- **下拉选择点了没反应（`UiSelect`）**：`UiPopup` 的锚点 `span` 自己绑了 `@click="toggle"`（给不传 `visible` 的非受控浮层用），`UiSelect` 的触发按钮又绑了一次 `toggle`——事件冒泡后 `open` 被连翻两次，面板刚打开就被关掉。后台「对象存储 → 服务商」这类下拉因此完全选不了。修复：触发按钮改为 `@click.stop="toggle"`，只让按钮自己控制开合（`UiPopup` 的非受控行为保持不变）。
+- **官网文档页正文空白**：官网是 history 路由 + `base: './'`，文档正文用 `fetch('content/docs/*.md')` 相对地址取。`pushState` 到 `/docs/xxx.md` 后，相对地址会被解析成 `/docs/content/docs/xxx.md`，一律 404，于是除标题外整页空白（深链接刷新同样空白）。修复：官网 `base` 改为 `'/'`（站点部署在域名根），`fetch` 随之变成绝对路径。
+- **旧站登录后不弹迁移向导**：`migration_guard.php` 原先用 `users.is_admin` 判断管理员，而旧库该字段有大量误标（573 个普通用户里 4 个是 `1`），这些用户被误判成管理员而直接跳过向导；同时 `MC_SKIP_ADMIN` 默认 `true` 让真正的管理员也看不到向导，容易误以为「迁移没生效」。修复：管理员判定改用 `users.role = 'admin'`（结果缓存在 `$_SESSION['mc_is_admin']`），`MC_SKIP_ADMIN` 默认改为 `false`，管理员同样进入向导，但在向导页底部多一个「暂不迁移，先回旧站」入口，点一下放行 `MC_POSTPONE_SECONDS`（默认 3600 秒）后再回旧站界面，到期自动恢复提示——既不影响维护，也不会让任何人漏掉迁移。
+- **插件面板里的输入框打不进字**：描述式 UI 的 `input` 由插件下发 `value`，而插件在用户打字时**故意不重绘**（避免打断输入），宿主持有的描述里 `value` 始终是初始值；渲染器又把它当受控值绑给 `TInput`，于是每次按键都被回写成初始值。修复：渲染器新增 `DeclarativeInput`，自己持有本地值并维护焦点状态，打字只更新本地值，只有插件下发新值且输入框没有焦点时才同步。
+- **在线音乐一直停在「正在下载音频…」**：`engine.playOnline` 用 `await res.arrayBuffer()` 把整首歌下载完才解码播放，而音源快慢差别极大（实测酷我首字节 5.4 秒、微信/网易直接 502、QQ 0.26 秒），上游还会按 IP 限流返回 429——没有超时就会永远停在缓冲状态。修复三处：①`playOnline` 加 45 秒 `AbortController` 超时，超时明确提示「音源下载超时，请换一首或换个平台试试」；②服务端中转 `MusicStreamHandler.Stream` 对上游失败/429/5xx 重试一次（300ms 退避），并对 429 单独给出「音源正忙（被上游限流）」的提示；③中转响应加 `X-Accel-Buffering: no`，让 nginx 不做代理缓冲，实测首字节从数秒降到 0.04 秒。
+
 ### 新增
 
+- **官网与聊天室同域部署（`/` + `/app/`）**：官网（`website/`）占站点根，聊天前端（`web/`）挂到 `/app/` 子路径。为此 `vite.config.ts` 改为 `base: '/app/'`，Service Worker 注册、`manifest.webmanifest` 的 `scope`/`start_url`/`icons`、登录跳转（`redirectToLogin`）、默认头像与登录背景图、favicon 全部改为按 `import.meta.env.BASE_URL` 推导，避免「开发时正常、上线后资源 404」；`public/sw.js` 的缓存根改为从 `self.location` 推导，并跳过 `/api`、`/ws`、`/uploads`、`/_dl`。后端与静态资源路径不变（`/api`、`/ws`、`/uploads`、`/_dl` 仍在根），官网导航新增「进入聊天室」按钮（`links.ts` 的 `CHAT_APP = '/app/'`）。nginx 需为 `/app/` 加 SPA 回退（`try_files $uri $uri/ /app/index.html`）并对 `index.html`、`sw.js` 禁缓存。**升级影响**：单独部署到根路径的旧部署方式需同步调整 nginx，否则刷新 `/app/xxx` 会 404。
+- **旧站迁移向导（旧站 → 新版一次性迁移）**：旧站（PHP）在 `chat.php` / `mobilechat.php` 登录校验之后插入 `migration_guard.php`——非管理员用户登录后不再进入旧聊天界面，而是进入四步向导：①确认头像/昵称/邮箱；②核对将要迁移的私聊与群聊消息（默认全选，可取消，不含已上传文件）；③带百分比进度条逐批迁移；④完成后跳转 `https://newchat.modern-chat.top/app/login?token=..&key=..&migrated=1` 自动登录，并提示「部分用户没有注册，可能无法向对应用户发送消息」。旧密码（bcrypt `$2y$`）原样复用，用户仍用原密码登录新站；文件类消息转为「【文件未迁移】原名」文本。管理员（`users.role='admin'`）同样走向导，可在向导页点「暂不迁移，先回旧站」放行一段时间（`MC_POSTPONE_SECONDS`，默认 1 小时）以便维护；`MC_SKIP_ADMIN` 仍保留为运维开关，默认 `false`。新增文件：`migrate.php`、`migrate_api.php`、`migrate_config.php`、`migration_guard.php`；新站侧新增 `POST /api/migrate/{preview,start,tick,complete,complete-existing}`（`X-Migrate-Secret` 头校验）与公开的 `POST /api/auth/migrate-login`（一次性票据，10 分钟有效），迁移表由**迁移 0029** 建立。
+- **迁移后自动加入「公共聊天室」**：迁移完成阶段会调用 `EnsureDefaultGroup` 并把迁移用户加进默认群（等价于注册时的自动入群），同时生成他的 `user_conversations` 行，落地即可在会话列表里看到公共聊天室，不用等有人说话。
+- **发送守卫（未迁移 / 不存在的会话）**：WebSocket `handleChat` 在落库前拦截两类消息——会话不存在（群已解散或只剩历史引用）返回「会话不存在，无法发送消息」；单聊对端在新站没有账号（旧站没迁移过来）返回「对方还没有注册或迁移到新版聊天室，暂时无法发送消息」。避免消息写进没人接收的会话。
+- **后台「群聊管理」**：管理员后台新增页签，可查看系统内全部群聊（名称、群主、成员数、消息数、创建时间），搜索与分页；进入详情可看成员列表与历史消息（按 `before` 游标翻页、关键词搜索；已撤回/已管理删除的消息置灰）。接口：`GET /api/admin/groups`、`/api/admin/groups/:id`、`/api/admin/groups/:id/messages`，只读，仅统计 `type=2` 群聊。
+- **群聊管理新增封禁 / 解封 / 解散 / 踢出成员**：只读列表之外补上四个写操作——`POST /api/admin/groups/:id/ban`（可带 `reason`，封禁后群内**所有人含群主**都不能发消息，WebSocket 直接回提示）、`DELETE /api/admin/groups/:id/ban`（解封）、`DELETE /api/admin/groups/:id`（解散：事务级联硬删消息与消息从表，按 500 条分批清 reactions/favorites/deletions/reports）、`DELETE /api/admin/groups/:id/members/:userId`（踢出：同时删成员行与收件箱行，踢掉群主时 `owner_id` 置 NULL）。四个动作都写审计（`ban_group` / `unban_group` / `dissolve_group` / `kick_group_member`）、都只接受 `type=2` 群聊（单聊 404）、参数非法先拒绝不查库；前台列表行与详情抽屉都有入口 + 二次确认。**升级需执行迁移 0030**（`conversations` 加 `banned_at` / `banned_by` / `ban_reason` 三列）。三条保护：①默认群「公共聊天室」是注册与迁移的落地群，**不能封禁、不能解散**（列表/详情返回 `default`，前端隐藏这两个入口，接口回 400）；②任何人**不能把自己踢出**群聊；③**管理员之间不能互踢**——只有站长能踢管理员，普通管理员只能踢普通用户。
 - **官网重构**：落地页从"看板式介绍"改为以产品本身为中心——首屏用 HTML/CSS 复刻真实四栏界面（可切会话、开合详情面板、切暗色，不是截图），信息架构重排为「核心能力 → 插件系统 → 部署 → 生态」，文档站与插件市场同步换新。视觉改用与 `web/` 同源的设计令牌（7 档字号 / 4 档圆角 / 三档动效 / 三级阴影），图标改为内联 SVG，**移除 TDesign 依赖**：JS 776 KB → 249 KB（gzip 234 KB → 90 KB），CSS 200 KB → 38 KB（gzip 25 KB → 8 KB）。产品预览默认跟随站点亮暗，点预览内的主题按钮后转为手动。
 - **官网路径与文档修正**：文档与示例插件的静态文件从 `public/docs/`、`public/plugins/` 移到 `public/content/`，`/docs/xxx.md` 刷新时不再直接返回裸 Markdown（静态服务器以前会抢在 SPA 路由前面命中真实文件），`/plugins` 也不再与目录同名；文档站补齐「安全与迁移指南」（英文译本已存在但中文副本一直没同步），并去掉正文与页面标题重复的一级标题。**运维影响**：`scripts/check-version.sh` 的官网版本校验从"首页徽标文本"改为读 `website/src/links.ts`，发版文档同步更新。
 - **Docker 构建镜像源可配置**：`server/Dockerfile` 新增 `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` 四个 build arg，分别覆盖基础镜像、Go module 代理与 Alpine 软件源，默认值全部保持官方源（不传参时行为与之前一致）；`docker-compose.yml` 已透传，README 与运维手册补充国内网络示例（第三方源需自行确认可信度）。

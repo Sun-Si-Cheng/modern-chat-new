@@ -127,7 +127,7 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/conversations/:id/mute` | `{userId, minutes:0-43200}` | `{ok:true, mutedUntil?}`; group owner / admin; 0=unmute; can't mute the owner / another admin |
 | POST `/api/conversations/:id/mute-all` | `{muted:boolean}` | `{ok:true}`; group owner / admin; after mute-all the owner and admins can still speak |
 | POST `/api/conversations/:id/transfer` | `{userId}` (must be a member) | `{ok:true}`; roles swapped |
-| POST `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart `file` (image ≤8 MB / audio ≤5 MB / sticker ≤2 MB / group file ≤20 MB / **video ≤30 MB, all configurable in the admin console**) | `{kind, size, url}`; **the real type is determined from the file header** (spoofed extensions → 400); **streamed processing** (multipart segments go straight to the storage layer, the file never lands in memory whole); 10 times/min rate limit per user. For `kind=image` an extra ≤480px JPEG thumbnail is generated (`_t.jpg`, skipped for GIF / too-small images / decode failures; transparent images get a white background), the response shape is unchanged — the frontend derives the thumbnail URL from `url` by convention and falls back to the original if missing |
+| POST `/api/upload?kind=image\|audio\|sticker\|file\|video` | multipart `file` (image ≤8 MB / audio ≤5 MB / sticker ≤2 MB / group file ≤20 MB / **video ≤30 MB, all configurable in the admin console**) | `{kind, size, url}`; **the real type is determined from the file header** (spoofed extensions → 400); **streamed processing** (multipart segments go straight to the storage layer, the file never lands in memory whole); 10 times/min rate limit per user. **One file per image**: no server-side thumbnail is generated (the browser already compresses to max edge 1600 / webp before upload), so bubbles and the lightbox share the same file |
 | GET `/uploads/<year>/<month>/<file>` | — | Static file (always mounted, compatible with legacy URLs). **Login required**: `Authorization: Bearer` or same-origin `mc_auth` cookie (`UploadAuth`); not logged in 401, banned 403; directory listing 404; `Cache-Control: private, max-age=3600`, `X-Content-Type-Options: nosniff`; in maintenance mode non-admins can't access it. In S3 mode new files are served by the bucket/CDN and do not go through this auth |
 | GET `/api/favorites` | `?limit=1..200` (default 100) | `FavoriteItem[]` (by favorite time descending); **returns `[]` rather than `null` when empty** |
 | POST `/api/messages/:messageId/favorite` | — | `{ok:true}`; must be a member of the conversation the message belongs to; idempotent |
@@ -355,7 +355,7 @@ server/
 │   ├── middleware/        # logger / jwt / ban / admin / limiter / maintenance / guard
 │   ├── ws/                # hub(64 shards) / serve(handshake+pumps) / dispatch / presence
 │   ├── plugin/            # manifest parsing & validation / esbuild TS transpile / from-url fetch + SSRF protection
-│   ├── service/           # mailer / storage / thumbnail / push / backup / updater
+│   ├── service/           # mailer / storage / push / backup / updater
 │   ├── logx/ metrics/     # log rotation / Prometheus
 │   └── router/            # all routes and middleware wiring
 ├── migrations/            # 0001_init … 0022_message_fulltext (up/down SQL)

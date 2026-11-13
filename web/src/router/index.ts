@@ -52,7 +52,9 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !auth.token) {
     return { name: 'login', query: to.fullPath === '/chat' ? {} : { redirect: to.fullPath } }
   }
-  if (to.meta.guest && auth.token) return { name: 'chat' }
+  // 已登录用户访问 /login 直接进聊天页；但旧站迁移链接（带一次性 token & key）例外——
+  // 否则本机残留的旧登录态会把迁移票据挡掉，用户永远换不到新账号。
+  if (to.meta.guest && auth.token && !(to.query.token && to.query.key)) return { name: 'chat' }
   if (to.meta.requiresAdmin) {
     // auth.user 只是内存态：刷新或直接访问 /admin 时它是空的，
     // 直接判 role 会把有权限的人挡回聊天页（表现为「后台进不去」）。

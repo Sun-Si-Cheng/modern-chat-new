@@ -129,7 +129,8 @@ export const useWsStore = defineStore('ws', () => {
         auth.logout()
         conversations.reset()
         onlineUsers.value.clear()
-        location.href = '/login'
+        // 部署在 /app/ 下：站内跳转必须带 BASE_URL，否则会落到官网根路径
+        location.href = `${import.meta.env.BASE_URL}login`
         break
       }
       case 'error':

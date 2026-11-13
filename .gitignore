@@ -93,3 +93,6 @@ web/dist.old/
 .playwright-cli/
 .workbuddy/
 .shots/
+
+# ===== 本地压缩包 / 导出快照（勿入库）=====
+*.zip

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -246,10 +245,13 @@ func (s *LocalStorage) SaveStream(kind string, r io.Reader, maxBytes int64) (str
 		_ = os.Remove(tmpName)
 		return "", err
 	}
-	// 图片消息异步生成缩略图：响应不等待；缩略图未就绪时前端 404 回退原图
-	if kind == "image" {
-		go writeLocalThumb(s.root, path.Join(rel, name), total)
-	}
+	// 每张图只存一份：不再派生 _t.jpg 缩略图。
+	//
+	// 早期为了省气泡流量生成过 ≤480px 的 JPEG 缩略图，实际效果与代价不成比例：
+	// 前端上传前已把图压到最大边 1600 / webp q0.82，实测一张 76 KB 的图派生出的
+	// 缩略图仍有 50 KB —— 只省 26 KB，却要多存一个对象、多一次写入、多一份
+	// 存储清单噪音（后台看到的就是「一张图变成两个文件」）。
+	// 所以统一只留主图：气泡、灯箱、下载、保存全部用同一份。
 	return path.Join(s.baseURL, rel, name), nil
 }
 
@@ -399,19 +401,7 @@ func (s *S3Storage) SaveStream(kind string, r io.Reader, maxBytes int64) (string
 	if err != nil {
 		return "", fmt.Errorf("上传到对象存储失败: %w", err)
 	}
-	// 图片消息缩略图：主文件已成功，缩略图失败只记日志（前端 404 回退原图）
-	if kind == "image" {
-		if thumb, ok, terr := makeThumbJPEG(tmpName, total); terr != nil {
-			slog.Warn("make thumbnail failed", "key", key, "err", terr.Error())
-		} else if ok {
-			tKey := ThumbPath(key)
-			_, terr = s.client.PutObject(ctx, s.bucket, tKey, bytes.NewReader(thumb), int64(len(thumb)),
-				minio.PutObjectOptions{ContentType: "image/jpeg"})
-			if terr != nil {
-				slog.Warn("upload thumbnail failed", "key", tKey, "err", terr.Error())
-			}
-		}
-	}
+	// 每张图只存一份：不再派生 _t.jpg 缩略图（原因见 LocalStorage.SaveStream 的注释）。
 	return s.publicBase + "/" + key, nil
 }
 

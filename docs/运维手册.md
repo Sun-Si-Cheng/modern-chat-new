@@ -22,6 +22,25 @@
 
 **nginx 必须为 `/ws` 配置 Upgrade 头**，否则 WebSocket 握手失败（见 §7）。
 
+### 1.1 官网 + 聊天室同域部署（本实例采用）
+
+官网与聊天前端可以部署在同一个域名下，聊天室挂在子路径 `/app/`：
+
+```
+https://chat.example.com/            → 官网静态产物（website/dist，history 路由）
+https://chat.example.com/app/        → 聊天前端（web/dist，vite base '/app/'）
+https://chat.example.com/api/ /ws    → modernchat-server
+https://chat.example.com/qiniu/<key> → 对象存储 CDN（私有空间，需签名）
+```
+
+要点：
+
+- 聊天前端构建时 `base` 必须是 `/app/`，否则 `assets/`、`sw.js`、`manifest.webmanifest` 全部 404；
+- `/app/` 用 `try_files $uri $uri/ /app/index.html` 做 SPA 回退，且 `index.html` / `sw.js` 必须禁缓存；
+- 静态资源的正则缓存规则（`~* \.(js|css|png|...)$`）要能命中 `/app/assets/*`，所以 `/app/` 用普通前缀而不是 `^~`；
+- 反代对象存储时，**不要把域名写死在 `proxy_pass`**：nginx 加载配置时就会解析它，域名解析失败会让 `nginx -t`
+  直接 emerg（整站 reload 失败）。用 `resolver` + 变量形式延迟解析。
+
 ---
 
 ## 2. 环境变量全表
@@ -54,6 +73,8 @@
 | `WEB_UPDATE` | `true` | 否 | 站长后台「在线更新」开关。`false` 时 `/api/admin/update/*` 全部不可用；Docker / 裸机部署自动不可用（见 §4.2） |
 | `RELEASE_API_URL` / `RELEASE_DL_URL` | 空 | 否 | 发行版模式：Release 最新版本 API 与下载前缀，由 `install.sh` 写入 `.env`；两值为空时按源码 git 模式处理 |
 | `METRICS_TOKEN` | 空 | 否 | 非空时 `GET /api/metrics` 需 `Authorization: Bearer <token>`；留空则同站可匿名抓取，公网部署建议设置 |
+| `LEGACY_API_SECRET` | 空 | 否 | 旧站迁移密钥（≥32 字节），必须与旧站 `chat/migrate_config.php` 的 `MC_MIGRATE_SECRET` 完全一致。留空则 `/api/migrate/*` 全部返回「迁移未启用」 |
+| `LEGACY_DB_DSN` | 空 | 否 | 旧站库（**只读账号**）连接串，迁移程序只读不写。生产示例：`legacy_ro:<密码>@tcp(127.0.0.1:3306)/chat?charset=utf8mb4&parseTime=True&loc=Local` |
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | 否 | 数据库备份输出目录 |
 | `BACKUP_INTERVAL_HOURS` | `0` | 否 | 自动备份间隔小时数，`0` = 只保留后台手动「立即备份」 |
 | `BACKUP_RETAIN` | `7` | 否 | 自动备份保留份数（超出后删最旧） |
@@ -120,8 +141,8 @@
 - **跨域部署注意**：`mc_auth` 是 `SameSite=Lax`，前端与 API 不同 site 时 `<img src=".../uploads/...">` 不会带 cookie，会 401。推荐同域反代；完全跨站请改用 S3/CDN 公开域名，或由前端带 `Authorization` 拉 blob。
 - **S3 模式边界**：新文件是 `publicBase` 绝对 URL，不经过 `/uploads` 鉴权，访问控制由桶策略/CDN 负责；历史 `/uploads/` 仍由本地静态服务提供。详见 [安全与迁移指南.md](安全与迁移指南.md) §1。
 - **类型按文件头判定**：把 HTML 改名成 `.png` 会被拒（防存储型 XSS）；音频兼容浏览器录音产生的 `video/webm` / `application/ogg` / `video/mp4` 容器。各类型体积上限在「系统设置 → 上传上限」里可调，表情固定 2 MB。
-- **缩略图**：上传图片时异步生成 `_t.jpg`（≤480px），气泡加载缩略图、灯箱加载原图；GIF / 过小图 / 解码失败跳过，透明图垫白底。解码前先读图头，像素总数超过 4000 万直接跳过，防止解压炸弹；生成路径带 panic 兜底。
-- **总配额与孤儿清理**：`upload.maxStorageMB`（0=不限）限制本地上传目录总量；后台「存储」页签可查看用量并清理孤儿文件。GC 按 `/uploads/` 前缀收集消息正文、表情、群文件、群头像、用户头像的引用，**不按消息类型枚举**；派生缩略图跟随原文件；24 小时内的新文件不删；只扫描本地 `DATA_DIR/uploads`，S3 孤儿对象不在范围内。
+- **每张图只存一份**：上传前前端已把图压到最大边 1600 / webp，服务端**不再**派生 `_t.jpg` 缩略图——气泡、灯箱、保存、下载全部用同一份主图。早期生成的 `_t.jpg` 遗留文件不再被任何消息引用，会随「清理孤儿附件」按普通孤儿回收（受 24 小时保护期约束）。
+- **总配额与孤儿清理**：`upload.maxStorageMB`（0=不限）限制本地上传目录总量；后台「存储」页签可查看用量并清理孤儿文件。GC 按 `/uploads/` 前缀收集消息正文、表情、群文件、群头像、用户头像的引用，**不按消息类型枚举**；遗留 `_t.jpg` 缩略图不再被标记为引用，按普通孤儿回收；24 小时内的新文件不删；只扫描本地 `DATA_DIR/uploads`，S3 孤儿对象不在范围内。
 
 ### 2.3 维护模式（升级 / 故障时的标准操作）
 

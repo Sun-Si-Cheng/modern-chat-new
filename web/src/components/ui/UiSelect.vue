@@ -138,6 +138,9 @@ function onTriggerKeydown(e: KeyboardEvent) {
 
 <template>
   <UiPopup v-model:visible="open" placement="bottom-left" :min-width="160">
+    <!-- .stop 必须保留：UiPopup 的锚点 span 自己也绑了 @click="toggle"（供不传
+         visible 的非受控浮层用），事件冒泡上去会再翻一次 open，面板刚开就被关掉，
+         表现就是「点下拉没有任何反应」。 -->
     <button
       type="button"
       :class="triggerCls"
@@ -147,7 +150,7 @@ function onTriggerKeydown(e: KeyboardEvent) {
       :aria-expanded="open"
       :aria-controls="listId"
       :aria-activedescendant="open && activeIndex >= 0 ? optionId(activeIndex) : undefined"
-      @click="toggle"
+      @click.stop="toggle"
       @keydown="onTriggerKeydown"
     >
       <span class="flex-1 min-w-0 truncate text-left" :class="hasValue ? 'text-ink' : 'text-ink-3'">

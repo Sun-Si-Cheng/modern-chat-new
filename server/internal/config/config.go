@@ -10,11 +10,17 @@ import (
 
 // Config 全部运行配置，来源仅环境变量。
 type Config struct {
-	Port           string
-	GinMode        string
-	DBDSN          string
-	JWTSecret      string
-	LogLevel       string
+	Port      string
+	GinMode   string
+	DBDSN     string
+	JWTSecret string
+	LogLevel  string
+	// LegacyAPISecret 旧站迁移接口共享密钥（请求头 X-Migrate-Secret）；
+	// 与旧站 chat/migrate_config.php 保持一致。为空 = 迁移功能整体关闭。
+	LegacyAPISecret string
+	// LegacyDBDSN 旧站 MySQL 只读 DSN（LEGACY_DB_DSN）。
+	// 为空 = 迁移功能整体关闭；服务只读旧库，绝不写入。
+	LegacyDBDSN    string
 	Migrate        bool
 	PluginMaxSize  int64
 	FrontendURLs   []string // 允许的前端来源（WS Origin 校验 + 找回密码链接）
@@ -67,6 +73,12 @@ type SMTPConfig struct {
 
 func (c SMTPConfig) Enabled() bool { return c.Host != "" }
 
+// LegacyEnabled 旧站迁移功能是否启用：两个配置项都非空才启用。
+// 任一为空时迁移相关接口统一返回 503，且不会建立旧库连接（不影响正常启动）。
+func (c Config) LegacyEnabled() bool {
+	return strings.TrimSpace(c.LegacyAPISecret) != "" && strings.TrimSpace(c.LegacyDBDSN) != ""
+}
+
 // Load 读取环境变量。JWT_SECRET 规则：
 //   - 生产（GIN_MODE=release）必须显式设置且 ≥32 字节，否则拒绝启动；
 //   - 开发模式缺省时生成随机值并告警（重启即全端失效）。
@@ -77,6 +89,8 @@ func Load() (Config, error) {
 		DBDSN:               getv("DB_DSN", "root:root@tcp(127.0.0.1:3306)/modernchat?charset=utf8mb4&parseTime=True&loc=Local"),
 		JWTSecret:           os.Getenv("JWT_SECRET"),
 		LogLevel:            getv("LOG_LEVEL", "info"),
+		LegacyAPISecret:     getv("LEGACY_API_SECRET", ""),
+		LegacyDBDSN:         getv("LEGACY_DB_DSN", ""),
 		Migrate:             getv("MIGRATE", "false") == "true",
 		PluginMaxSize:       geti("PLUGIN_MAX_SIZE", 1<<20),
 		LogDir:              getv("LOG_DIR", "logs"),

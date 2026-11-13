@@ -1,5 +1,9 @@
 import { ApiError, http, rawFetch } from './client'
 import type {
+  AdminGroupDetail,
+  AdminGroupListResp,
+  AdminGroupMessagesResp,
+  AdminGroupRow,
   AuthPayload,
   Conversation,
   ConversationMember,
@@ -27,6 +31,13 @@ export const authApi = {
     emailCode?: string
   }) => http.post<AuthPayload>('/auth/register', body),
   login: (body: { username: string; password: string }) => http.post<AuthPayload>('/auth/login', body),
+  /**
+   * 旧站迁移自动登录：旧站带一次性 {token, key} 跳转过来，换本站 JWT。
+   * token/key 一次性、有时效，失败即失效（前端提示用原密码登录）。
+   */
+  migrateLogin: (body: { token: string; key: string }) =>
+    // 公开接口：旧票据换会话与当前登录态无关，不带 Authorization、401 也不跳登录页
+    http.post<AuthPayload>('/auth/migrate-login', body, { skipAuth: true }),
   /** 发送注册验证码；返回剩余冷却秒数（冷却期内重复调用也返回 200） */
   emailCode: (email: string) =>
     http.post<{ ok: true; cooldownSeconds: number }>('/auth/email-code', { email }),
@@ -330,6 +341,22 @@ export const adminApi = {
     }),
   audits: (page = 1, pageSize = 20) =>
     http.get<AdminAuditsPage>('/admin/audits', { page, pageSize }),
+
+  /**
+   * 群聊管理（只读）：群列表。
+   * q 按群名模糊搜索；page 从 1 开始。
+   */
+  groups: (q = '', page = 1, pageSize = 20) =>
+    http.get<AdminGroupListResp>('/admin/groups', { q, page, pageSize }),
+  /** 群详情：群信息 + 成员列表（展示时按 owner → admin → member 排序） */
+  groupDetail: (id: number) => http.get<AdminGroupDetail>(`/admin/groups/${id}`),
+  /** 群消息：before=当前最早消息 id 向上翻页；q 按发送者/内容搜索 */
+  groupMessages: (id: number, params: { before?: number; size?: number; q?: string } = {}) =>
+    http.get<AdminGroupMessagesResp>(`/admin/groups/${id}/messages`, {
+      before: params.before,
+      size: params.size ?? 50,
+      q: params.q,
+    }),
 
   /** 系统设置：SMTP / Redis / 对象存储（敏感项只回 hasXxx） */
   settings: () => http.get<AdminSettings>('/admin/settings'),

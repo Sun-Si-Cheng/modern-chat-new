@@ -16,7 +16,7 @@
 | 退出登录 | `POST /api/auth/logout` 只清 cookie，不吊销 JWT；“退出所有设备”才 bump `token_version` 并踢 WS | `handler/auth.go` `Logout`；`handler/user.go` `LogoutOthers`；`ws/hub.go` `KickUser` |
 | 实时通道 | 握手 `?token=` 保留，缺失时回退 cookie；**每一帧**先复核封禁与 tv，失败 error 帧 + 断开 | `ws/serve.go` `Serve`；`ws/dispatch.go` `Dispatch` / `checkConnState` |
 | 插件隔离 | `sandbox="allow-scripts"`（无 same-origin）、`srcdoc` 启动、CSP 收敛出口；**裸 `fetch` 已失效，必须用 `mc.request`** | `web/src/composables/usePluginHost.ts` `mountRuntime` / `buildSandboxCsp` / `hostAllowed` |
-| 上传链路 | 先嗅探 512 字节并**写回**；限额按后台配置；缩略图限 4000 万像素；GC 按 `/uploads/` 前缀判定 | `service/storage.go` `SaveStream` / `extFor`；`service/thumbnail.go`；`handler/ops.go` `referencedUploads` |
+| 上传链路 | 先嗅探 512 字节并**写回**；限额按后台配置；每张图只存一份主图（不再派生缩略图）；GC 按 `/uploads/` 前缀判定 | `service/storage.go` `SaveStream` / `extFor`；`handler/ops.go` `referencedUploads` |
 | 迁移 | 0023 扩 TEXT、0024 单聊唯一键、0025 好友/验证码唯一索引；升级前必须备份 | `server/migrations/0023..0025` |
 | 部署 | Docker 版本号走 `VERSION`/`COMMIT`/`BUILD_TIME`，镜像源走 `GO_IMAGE`/`RUNTIME_IMAGE`/`GOPROXY`/`APK_MIRROR` | `server/Dockerfile`；`docker-compose.yml` |
 
@@ -305,13 +305,15 @@ base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; worker
 
 音频有一个兼容兜底：浏览器 `MediaRecorder` 录的音频常被 `http.DetectContentType` 判成 `video/webm`、`application/ogg` 或 `video/mp4`，`extFor` 在 `kind=audio` 时按容器特征 `guessAudioExt` 识别，避免合法语音被拒。
 
-### 5.4 缩略图安全限制
+### 5.4 不再生成缩略图
 
-`service/thumbnail.go`：
+早期上传 `kind=image` 时会派生一张 ≤480px 的 JPEG 缩略图（`xxx_t.jpg`，与原文件同目录），供聊天气泡使用。该能力已移除：
 
-- 先用 `image.DecodeConfig` **只读头部**，像素总数超过 4000 万（约 6325×6325）直接跳过缩略图，前端回退原图；
-- 整条生成路径带 `recover`，畸形图片触发解码器 panic 时只记日志，不影响上传；
-- 缩略图名形如 `xxx_t.jpg`，与原文件同目录。
+- 前端上传前已经把图压到最大边 1600 / webp q0.82，再派生 480px 缩略图的收益很小（实测 76 KB 的图派生出的缩略图仍有 50 KB）；
+- 代价却是每张图多一个存储对象、多一次写入、存储清单一分为二，容易被误判成「上传了重复文件」；
+- 现在气泡、灯箱、保存、下载统一使用主图，`MessagePane.imageSrc()` 直接返回 `content`。
+
+存量 `_t.jpg` 不再被任何消息引用，`referencedUploads` 也不再为其标记引用，因此会作为普通孤儿被「清理孤儿附件」回收（受 `orphanMinAge` 24 小时保护）。
 
 ### 5.5 附件 GC 的判定规则
 
@@ -319,7 +321,7 @@ base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; worker
 
 - `referencedUploads` 收集五类引用：消息 `content LIKE '/uploads/%'`、表情 `url`、群文件 `url`、群头像、用户头像；
 - **不按 `msg_type` 枚举**：任何 content 以上传路径开头的消息都算引用，新增消息类型不会漏；
-- `addUploadRefs` 把 `xxx_t.jpg` 派生缩略图也标记为已引用，跟随原文件生命周期；
+- `addUploadRefs` 只把消息 / 表情 / 群文件 / 群头像 / 用户头像里**真实出现**的 URL 标记为引用；历史遗留的 `xxx_t.jpg` 缩略图**不再**跟随原文件，会按普通孤儿被回收（原图仍受保护）；
 - `orphanMinAge = 24h`：刚上传但还没发消息的文件不会被误删；
 - 只有本地 `DATA_DIR/uploads` 会被扫描；S3 对象不在范围内；
 - `dryRun` 与真实删除共用 `gcOrphans`，先 dryRun 看数量和字节数再执行。
@@ -441,7 +443,6 @@ base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; worker
 | 插件 URL 安装防 SSRF | `server/internal/plugin/fetch.go` | `Fetch` |
 | 插件沙箱 / CSP / 权限过滤 | `web/src/composables/usePluginHost.ts` | `mountRuntime`、`buildSandboxCsp`、`bootHtml`、`API_PERMISSION`、`EVENT_PERMISSION`、`hostAllowed` |
 | 上传限额与流式保存 | `server/internal/handler/upload.go`、`server/internal/service/storage.go` | `Upload`、`SaveStream`、`sniffMime`、`extFor` |
-| 缩略图 | `server/internal/service/thumbnail.go` | 解码尺寸上限 |
 | 附件 GC | `server/internal/handler/ops.go` | `referencedUploads`、`addUploadRefs`、`gcOrphans` |
 | 迁移执行 | `server/internal/store/migrations.go` | `RunMigrations` |
 | Docker 参数 | `server/Dockerfile`、`docker-compose.yml` | `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` / `VERSION` / `COMMIT` / `BUILD_TIME` |

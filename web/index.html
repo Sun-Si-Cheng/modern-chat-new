@@ -2,6 +2,9 @@
 <html lang="zh-CN" theme-mode="light">
   <head>
     <meta charset="UTF-8" />
+    <!-- 站点根路径留给官网，聊天前端挂在 /app/ 下。这里保持根绝对路径：
+         Vite 会按 base 自动加 /app/ 前缀（dev 与 build 都生效），
+         而 public/ 静态文件也由 dev server 挂在 base 下。 -->
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-192.png" />

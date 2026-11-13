@@ -15,6 +15,9 @@ const props = withDefaults(
 
 const initial = computed(() => props.name?.trim()?.charAt(0)?.toUpperCase() || '?')
 
+/** public/ 下的默认头像：部署在 /app/ 下，必须带 base 前缀 */
+const defaultAvatar = `${import.meta.env.BASE_URL}default-avatar.svg`
+
 /** 图片不可用（无网络 / 格式不支持）时回退为首字母 + 取色底 */
 const imageFailed = ref(false)
 
@@ -35,7 +38,7 @@ watch(
     <img
       v-if="!imageFailed"
       class="mc-avatar__img"
-      :src="src || '/default-avatar.svg'"
+      :src="src || defaultAvatar"
       :alt="name"
       draggable="false"
       loading="lazy"

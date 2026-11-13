@@ -353,20 +353,14 @@ function recall(m: Message) {
   void MessagePlugin.success(t('message.recallOk'))
 }
 
-// ===== 图片缩略图 =====
+// ===== 图片 =====
 
-// 服务端为 kind=image 上传生成 ≤480px 的 `_t.jpg` 缩略图（service/thumbnail.go）。
-// 老消息、GIF 与生成失败的图片没有缩略图（404）→ 回退原图；灯箱始终用原图。
-// 以 content 为 key：乐观消息 id=0 会互相串，URL 才是稳定标识。
-const thumbFailed = reactive(new Set<string>())
-
-function thumbUrl(u: string): string {
-  const m = /\.[a-z0-9]+$/i.exec(u)
-  return m ? u.slice(0, -m[0].length) + '_t.jpg' : u
-}
-
+// 每张图只存一份：上传前已在客户端压过（最大边 1600 / webp q0.82），
+// 服务端不再派生 _t.jpg 缩略图，气泡、灯箱、保存与下载全部直接用 content。
+// 早期版本按约定把扩展名换成 _t.jpg 取缩略图，现在那条路径已不存在——
+// 继续派生只会拿到 404 再回退原图，白搭一次失败请求。
 function imageSrc(m: Message): string {
-  return thumbFailed.has(m.content) ? m.content : thumbUrl(m.content)
+  return m.content
 }
 
 // ===== 编辑 =====
@@ -1248,7 +1242,6 @@ const senderName = (m: Message) => {
                     :src="imageSrc(item.msg)"
                     alt=""
                     decoding="async"
-                    @error="thumbFailed.add(item.msg.content)"
                     @click="onMediaClick(item.msg, $event)"
                     @contextmenu.prevent.stop="openImageMenu($event, item.msg)"
                   />

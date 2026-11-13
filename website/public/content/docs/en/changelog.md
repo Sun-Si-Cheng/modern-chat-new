@@ -8,6 +8,10 @@ This file records the important changes of ModernChat. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- **Images are now stored once**: server-side `_t.jpg` thumbnail generation is removed (the whole `service/thumbnail.go` is deleted; neither the local nor the object-storage upload path derives a second file any more). The trade-off did not pay off — the browser already compresses to max edge 1600 / webp q0.82 before upload, and a 76 KB image still produced a 50 KB thumbnail: 26 KB saved for one extra object, one extra write and a storage listing that looks like "one image turned into two files". Bubbles, lightbox, save and download now all use the same main image. **Impact on existing data**: legacy `_t.jpg` files are no longer referenced by any message and are reclaimed by "clean orphan attachments" as ordinary orphans (subject to the 24-hour protection window); no migration script is needed. The frontend and backend were changed together, so no compatibility window is required.
+
 ### Added
 
 - **Configurable Docker build image sources**: `server/Dockerfile` gains four build args, `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR`, overriding the base image, the Go module proxy and the Alpine package mirror respectively; all defaults stay on the official sources (behaviour is unchanged when nothing is passed); `docker-compose.yml` forwards them, and the README and ops manual add examples for networks in mainland China (verify the trustworthiness of third-party mirrors yourself).

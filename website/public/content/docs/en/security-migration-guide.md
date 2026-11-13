@@ -16,7 +16,7 @@
 | Logout | `POST /api/auth/logout` only clears the cookie, it does not revoke the JWT; only "log out all devices" bumps `token_version` and kicks the WS | `handler/auth.go` `Logout`; `handler/user.go` `LogoutOthers`; `ws/hub.go` `KickUser` |
 | Realtime channel | Handshake keeps `?token=`, falling back to the cookie when missing; **every frame** re-checks ban state and tv, and on failure sends an error frame and disconnects | `ws/serve.go` `Serve`; `ws/dispatch.go` `Dispatch` / `checkConnState` |
 | Plugin isolation | `sandbox="allow-scripts"` (no same-origin), started via `srcdoc`, CSP closes the egress; **bare `fetch` no longer works, `mc.request` must be used** | `web/src/composables/usePluginHost.ts` `mountRuntime` / `buildSandboxCsp` / `hostAllowed` |
-| Upload pipeline | Sniff the first 512 bytes first and **write them back**; limits follow the admin-console settings; thumbnails capped at 40 megapixels; GC decides by the `/uploads/` prefix | `service/storage.go` `SaveStream` / `extFor`; `service/thumbnail.go`; `handler/ops.go` `referencedUploads` |
+| Upload pipeline | Sniff the first 512 bytes first and **write them back**; limits follow the admin-console settings; one file per image (no derived thumbnail); GC decides by the `/uploads/` prefix | `service/storage.go` `SaveStream` / `extFor`; `handler/ops.go` `referencedUploads` |
 | Migrations | 0023 widens to TEXT, 0024 unique key for direct chats, 0025 unique indexes for friends / email codes; back up before upgrading | `server/migrations/0023..0025` |
 | Deployment | Docker version comes from `VERSION`/`COMMIT`/`BUILD_TIME`, image sources from `GO_IMAGE`/`RUNTIME_IMAGE`/`GOPROXY`/`APK_MIRROR` | `server/Dockerfile`; `docker-compose.yml` |
 
@@ -304,13 +304,15 @@ Over the limit returns 413 `"文件过大（kind 上限 N MB）"` (file too larg
 
 Audio has a compatibility fallback: audio recorded by the browser's `MediaRecorder` is often detected by `http.DetectContentType` as `video/webm`, `application/ogg` or `video/mp4`, so `extFor` uses `guessAudioExt` on the container signature when `kind=audio`, preventing legitimate voice messages from being rejected.
 
-### 5.4 Thumbnail safety limits
+### 5.4 Thumbnails are no longer generated
 
-`service/thumbnail.go`:
+Uploading `kind=image` used to derive a ≤480px JPEG thumbnail (`xxx_t.jpg`, next to the original) for chat bubbles. That is gone:
 
-- First `image.DecodeConfig` reads **only the header**; when the pixel count exceeds 40 million (about 6325×6325) the thumbnail is skipped entirely and the frontend falls back to the original image;
-- The whole generation path has a `recover`; a decoder panic on a malformed image is only logged and does not affect the upload;
-- Thumbnails are named like `xxx_t.jpg` and live in the same directory as the original file.
+- The browser already compresses to max edge 1600 / webp q0.82 before upload, so a further 480px thumbnail gains little (a 76 KB image produced a 50 KB thumbnail);
+- The cost, however, was one extra storage object, one extra write and a storage listing split in two — easily mistaken for "the same file uploaded twice";
+- Bubbles, lightbox, save and download now all use the main image; `MessagePane.imageSrc()` returns `content` directly.
+
+Legacy `_t.jpg` files are no longer referenced by any message and `referencedUploads` no longer marks them, so "clean orphan attachments" reclaims them as ordinary orphans (subject to the `orphanMinAge` 24-hour protection).
 
 ### 5.5 Rules for attachment GC
 
@@ -318,7 +320,7 @@ Audio has a compatibility fallback: audio recorded by the browser's `MediaRecord
 
 - `referencedUploads` collects five reference kinds: message `content LIKE '/uploads/%'`, sticker `url`, group file `url`, group avatar, user avatar;
 - **It does not enumerate by `msg_type`**: any message whose content starts with an upload path counts as a reference, so new message types cannot be missed;
-- `addUploadRefs` also marks the derived `xxx_t.jpg` thumbnails as referenced, so they follow the lifecycle of the original file;
+- `addUploadRefs` only marks URLs that actually appear in messages / stickers / group files / group avatars / user avatars; legacy `xxx_t.jpg` thumbnails are **no longer** tied to the original and are reclaimed as ordinary orphans (the original stays protected);
 - `orphanMinAge = 24h`: a file just uploaded but not yet sent in a message is not deleted by mistake;
 - Only the local `DATA_DIR/uploads` is scanned; S3 objects are out of scope;
 - `dryRun` and real deletion share `gcOrphans`; check the count and byte size with dryRun before executing.
@@ -440,7 +442,6 @@ All defaults are official sources, so behavior is unchanged when no argument is 
 | Plugin URL install SSRF protection | `server/internal/plugin/fetch.go` | `Fetch` |
 | Plugin sandbox / CSP / permission filtering | `web/src/composables/usePluginHost.ts` | `mountRuntime`, `buildSandboxCsp`, `bootHtml`, `API_PERMISSION`, `EVENT_PERMISSION`, `hostAllowed` |
 | Upload limits and streaming save | `server/internal/handler/upload.go`, `server/internal/service/storage.go` | `Upload`, `SaveStream`, `sniffMime`, `extFor` |
-| Thumbnails | `server/internal/service/thumbnail.go` | Decoded-size cap |
 | Attachment GC | `server/internal/handler/ops.go` | `referencedUploads`, `addUploadRefs`, `gcOrphans` |
 | Migration execution | `server/internal/store/migrations.go` | `RunMigrations` |
 | Docker parameters | `server/Dockerfile`, `docker-compose.yml` | `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR` / `VERSION` / `COMMIT` / `BUILD_TIME` |

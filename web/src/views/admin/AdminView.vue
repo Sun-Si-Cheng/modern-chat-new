@@ -12,6 +12,7 @@ import { DialogPlugin, MessagePlugin, Table as TTable } from 'tdesign-vue-next'
 import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
+import AdminGroupsPanel from '@/views/admin/AdminGroupsPanel.vue'
 import { ApiError } from '@/api/client'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { markAnnouncementSeen } from '@/composables/announcement'
@@ -37,7 +38,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, te } = useAppI18n()
 
-type AdminTab = 'users' | 'plugins' | 'audits' | 'invites' | 'settings' | 'updates'
+type AdminTab = 'users' | 'groups' | 'plugins' | 'audits' | 'invites' | 'settings' | 'updates'
 const tab = ref<AdminTab>('users')
 
 /**
@@ -74,6 +75,7 @@ function switchTab(next: AdminTab) {
 
 const tabItems = computed<Array<{ value: AdminTab; label: string }>>(() => [
   { value: 'users', label: t('admin.tabUsers') },
+  { value: 'groups', label: t('admin.tabGroups') },
   { value: 'plugins', label: t('admin.tabPlugins') },
   { value: 'audits', label: t('admin.tabAudits') },
   { value: 'invites', label: t('admin.tabInvites') },
@@ -1068,6 +1070,11 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
             </div>
           </template>
         </TTable>
+      </div>
+
+      <!-- 群聊管理：面板组件自加载群列表，switchTab 不需要额外拉取 -->
+      <div v-if="tab === 'groups'" class="mc-admin__panel" role="tabpanel">
+        <AdminGroupsPanel />
       </div>
 
       <div v-if="tab === 'plugins'" class="mc-admin__panel" role="tabpanel">

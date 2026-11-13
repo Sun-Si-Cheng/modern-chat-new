@@ -2,12 +2,13 @@
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, MailIcon, UserIcon } from 'tdesign-icons-vue-next'
 
+import { authApi } from '@/api'
 import AuthScene from '@/components/common/AuthScene.vue'
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
@@ -22,6 +23,9 @@ const { t, te } = useAppI18n()
 
 /** 站点名：后台改了这里跟着变；接口没回来时用语言包兜底 */
 const siteName = computed(() => (site.loaded ? site.config.name : t('app.name')))
+
+/** public/ 资源部署在 /app/ 下，必须带 BASE_URL 前缀 */
+const faviconUrl = `${import.meta.env.BASE_URL}favicon.ico`
 
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
@@ -170,6 +174,49 @@ function onSubmit({ validateResult }: { validateResult: boolean | Record<string,
 function switchMode(m: 'login' | 'register') {
   mode.value = m
 }
+
+// ===== 旧站迁移自动登录（/app/login?token=..&key=..&migrated=1） =====
+
+/** 正在用一次性票据换本站登录态 */
+const migrating = ref(false)
+/** 票据失效（或缺失）：提示用原密码登录，并留在登录页 */
+const migrateFailed = ref(false)
+
+/**
+ * 旧站迁移：URL 带一次性 token & key 时自动换本站登录态。
+ * - 成功：applyAuth 后 replace('/chat')，并弹一次性提示
+ *   （MessagePlugin 渲染在 body 上，路由切换/组件卸载后依然可见）；
+ * - 失败：留在登录页展示失效提示，用户可继续用密码登录；
+ * - 成败都会把一次性票据从地址栏清掉（replace 到 /login 或 /chat），
+ *   避免刷新、复制链接导致票据被重复消费。
+ */
+async function tryMigrateLogin() {
+  const token = typeof route.query.token === 'string' ? route.query.token : ''
+  const key = typeof route.query.key === 'string' ? route.query.key : ''
+  if (!token || !key) {
+    // 旧站跳转带了 migrated=1 却没有票据：同样按失效处理，给用户明确提示
+    if (route.query.migrated === '1') migrateFailed.value = true
+    return
+  }
+  migrating.value = true
+  try {
+    const payload = await authApi.migrateLogin({ token, key })
+    // 契约返回 {token, user}；若后端只回 token，再拉一次 /me 补齐用户信息
+    auth.applyAuth(payload)
+    if (!payload.user) await auth.fetchMe()
+    void MessagePlugin.info({ content: t('auth.migrateDone'), duration: 12_000 })
+    await router.replace('/chat')
+  } catch {
+    migrateFailed.value = true
+    await router.replace({ name: 'login' })
+  } finally {
+    migrating.value = false
+  }
+}
+
+onMounted(() => {
+  void tryMigrateLogin()
+})
 </script>
 
 <template>
@@ -183,13 +230,22 @@ function switchMode(m: 'login' | 'register') {
 
     <main class="auth-card">
       <div class="auth-card__brand">
-        <img class="auth-card__mark" src="/favicon.ico" alt="" width="32" height="32" />
+        <img class="auth-card__mark" :src="faviconUrl" alt="" width="32" height="32" />
         <span class="auth-card__product">{{ siteName }}</span>
       </div>
 
       <h1 class="auth-card__title">
         {{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}
       </h1>
+
+      <!-- 旧站迁移自动登录：处理中 / 票据失效时才出现（成功会直接跳聊天页） -->
+      <div v-if="migrating" class="auth-card__notice">{{ t('auth.migrateChecking') }}</div>
+      <div v-else-if="migrateFailed" class="auth-card__notice is-error">
+        <span>{{ t('auth.migrateFailed') }}</span>
+        <UiButton size="small" variant="text" @click="migrateFailed = false">
+          {{ t('auth.migrateManualLogin') }}
+        </UiButton>
+      </div>
 
       <TForm
         ref="form"
@@ -308,7 +364,15 @@ function switchMode(m: 'login' | 'register') {
           </UiCheckbox>
         </div>
 
-        <UiButton class="auth-card__submit" theme="primary" type="submit" block size="large" :loading="loading">
+        <UiButton
+          class="auth-card__submit"
+          theme="primary"
+          type="submit"
+          block
+          size="large"
+          :loading="loading"
+          :disabled="migrating"
+        >
           {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
         </UiButton>
       </TForm>
@@ -414,6 +478,28 @@ function switchMode(m: 'login' | 'register') {
   font-size: 26px;
   letter-spacing: -0.02em;
   text-align: center;
+}
+
+/* 迁移自动登录状态条：紧贴标题下方，不抢表单的视觉重心 */
+.auth-card__notice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: var(--mc-radius-sm);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-secondarycontainer);
+  border: 1px solid var(--mc-hairline);
+}
+
+.auth-card__notice.is-error {
+  color: var(--td-error-color);
+  border-color: var(--td-error-color-3, var(--mc-hairline));
+  background: var(--td-error-color-1, var(--td-bg-color-secondarycontainer));
 }
 
 /* 表单与标题之间留白；字段间距用 flex gap 统一控制

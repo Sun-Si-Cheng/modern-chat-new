@@ -141,7 +141,7 @@ internal/handler          HTTP (auth/user/friend/conversation/moderation/plugin/
 internal/middleware       logger / jwt / ban / admin / limiter / maintenance / guard
 internal/plugin           manifest parsing & validation + esbuild TS transpile + URL fetch (SSRF: per-hop public-IP checks)
 internal/ws               hub(64 shards) / serve(handshake+read-write pumps, 64KB uplink) / dispatch(uplink frames) / presence
-internal/service          mailer / storage (local + S3) / thumbnail / push / backup / updater
+internal/service          mailer / storage (local + S3) / push / backup / updater
 internal/logx metrics     log rotation / Prometheus metrics
 internal/router           all routes & middleware wiring
 migrations/               versioned SQL (0001_init … 0025_friend_email_unique)

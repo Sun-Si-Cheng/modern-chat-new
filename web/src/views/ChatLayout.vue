@@ -43,6 +43,9 @@ const host = usePluginHost()
 const ws = useWsStore()
 const { t, te } = useAppI18n()
 
+/** public/ 资源部署在 /app/ 下，必须带 BASE_URL 前缀 */
+const faviconUrl = `${import.meta.env.BASE_URL}favicon.ico`
+
 /** 第二栏视图：会话列表 / 联系人（由图标栏驱动） */
 const paneView = ref<'chats' | 'contacts'>('chats')
 const pluginDrawerVisible = ref(false)
@@ -293,7 +296,7 @@ onUnmounted(() => {
           <div class="mc-empty">
             <div class="mc-empty__mark" aria-hidden="true">
               <!-- 产品 favicon 作为空态门面标记 -->
-              <img src="/favicon.ico" alt="" class="mc-empty__mark-img" />
+              <img :src="faviconUrl" alt="" class="mc-empty__mark-img" />
             </div>
             <h1 class="mc-empty__title">{{ t('app.name') }}</h1>
             <p class="mc-empty__slogan">{{ t('app.slogan') }}</p>

@@ -111,7 +111,9 @@ func New(d Deps) *gin.Engine {
 
 	// 注册邮箱验证码：哈希密钥由 JWT_SECRET 派生（换密钥后旧码自动失效）
 	emailCodes := store.NewEmailCodeStore(d.DB, d.Cfg.JWTSecret)
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts, emailCodes)
+	// 旧站迁移：旧库连接懒建（首次请求才 dial），功能关闭时不连接、不影响启动
+	migrateSvc := service.NewMigrateService(d.Cfg, d.DB, users, convs, msgs)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts, emailCodes, migrateSvc)
 	inviteH := handler.NewInviteHandler(invites)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs, moderation)
@@ -123,6 +125,10 @@ func New(d Deps) *gin.Engine {
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 	opsH := handler.NewOpsHandler(d.Cfg, d.DB, d.Backup)
 	pushH := handler.NewPushHandler(d.Push, pushSubs)
+	// 旧站迁移接口（PHP 侧服务端调用，靠 X-Migrate-Secret 鉴权，不走 JWT）
+	migrateH := handler.NewMigrateHandler(d.Cfg, migrateSvc)
+	// 站长后台群聊管理（只读）
+	adminGroupsH := handler.NewAdminGroupsHandler(convs, msgs)
 
 	// 上传文件存储由 main 依据配置构造（本地或 S3 兼容），这里只挂接口与静态服务
 	storage := d.Storage
@@ -174,6 +180,20 @@ func New(d Deps) *gin.Engine {
 	api.POST("/auth/reset", authLimit, middleware.Maintenance(settings), authH.Reset)
 	// 注册验证码：与注册同组限流（IP 10/min），另外 store 内对同一邮箱有 60 秒冷却
 	api.POST("/auth/email-code", authLimit, middleware.Maintenance(settings), authH.EmailCode)
+
+	// 旧站迁移（契约 §4）：除 migrate-login 外都校验请求头 X-Migrate-Secret；
+	// 由旧站 PHP 服务端调用，不要求 JWT。迁移功能未启用时统一 503。
+	// 这几条是不带 JWT 的公网端点，单独按 IP 限流：既能挡密钥爆破，
+	// 也能兜住旧站 PHP 的重试风暴（一个大用户的 messages 阶段会有几十次 tick）。
+	// 120/min + burst 20 足够正常迁移跑满，又不至于把带宽/CPU 打满。
+	migrateLimit := middleware.RateLimit(middleware.NewLimiterStore(120, 20), middleware.KeyByIP)
+	api.POST("/migrate/preview", migrateLimit, migrateH.Preview)
+	api.POST("/migrate/start", migrateLimit, migrateH.Start)
+	api.POST("/migrate/tick", migrateLimit, migrateH.Tick)
+	api.POST("/migrate/complete", migrateLimit, migrateH.Complete)
+	api.POST("/migrate/complete-existing", migrateLimit, migrateH.CompleteExisting)
+	// 迁移完成后的免密登录：公开接口，按 IP 限流，一次性 token+key 校验
+	api.POST("/auth/migrate-login", authLimit, authH.MigrateLogin)
 
 	// 需登录（Auth → Ban → Maintenance：维护模式要能读到用户角色）
 	authed := api.Group(
@@ -288,6 +308,10 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/invites/:id/disable", inviteH.SetDisabled)
 		admin.POST("/announce", adminH.Announce)
 		admin.GET("/audits", adminH.Audits)
+		// 群聊管理（只读；契约 docs/旧站迁移方案.md §8）
+		admin.GET("/groups", adminGroupsH.Groups)
+		admin.GET("/groups/:id", adminGroupsH.GroupDetail)
+		admin.GET("/groups/:id/messages", adminGroupsH.GroupMessages)
 		// 系统设置（SMTP / Redis / 对象存储）
 		admin.GET("/settings", adminH.GetSettings)
 		admin.PUT("/settings", adminH.SaveSettings)
