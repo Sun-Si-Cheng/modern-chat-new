@@ -50,7 +50,7 @@ func mustCIDRs(cidrs ...string) []*net.IPNet {
 //
 // 关键：校验与连接必须使用同一个已解析地址。此前先 LookupIP 校验、再交给
 // http.Client 重新解析域名，攻击者可用 DNS rebinding 让两次解析返回不同 IP
-//（校验时公网、连接时 127.0.0.1）。现在由自定义 DialContext 在拨号时解析、
+// （校验时公网、连接时 127.0.0.1）。现在由自定义 DialContext 在拨号时解析、
 // 校验并直接连接该 IP，校验与连接天然原子，重定向的每一跳也同样经过这里。
 func Fetch(rawURL string, maxSize int64) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))

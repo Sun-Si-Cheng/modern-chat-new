@@ -3,7 +3,7 @@
  *
  * 运行模型：每个启用的插件一个 sandbox iframe（allow-scripts，无 same-origin），
  * srcdoc 内注入 SDK + 插件代码。插件通过 postMessage 与本桥接层通信：
- *  - 沙箱 -> 主站：{ __mc: 'call', callId, api, args } / { __mc: 'renderResult', callId, desc }
+ *  - 沙箱 -> 主站：{ __mc: 'call', callId, api, args } / { __mc: 'renderResult', callId, desc }（均带 tk 身份令牌）
  *  - 主站 -> 沙箱：{ __mc: 'result', callId, ok, data } / { __mc: 'event', event, payload } / { __mc: 'render', callId, msgType, payload }
  *
  * 插件入口约定：代码中定义 `function __mcActivate(api) { ... }`，由引导器注入 api 后调用。
@@ -91,6 +91,10 @@ function validateRenderDesc(desc: unknown): PanelDesc | null {
 // ===== allowed_hosts 匹配 =====
 
 function hostAllowed(hostname: string, patterns: string[]): boolean {
+  // 双保险：本站主机名一律不放行代理。服务端会给每个登录响应种 mc_auth Cookie
+  //（/uploads 走 Cookie 鉴权），声明了本站域名的插件可借宿主代理借用户身份读文件；
+  // fetch 侧已 credentials:'omit'，这里按主机名再兜一道（Cookie 不分端口，比 origin 更严）
+  if (hostname.toLowerCase() === window.location.hostname.toLowerCase()) return false
   return patterns.some((p) => {
     const pat = p.trim().toLowerCase()
     if (!pat) return false
@@ -174,7 +178,7 @@ function buildSandboxCsp(allowedHosts: string[]): string {
   ].join('; ')
 }
 
-function bootHtml(pluginCode: string, allowedHosts: string[]): string {
+function bootHtml(pluginCode: string, allowedHosts: string[], token: string): string {
   // `</script>` 与 `<script` 都必须转义：否则插件代码里的字符串可在 HTML 解析阶段
   // 提前闭合引导脚本，或进入 script-data double-escaped 状态
   const safeCode = pluginCode
@@ -185,10 +189,15 @@ function bootHtml(pluginCode: string, allowedHosts: string[]): string {
 "use strict";
 (function () {
   var handlers = {}, callSeq = 0, pending = new Map(), renderers = new Map();
-  function post(m) { parent.postMessage(m, "*"); }
+  // 文档身份令牌：只有本引导文档知道（跨文档不可读）。沙箱每条出站消息都带回 tk，
+  // 宿主据此拒收「自导航后的陌生文档」发的消息（详见 mountRuntime）
+  var TK = "${token}";
+  function post(m) { m.tk = TK; parent.postMessage(m, "*"); }
   window.addEventListener("message", function (ev) {
     var m = ev.data;
     if (!m || typeof m !== "object" || !m.__mc) return;
+    // 宿主在 iframe 每次 load 后都会 ping；带 token 的 pong 证明原文档仍在位
+    if (m.__mc === "ping") { post({ __mc: "pong" }); return; }
     if (m.__mc === "event") {
       (handlers[m.event] || []).forEach(function (fn) {
         try { fn(m.payload); } catch (e) { console.error("[plugin] handler error", e); }
@@ -259,6 +268,12 @@ ${safeCode}
 interface Runtime {
   plugin: Plugin
   iframe: HTMLIFrameElement
+  /** 文档身份令牌：srcdoc 引导文档持有，沙箱每条出站消息都要带回 */
+  token: string
+  /** 当前 iframe 文档是否通过身份校验：每次 load 后置 false，收到合法 pong 才恢复 */
+  verified: boolean
+  /** pong 校验定时器：超时说明当前文档已不是原插件（自导航/损坏），卸载整个 runtime */
+  verifyTimer: ReturnType<typeof setTimeout> | null
   rendererTypes: Set<string>
   renderSeq: number
   pendingRenders: Map<number, { resolve: (d: PanelDesc) => void; reject: (e: Error) => void }>
@@ -290,6 +305,15 @@ function createHost() {
     if (ev.source !== runtime.iframe.contentWindow) return
     const m = ev.data as Record<string, unknown>
     if (!m || typeof m !== 'object' || !m.__mc) return
+    // 文档身份校验：自导航后的新文档读不到引导期 token，一律拒收
+    if (m.tk !== runtime.token) return
+    // 能带对 token 说明原文档还在位：恢复投递，并取消「未确认即卸载」的定时器
+    runtime.verified = true
+    if (runtime.verifyTimer) {
+      clearTimeout(runtime.verifyTimer)
+      runtime.verifyTimer = null
+    }
+    if (m.__mc === 'pong') return
 
     if (m.__mc === 'call') {
       void executeCall(runtime, m.callId as number, m.api as string, (m.args as unknown[]) ?? [])
@@ -308,8 +332,15 @@ function createHost() {
     }
   }
 
+  /** 宿主 → 沙箱统一出口：文档身份未确认期间（load 后未 pong）暂停投递，
+   * 防止自导航后的陌生文档继续收到结果与事件 payload（含消息正文） */
+  function postToSandbox(runtime: Runtime, msg: Record<string, unknown>) {
+    if (!runtime.verified) return
+    runtime.iframe.contentWindow?.postMessage(msg, '*')
+  }
+
   function reply(runtime: Runtime, callId: number, ok: boolean, data?: unknown, error?: string) {
-    runtime.iframe.contentWindow?.postMessage({ __mc: 'result', callId, ok, data, error }, '*')
+    postToSandbox(runtime, { __mc: 'result', callId, ok, data, error })
   }
 
   async function executeCall(runtime: Runtime, callId: number, apiName: string, args: unknown[]) {
@@ -385,6 +416,9 @@ function createHost() {
             method: opts.method ?? 'GET',
             headers: opts.headers,
             body: opts.body,
+            // 插件代理请求不带任何凭据：默认 same-origin 会把 mc_auth Cookie
+            // 一起发给 allowed_hosts 里声明的本站域名
+            credentials: 'omit',
           })
           const text = await res.text()
           let body: unknown = text
@@ -556,7 +590,7 @@ function createHost() {
     const required = EVENT_PERMISSION[event]
     for (const rt of runtimes.values()) {
       if (required && !rt.plugin.permissions.includes(required)) continue
-      rt.iframe.contentWindow?.postMessage({ __mc: 'event', event, payload }, '*')
+      postToSandbox(rt, { __mc: 'event', event, payload })
     }
   }
 
@@ -586,7 +620,7 @@ function createHost() {
             resolve(null)
           },
         })
-        rt.iframe.contentWindow?.postMessage({ __mc: 'render', callId, msgType, payload }, '*')
+        postToSandbox(rt, { __mc: 'render', callId, msgType, payload })
       })
     }
     return Promise.resolve(null)
@@ -612,25 +646,52 @@ function createHost() {
     runtime = {
       plugin,
       iframe,
+      token: crypto.randomUUID(),
+      // 初始文档由宿主亲手注入，默认可信；此后每次 load 都要重新确认（见 handleFrameLoad）
+      verified: true,
+      verifyTimer: null,
       rendererTypes: new Set(),
       renderSeq: 0,
       pendingRenders: new Map(),
       onMessage,
       themeVars: new Map(),
     }
+    // sandbox 标志拦不住插件 location.href 自导航（无 allow-top-navigation 时对自身导航
+    // 本就不需要任何标志），导航后的新文档自带 CSP，buildSandboxCsp 形同虚设，却共用
+    // 同一个 WindowProxy。防线：
+    //  1) 沙箱每条出站消息必须带回引导期 token（新文档拿不到）→ call/renderResult 被拒收；
+    //  2) 每次 iframe load 都视为「文档可能已换人」：暂停宿主→沙箱投递并向沙箱要 pong，
+    //     1.5s 内拿不到合法 pong 就整个卸载该 runtime（面板/右键动作一并清掉）。
+    iframe.addEventListener('load', () => handleFrameLoad(runtime))
     // 用 srcdoc 注入：sandbox 未给 allow-same-origin 时，父页面无权访问
     // iframe.contentWindow.document，document.open/write 会直接抛 SecurityError，
     // 插件永远不会启动；srcdoc 在挂载前写入即可正常执行且仍是 opaque origin
-    iframe.srcdoc = bootHtml(code, plugin.allowedHosts ?? [])
+    iframe.srcdoc = bootHtml(code, plugin.allowedHosts ?? [], runtime.token)
     window.addEventListener('message', onMessage)
     document.body.appendChild(iframe)
     runtimes.set(plugin.id, runtime)
+  }
+
+  /** iframe 每次 load（含初始 srcdoc）都要重新确认当前文档身份 */
+  function handleFrameLoad(runtime: Runtime) {
+    runtime.verified = false
+    if (runtime.verifyTimer) clearTimeout(runtime.verifyTimer)
+    runtime.verifyTimer = setTimeout(() => {
+      console.warn(`[plugin:${runtime.plugin.name}] 沙箱文档未通过身份校验（可能发生自导航），已卸载`)
+      unmountRuntime(runtime.plugin.id)
+    }, 1500)
+    // ping 故意不走 postToSandbox：正是要穿过「未验证不投递」的闸门唤醒沙箱回 pong
+    runtime.iframe.contentWindow?.postMessage({ __mc: 'ping' }, '*')
   }
 
   /** 卸载单个运行时：解绑 window message 监听器，再移除 iframe */
   function unmountRuntime(pluginId: number) {
     const rt = runtimes.get(pluginId)
     if (!rt) return
+    if (rt.verifyTimer) {
+      clearTimeout(rt.verifyTimer)
+      rt.verifyTimer = null
+    }
     window.removeEventListener('message', rt.onMessage)
     for (const p of rt.pendingRenders.values()) p.reject(new Error('runtime unmounted'))
     rt.pendingRenders.clear()
@@ -725,7 +786,8 @@ function createHost() {
   /** 侧边栏 UI 动作回传（§8.2 button/input 的 action） */
   function panelAction(pluginId: number, action: string, value?: unknown) {
     const rt = runtimes.get(pluginId)
-    rt?.iframe.contentWindow?.postMessage({ __mc: 'event', event: 'ui:action', payload: { action, value } }, '*')
+    if (!rt) return
+    postToSandbox(rt, { __mc: 'event', event: 'ui:action', payload: { action, value } })
   }
 
   /** 所有插件注册的右键菜单动作（供消息菜单渲染） */
@@ -751,7 +813,7 @@ function createHost() {
     const payload = rt.plugin.permissions.includes('message:read')
       ? { actionId, message }
       : { actionId, message: messageMeta(message) }
-    rt.iframe.contentWindow?.postMessage({ __mc: 'event', event: 'message:action', payload }, '*')
+    postToSandbox(rt, { __mc: 'event', event: 'message:action', payload })
   }
 
   return {

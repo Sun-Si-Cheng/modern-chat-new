@@ -223,6 +223,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (editingMessage.value && editingMessage.value.conversationId !== convId) {
       editingMessage.value = null
     }
+    // 引用条同理：A 会话的引用残留到 B 会话，发送会被服务端以「引用的消息不存在」拒绝
+    if (replyTarget.value && replyTarget.value.conversationId !== convId) {
+      replyTarget.value = null
+    }
     if (!loadedFirstPageByConv[convId]) {
       loadingMessages.value = true
       try {
@@ -242,14 +246,21 @@ export const useConversationsStore = defineStore('conversations', () => {
         loadingMessages.value = false
       }
     }
-    // 离线期间可能积压超过一页：按服务端已读游标补齐最新页之前的缺口
+    // await 期间用户可能已切到别的会话：继续补齐/上报已读，等于把没看过的消息标成已读
+    if (currentConvId.value !== convId) return
+    // 离线期间可能积压超过一页：未读积压按服务端已读游标补齐；
+    // 本地缓存有中间断档（另一端已读越过缺口时 unreadCount 为 0）也要补，
+    // 否则这些消息上翻历史都够不到
     const conv = conversations.value.find((c) => c.id === convId)
-    if (conv && conv.unreadCount > 0 && (conv.lastReadMessageId ?? 0) > 0) {
+    const hasUnreadBacklog = (conv?.unreadCount ?? 0) > 0 && (conv?.lastReadMessageId ?? 0) > 0
+    if (hasUnreadBacklog || hasCacheGap(convId)) {
       try {
         await catchUp(convId)
       } catch {
         /* 补齐失败不阻断打开会话，用户仍可继续上翻加载 */
       }
+      // catchUp 会连续翻页，期间用户也可能又切了会话
+      if (currentConvId.value !== convId) return
     }
     // 等消息真正落地后再上报已读：此前 upToId 只能算到 0，本地清未读而服务端仍记未读
     markRead(convId)
@@ -392,6 +403,25 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
     }, PENDING_TIMEOUT)
     pendingTimers.set(msg.clientMsgId, timer)
+  }
+
+  /**
+   * 发送被服务端拒绝（error 帧带 clientMsgId）：立即把对应的乐观消息标记为失败，
+   * 不必等 8 秒超时兜底。clientMsgId 全局唯一，遍历各会话缓存定位即可。
+   * 返回是否找到对应消息，调用方据此决定是否提示失败原因。
+   */
+  function markSendFailed(clientMsgId: string): boolean {
+    for (const list of Object.values(messagesByConv)) {
+      const msg = list.find((m) => m.clientMsgId === clientMsgId)
+      if (!msg) continue
+      clearPendingTimer(clientMsgId)
+      if (msg.pending) {
+        msg.pending = false
+        msg.failed = true
+      }
+      return true
+    }
+    return false
   }
 
   /** 发送附加信息：引用、@、转发标记都是可选 */
@@ -622,14 +652,41 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   /**
-   * 离线补齐：从服务端已读游标往后拉，填上「最新一页」与「上次已读位置」之间的缺口。
-   * 最多翻 10 页（约 1000 条），防止超大群一次拉全量历史。
+   * 本地缓存的已落库消息是否存在中间断档（两段已加载区间之间漏了历史）。
+   * 「仅自己删除 / 管理员删除」的消息服务端不再下发，id 序列里会留下单点空洞，
+   * 这类空洞永远补不上，不算缺口；宽度超过 1 的空洞才视为缺口，
+   * 宁可漏掉单条消息也别在每次重连时空扫一遍。
+   */
+  function hasCacheGap(convId: number): boolean {
+    const list = messagesByConv[convId]
+    if (!list) return false
+    let prev = 0
+    for (const m of list) {
+      if (m.id <= 0) continue // 未落库的 pending 消息（id<0）不参与
+      if (prev > 0 && m.id - prev > 2) return true
+      prev = m.id
+    }
+    return false
+  }
+
+  /**
+   * 离线补齐：填上「本地缓存」与「服务端已读游标」之间的缺口。
+   * 补齐起点取「本地最早已加载消息 id」与「服务端已读游标」的较小者——
+   * 只从游标往后拉的话，另一端把消息读完（游标越过缺口、unreadCount=0）时
+   * 结构上永远拿不到缺口本身。最多翻 10 页（约 1000 条），防止超大群一次拉全量历史。
    */
   async function catchUp(convId: number) {
     const conv = conversations.value.find((c) => c.id === convId)
-    let after = conv?.lastReadMessageId ?? 0
-    if (after <= 0) return
     const earliestLoaded = (messagesByConv[convId] ?? []).find((m) => m.id > 0)?.id ?? 0
+    const lastRead = conv?.lastReadMessageId ?? 0
+    // 没有本地缓存时退回已读游标（连游标都没有则无事可补）
+    let after =
+      earliestLoaded > 0 && lastRead > 0
+        ? Math.min(earliestLoaded, lastRead)
+        : Math.max(earliestLoaded, lastRead)
+    if (after <= 0) return
+    // 上界取两者较大者：越过它就是游标之后的新消息，由最新页与 WS 帧负责，不在这里重复拉
+    const stopAt = Math.max(earliestLoaded, lastRead)
     for (let i = 0; i < 10; i++) {
       const page = await convApi.messagesAfter(convId, after, 100)
       const incoming = page.messages ?? []
@@ -638,8 +695,8 @@ export const useConversationsStore = defineStore('conversations', () => {
       const next = incoming[incoming.length - 1]?.id ?? after
       if (next <= after) break
       after = next
-      // 已经接上本地最早一条，缺口已填满
-      if (earliestLoaded > 0 && after >= earliestLoaded) break
+      // 已经越过上界（本地最早一条与服务端游标的较大者），缺口已填满
+      if (after >= stopAt) break
       if (!page.hasMore) break
     }
     if (conv) conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, after)
@@ -652,9 +709,10 @@ export const useConversationsStore = defineStore('conversations', () => {
       const id = currentConvId.value
       if (id !== null) {
         await loadLatest(id)
-        // 断线期间积压超过一页时，仅拉最新页会漏消息：按已读游标补齐
+        // 断线期间积压超过一页时，仅拉最新页会漏消息：未读积压按已读游标补齐；
+        // 另一端已读越过缺口（unreadCount=0）时本地缓存的中间断档也要补
         const conv = conversations.value.find((c) => c.id === id)
-        if (conv && conv.unreadCount > 0) await catchUp(id)
+        if (conv && (conv.unreadCount > 0 || hasCacheGap(id))) await catchUp(id)
         markRead(id)
       }
     } catch {
@@ -973,6 +1031,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     sendMedia,
     forwardMessage,
     resend,
+    markSendFailed,
     sendTyping,
     recallMessage,
     editMessage,

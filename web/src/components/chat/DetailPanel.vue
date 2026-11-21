@@ -143,12 +143,15 @@ const blockBusy = ref(false)
 
 watch(
   () => conv.value?.id,
-  async () => {
+  async (id) => {
     peerBlocked.value = false
     const peerId = conv.value?.peer?.id
     if (!peerId || isGroup.value) return
     try {
-      peerBlocked.value = (await userApi.blockStatus(peerId)).blocked
+      const blocked = (await userApi.blockStatus(peerId)).blocked
+      // 接口慢、用户已经切到别的会话：丢弃迟到的响应，否则会把 A 会话的拉黑状态画到 B 会话
+      if (conv.value?.id !== id) return
+      peerBlocked.value = blocked
     } catch {
       /* 忽略：查询失败时按未拉黑展示，操作时服务端会再校验 */
     }

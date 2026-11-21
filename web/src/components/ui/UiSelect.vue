@@ -125,7 +125,10 @@ function onTriggerKeydown(e: KeyboardEvent) {
       break
     }
     case 'Escape':
+      // 只收起下拉本身：拦下冒泡，否则 document 上的 UiDialog/UiDrawer/UiPopup
+      // Esc 监听会把外层弹层一并关掉，表单里已填的内容跟着丢失
       e.preventDefault()
+      e.stopPropagation()
       open.value = false
       break
     case 'Tab':

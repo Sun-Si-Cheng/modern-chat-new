@@ -74,7 +74,8 @@ desktop.ini
 .dsh/
 .taste-skill/
 .agent/
-
+.zcode/
+AGENTS.md
 # ===== 运行时数据（如后续启用上传）=====
 uploads/
 data/

@@ -661,6 +661,7 @@ onBeforeUnmount(() => {
   // 离开聊天页时恢复自动已读，避免这个开关一直挂在 store 上影响别的入口
   convStore.setAutoReadPaused(false)
   clearTimeout(recallTimer)
+  clearTimeout(typingTimer)
   window.clearTimeout(jumpTimer)
 })
 
@@ -977,11 +978,37 @@ const typingNames = computed(() => {
   const c = conv.value
   if (!c) return []
   const map = convStore.typingByConv[c.id] ?? {}
-  const now = Date.now()
+  // 过滤要用 nowTick 而非裸 Date.now()：后者不是响应式依赖，
+  // 对方停止输入 3 秒后提示不会随时间下线，会一直残留到切会话
+  const now = nowTick.value
   return Object.entries(map)
     .filter(([, expiry]) => expiry > now)
     .map(([userId]) => (c.type === 1 ? (c.peer?.nickname ?? '') : memberName(Number(userId))))
 })
+
+// typing 条目只有 3 秒有效期，store 写入后没有到期回调：与撤回提示同一机制，
+// 精确调度到最近的过期时刻 bump nowTick，让 typingNames 重算下线，不做每秒轮询。
+// 只调度仍然有效的过期时刻，避免对 store 里从未清理的已过期条目空转。
+let typingTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => {
+    const now = nowTick.value // 依赖 tick：到期 bump 后重排下一个过期时刻
+    const map = conv.value ? convStore.typingByConv[conv.value.id] : undefined
+    const deadlines = Object.values(map ?? {}).filter((expiry) => expiry > now)
+    return deadlines.length ? Math.min(...deadlines) : 0
+  },
+  (deadline) => {
+    clearTimeout(typingTimer)
+    if (!deadline) return
+    typingTimer = setTimeout(
+      () => {
+        nowTick.value = Date.now()
+      },
+      Math.max(50, deadline - Date.now() + 30),
+    )
+  },
+  { immediate: true },
+)
 
 // ===== 自定义消息类型：插件渲染（§8.2） =====
 

@@ -111,15 +111,22 @@ func (h *FriendHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	// 曾被拒绝：复活原记录（以"我->对方"方向）
+	// 曾被拒绝：复活原记录（以"我->对方"方向）。
+	// PendingBetween 双向匹配且无排序：只有 UserID==me 的那条才是「我->对方」，
+	// 方向不符（对方曾申请我、被我拒绝）的那条不能复活——复活后它按
+	// friend_id=me 落进我自己的申请列表，对方却收不到任何请求。
+	// 没有本方向残留时按新申请插入（反向残留留着，同意时会由 EnsureAccepted 收编）。
 	rejected, err := h.friends.PendingBetween(me.ID, target.ID, 2)
 	if err != nil {
 		internal(c, err)
 		return
 	}
-	if len(rejected) > 0 {
-		rejected[0].Status = 0
-		if err := h.friends.Save(&rejected[0]); err != nil {
+	for i := range rejected {
+		if rejected[i].UserID != me.ID {
+			continue
+		}
+		rejected[i].Status = 0
+		if err := h.friends.Save(&rejected[i]); err != nil {
 			internal(c, err)
 			return
 		}

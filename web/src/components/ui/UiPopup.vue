@@ -48,6 +48,13 @@ function close() {
   if (open.value) setOpen(false)
 }
 
+// capture 阶段的 scroll 对任意后代滚动元素都会触发（不依赖 bubbles），
+// 浮层自身内部滚动（如长选项下拉的内滚列表）不是关闭信号
+function onDocScroll(e: Event) {
+  if (panelEl.value?.contains(e.target as Node)) return
+  close()
+}
+
 async function place() {
   await nextTick()
   const a = anchorEl.value?.getBoundingClientRect()
@@ -95,11 +102,11 @@ watch(open, async (v) => {
     // 滚动/尺寸监听只在浮层打开期间挂载：关闭时不该为每个 UiPopup
     // 都留一对全局监听（页面上十几个气泡菜单，累积起来是真实开销）
     window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, { capture: true, passive: true })
+    window.addEventListener('scroll', onDocScroll, { capture: true, passive: true })
     await place()
   } else {
     window.removeEventListener('resize', close)
-    window.removeEventListener('scroll', close, true)
+    window.removeEventListener('scroll', onDocScroll, true)
   }
 })
 
@@ -124,7 +131,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocPointerDown, true)
   document.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', close)
-  window.removeEventListener('scroll', close, true)
+  window.removeEventListener('scroll', onDocScroll, true)
 })
 </script>
 

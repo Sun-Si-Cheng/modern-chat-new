@@ -28,11 +28,24 @@ const myMember = computed(() => {
   return (convStore.membersByConv[id] ?? []).find((m) => m.userId === auth.user?.id) ?? null
 })
 
+const muteTick = ref(Date.now())
 const mutedUntil = computed(() => {
+  // Date.now() 不是响应式依赖，时间流逝不会让本 computed 重算：
+  // 读一下 muteTick，禁言到期后由下面的低频 tick 触发重新求值，输入区才能自动解锁
+  void muteTick.value
   const v = myMember.value?.mutedUntil
   if (!v) return null
   return new Date(v).getTime() > Date.now() ? v : null
 })
+
+// 仅在存在生效中的禁言时每 30 秒 bump 一次；到期后 mutedUntil 变 null，自然停转
+let muteTickTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  muteTickTimer = setInterval(() => {
+    if (mutedUntil.value) muteTick.value = Date.now()
+  }, 30_000)
+})
+onBeforeUnmount(() => clearInterval(muteTickTimer))
 
 /** 群全员禁言：普通成员不能发言，群主/管理员不受影响 */
 const muteAllBlocked = computed(() => {
@@ -140,6 +153,8 @@ const COMPRESS_SKIP_BELOW = 300 * 1024
 
 async function compressImage(file: File): Promise<Blob> {
   if (file.size < COMPRESS_SKIP_BELOW || !file.type.startsWith('image/')) return file
+  // GIF 是多帧动画，canvas 重绘只能得到静态首帧：与小图一样原样上传，保住动画
+  if (file.type === 'image/gif') return file
   try {
     const bitmap = await createImageBitmap(file)
     const scale = Math.min(1, COMPRESS_MAX_EDGE / Math.max(bitmap.width, bitmap.height))

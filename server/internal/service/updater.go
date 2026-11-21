@@ -301,42 +301,49 @@ func (u *Updater) runReleaseUpdate() {
 		return
 	}
 
-	// sha256 校验（发布时附带 .sha256 附件）
+	// sha256 校验（发布时附带 .sha256 附件）。fail-closed：清单拉不到或为空一律
+	// 按更新失败处理，绝不跳过校验——能篡改下载通道的攻击者同样能让 .sha256
+	// 请求 404 或超时，跳过即等于校验可被静默绕过。
 	sumURL := url + ".sha256"
 	u.log("==> 校验 sha256")
-	if expected, err := u.fetchText(sumURL); err == nil && strings.TrimSpace(expected) != "" {
-		expected = strings.TrimSpace(expected)
-		// 附件可能被平台重定向到 HTML 反盗链/登录页；64 位十六进制才算有效清单
-		valid := len(expected) >= 64
-		for i := 0; valid && i < 64; i++ {
-			c := expected[i]
-			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
-				valid = false
-			}
-		}
-		if !valid {
-			// 附件异常不能当成「跳过校验」继续替换产物：否则哈希失败却仍更新，
-			// defer 还会把 phase 置为 done，形成「假成功」。
-			u.fail("sha256 附件内容异常（下载可能被劫持或镜像返回了 HTML）")
-			return
-		}
-		f, err := os.Open(archive)
-		if err != nil {
-			u.fail("打开下载文件失败：%v", err)
-			return
-		}
-		h := sha256.New()
-		_, _ = io.Copy(h, f)
-		_ = f.Close()
-		actual := hex.EncodeToString(h.Sum(nil))
-		if expected[:64] != actual {
-			u.fail("sha256 不匹配：期望 %s，实际 %s（下载损坏或被篡改）", expected[:12], actual[:12])
-			return
-		}
-		u.log("    校验通过")
-	} else {
-		u.log("    （无 .sha256 附件，跳过校验）")
+	expected, err := u.fetchText(sumURL)
+	if err != nil {
+		u.fail("拉取 sha256 清单失败：%v（拒绝跳过校验，已中止更新）", err)
+		return
 	}
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		u.fail("sha256 清单为空，拒绝跳过校验，已中止更新")
+		return
+	}
+	// 附件可能被平台重定向到 HTML 反盗链/登录页；64 位十六进制才算有效清单
+	valid := len(expected) >= 64
+	for i := 0; valid && i < 64; i++ {
+		c := expected[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			valid = false
+		}
+	}
+	if !valid {
+		// 附件异常不能当成「跳过校验」继续替换产物：否则哈希失败却仍更新，
+		// defer 还会把 phase 置为 done，形成「假成功」。
+		u.fail("sha256 附件内容异常（下载可能被劫持或镜像返回了 HTML）")
+		return
+	}
+	f, err := os.Open(archive)
+	if err != nil {
+		u.fail("打开下载文件失败：%v", err)
+		return
+	}
+	h := sha256.New()
+	_, _ = io.Copy(h, f)
+	_ = f.Close()
+	actual := hex.EncodeToString(h.Sum(nil))
+	if expected[:64] != actual {
+		u.fail("sha256 不匹配：期望 %s，实际 %s（下载损坏或被篡改）", expected[:12], actual[:12])
+		return
+	}
+	u.log("    校验通过")
 
 	u.mu.Lock()
 	u.phase = "swapping"
@@ -462,25 +469,39 @@ func extractTarGz(archive, dest string) error {
 func replaceProduct(root, extract string) error {
 	// 后端：临时名 + rename（老进程继续用老 inode）
 	newBin := filepath.Join(extract, "bin", "modernchat-server")
+	binDst := filepath.Join(root, "bin", "modernchat-server")
 	if _, err := os.Stat(newBin); err == nil {
 		if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 			return err
 		}
-		if err := os.Rename(newBin, filepath.Join(root, "bin", "modernchat-server")); err != nil {
-			return err
+		if err := os.Rename(newBin, binDst); err != nil {
+			// 跨设备（临时目录与安装目录不同分区，如 /tmp 为 tmpfs）：拷贝兜底。
+			// 不能直接写 binDst——老进程正执行该 inode，Linux 会报 ETXTBSY；
+			// 先拷到同分区临时名再 rename 回正式名，仍保持老 inode 存活
+			tmpBin := binDst + ".new"
+			if err := copyTree(newBin, tmpBin); err != nil {
+				return err
+			}
+			if err := os.Rename(tmpBin, binDst); err != nil {
+				return err
+			}
 		}
 		// 发行包可能在 Windows 上打包（NTFS 无执行位），补齐可执行权限
-		if err := os.Chmod(filepath.Join(root, "bin", "modernchat-server"), 0o755); err != nil {
+		if err := os.Chmod(binDst, 0o755); err != nil {
 			return err
 		}
 	}
 	// 前端：dist.new → 原子交换
 	if newDist := filepath.Join(extract, "web", "dist"); dirExists(newDist) {
-		if err := os.RemoveAll(filepath.Join(root, "web", "dist.new")); err != nil {
+		distNew := filepath.Join(root, "web", "dist.new")
+		if err := os.RemoveAll(distNew); err != nil {
 			return err
 		}
-		if err := os.Rename(newDist, filepath.Join(root, "web", "dist.new")); err != nil {
-			return err
+		if err := os.Rename(newDist, distNew); err != nil {
+			// 跨设备：拷贝兜底（dist 是普通目录，直接整树拷贝重建）
+			if err := copyTree(newDist, distNew); err != nil {
+				return err
+			}
 		}
 		if err := swapDist(filepath.Join(root, "web")); err != nil {
 			return err
@@ -567,7 +588,8 @@ func (u *Updater) download(url, dst string) error {
 	return err
 }
 
-// fetchText 拉取小文本（sha256 清单）；任何失败返回空串（调用方降级跳过校验）。
+// fetchText 拉取小文本（sha256 清单）；任何失败返回空串与错误。
+// 调用方（发行版更新）对清单缺失采取 fail-closed，不再降级跳过校验。
 func (u *Updater) fetchText(url string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

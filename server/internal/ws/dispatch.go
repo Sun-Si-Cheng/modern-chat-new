@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/time/rate"
+
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
@@ -16,6 +18,27 @@ import (
 
 // EditWindow 消息编辑时限（与前端 canEdit 的判断保持一致）。
 const EditWindow = 5 * time.Minute
+
+// 非聊天上行帧限流阈值（F2）：前端 typing 每 2 秒至多一帧（MessageComposer
+// 节流）、read 带已上报水位去重、recall/edit/reaction/delivered 均为人类操作
+// 或被动回执频率，20 帧/秒 + 突发 40 只会命中脚本刷帧，不会误伤正常使用。
+const (
+	ctrlFrameRate  = rate.Limit(20)
+	ctrlFrameBurst = 40
+	// connStateTTL 连接级复核结果复用窗口：封禁 / 重置密码 / 强制下线均由
+	// KickUser 立即断连兜底（handler/admin.go、auth.go），这里只是把防御性
+	// 复核从「每帧一次查库」降频，不改变安全语义。
+	connStateTTL = 5 * time.Second
+)
+
+// allowCtrlFrame 非聊天上行帧每连接令牌桶。Dispatch 只由 readPump 串行调用，
+// 惰性创建不存在并发竞争。
+func (c *Client) allowCtrlFrame() bool {
+	if c.ctrl == nil {
+		c.ctrl = rate.NewLimiter(ctrlFrameRate, ctrlFrameBurst)
+	}
+	return c.ctrl.Allow()
+}
 
 // 上行帧（§7）：宽松解析，按 type 路由。
 type clientFrame struct {
@@ -41,6 +64,11 @@ type clientFrame struct {
 // 修复缺陷：此前只有 chat 帧做封禁 / token_version 复核，被封禁或强制下线的
 // 用户仍可用 typing/read/recall/edit/reaction/delivered 等帧继续写库与广播。
 // 现在所有上行帧（含 ping）都先走连接级复核，失败即回 error 帧并断开。
+//
+// 修复缺陷（F2）：除 chat 外的上行帧此前零限流，认证用户单连接即可高频驱动
+// 查库与全员广播。typing/read/recall/edit/reaction/delivered 六类帧先过每连接
+// 令牌桶再分发；ping / 未知帧本身无库操作、无广播，其每帧的连接级复核已由
+// connStateAt 的短 TTL 缓存降频。
 func (h *Hub) Dispatch(c *Client, data []byte) {
 	var f clientFrame
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -55,20 +83,37 @@ func (h *Hub) Dispatch(c *Client, data []byte) {
 		c.trySend(mustJSON(ginH{"type": "pong"}))
 	case "chat":
 		h.handleChat(c, &f)
-	case "typing":
-		h.handleTyping(c, &f)
-	case "read":
-		h.handleRead(c, &f)
-	case "recall":
-		h.handleRecall(c, &f)
-	case "edit":
-		h.handleEdit(c, &f)
-	case "reaction":
-		h.handleReaction(c, &f)
-	case "delivered":
-		h.handleDelivered(c, &f)
+	case "typing", "read", "recall", "edit", "reaction", "delivered":
+		if !c.allowCtrlFrame() {
+			// typing/read/delivered 是尽力而为的信号（下一条自然帧会补上），
+			// 静默丢弃，避免错误帧在前端刷 toast；recall/edit/reaction 是
+			// 用户显式操作，回 error 帧给出反馈。
+			if f.Type == "recall" || f.Type == "edit" || f.Type == "reaction" {
+				h.sendError(c, "操作过于频繁，请稍后再试")
+			}
+			return
+		}
+		h.dispatchControl(c, &f)
 	default:
 		h.sendError(c, "未知帧类型")
+	}
+}
+
+// dispatchControl 已过限流的控制帧路由。
+func (h *Hub) dispatchControl(c *Client, f *clientFrame) {
+	switch f.Type {
+	case "typing":
+		h.handleTyping(c, f)
+	case "read":
+		h.handleRead(c, f)
+	case "recall":
+		h.handleRecall(c, f)
+	case "edit":
+		h.handleEdit(c, f)
+	case "reaction":
+		h.handleReaction(c, f)
+	case "delivered":
+		h.handleDelivered(c, f)
 	}
 }
 
@@ -80,28 +125,28 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	// 限流：每用户 20 条/分
 	if !h.deps.MsgLimiter.Allow(ukey(c.UserID)) {
 		slog.Warn("ws message rate limited", "uid", c.UserID, "conv", f.ConvID)
-		h.sendError(c, "操作过于频繁，请稍后再试")
+		h.sendError(c, "操作过于频繁，请稍后再试", f.ClientMsgID)
 		return
 	}
-	if !h.requireMember(c, f.ConvID) {
+	if !h.requireMember(c, f.ConvID, f.ClientMsgID) {
 		return
 	}
 	// 禁言：到时间自动失效；命中时直接拒绝发送
 	if h.memberMuted(c, f.ConvID) {
-		h.sendError(c, "你已被禁言，暂时不能发送消息")
+		h.sendError(c, "你已被禁言，暂时不能发送消息", f.ClientMsgID)
 		return
 	}
 	// 全员禁言：群主与管理员不受影响
 	conv, err := h.deps.Convs.ByID(f.ConvID)
 	if err != nil {
 		slog.Error("ws conversation lookup", "err", err.Error(), "conv", f.ConvID)
-		h.sendError(c, "服务器开小差了，请稍后再试")
+		h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
 		return
 	}
 	if conv != nil && conv.MuteAll {
 		m, _ := h.deps.Convs.MemberOf(f.ConvID, c.UserID)
 		if m == nil || (m.Role != "owner" && m.Role != "admin") {
-			h.sendError(c, "群已开启全员禁言，只有群主和管理员可以发言")
+			h.sendError(c, "群已开启全员禁言，只有群主和管理员可以发言", f.ClientMsgID)
 			return
 		}
 	}
@@ -110,16 +155,16 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		peerID, pErr := h.deps.Convs.OtherMemberID(f.ConvID, c.UserID)
 		if pErr != nil {
 			slog.Error("ws single peer lookup", "err", pErr.Error(), "conv", f.ConvID)
-			h.sendError(c, "服务器开小差了，请稍后再试")
+			h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
 			return
 		}
 		if peerID > 0 {
 			if blocked, bErr := h.deps.Moderation.BlockedEither(c.UserID, peerID); bErr != nil {
 				slog.Error("ws block lookup", "err", bErr.Error())
-				h.sendError(c, "服务器开小差了，请稍后再试")
+				h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
 				return
 			} else if blocked {
-				h.sendError(c, "你们已互相拉黑，无法发送消息")
+				h.sendError(c, "你们已互相拉黑，无法发送消息", f.ClientMsgID)
 				return
 			}
 		}
@@ -132,11 +177,11 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	maxLen := ops.MaxMessageLength
 	content := []rune(f.Content)
 	if len(content) < 1 || len(content) > maxLen {
-		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen))
+		h.sendError(c, fmt.Sprintf("消息需为 1-%d 个字符", maxLen), f.ClientMsgID)
 		return
 	}
 	if f.ClientMsgID == "" || len(f.ClientMsgID) > 36 {
-		h.sendError(c, "clientMsgId 不合法")
+		h.sendError(c, "clientMsgId 不合法", f.ClientMsgID)
 		return
 	}
 	msgType := f.MsgType
@@ -144,11 +189,11 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		msgType = "text"
 	}
 	if l := len(msgType); l > 32 || !isSafeMsgType(msgType) {
-		h.sendError(c, "msgType 不合法")
+		h.sendError(c, "msgType 不合法", f.ClientMsgID)
 		return
 	}
 	if msgType == "text" && hitBlockedWord(ops.BlockedWords, string(content)) {
-		h.sendError(c, "消息包含敏感词，请修改后重发")
+		h.sendError(c, "消息包含敏感词，请修改后重发", f.ClientMsgID)
 		return
 	}
 	// 媒体消息（图片/语音/表情/视频）的 content 必须是本站上传目录下的地址。
@@ -164,7 +209,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 			ok = strings.HasPrefix(string(content), "/uploads/") && !strings.Contains(string(content), "..")
 		}
 		if !ok {
-			h.sendError(c, "媒体消息的内容必须是本站上传地址")
+			h.sendError(c, "媒体消息的内容必须是本站上传地址", f.ClientMsgID)
 			return
 		}
 	}
@@ -172,7 +217,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	// 幂等：同 client_msg_id 直接回放原消息
 	if existing, err := h.deps.Messages.ByClientMsg(f.ConvID, f.ClientMsgID); err != nil {
 		slog.Error("ws idempotent lookup", "err", err.Error())
-		h.sendError(c, "服务器开小差了，请稍后再试")
+		h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
 		return
 	} else if existing != nil {
 		// 回放也要带上引用摘要：断线重发时前端会用这一帧替换本地乐观消息，
@@ -189,7 +234,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
 	if err != nil {
 		slog.Error("ws members", "err", err.Error())
-		h.sendError(c, "服务器开小差了，请稍后再试")
+		h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
 		return
 	}
 
@@ -199,7 +244,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	if f.ReplyToID != nil && *f.ReplyToID > 0 {
 		target, tErr := h.deps.Messages.ByID(uint(*f.ReplyToID))
 		if tErr != nil || target == nil || target.ConversationID != f.ConvID {
-			h.sendError(c, "引用的消息不存在")
+			h.sendError(c, "引用的消息不存在", f.ClientMsgID)
 			return
 		}
 		replyTo = f.ReplyToID
@@ -221,7 +266,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 	if err := h.deps.Messages.CreateWithInbox(msg, memberIDs); err != nil {
 		slog.Error("ws create message", "err", err.Error(), "uid", c.UserID, "conv", f.ConvID)
-		h.sendError(c, "发送失败，请稍后重试")
+		h.sendError(c, "发送失败，请稍后重试", f.ClientMsgID)
 		return
 	}
 	// 广播帧要带引用摘要：单条装配一次（复用批量实现，避免再写一套查询）
@@ -548,8 +593,15 @@ func (h *Hub) handleReaction(c *Client, f *clientFrame) {
 //   - 库中 tv 与握手缓存 tv 不一致 → error 帧 + 断开（密码被重置 / 强制重登）。
 //
 // deps.Users 允许为 nil（NewHub(nil) 单测 / 未注入），此时跳过复核以保持兼容。
+//
+// 修复缺陷（F2 伴随优化）：本函数对每个上行帧都会执行，typing 等高频帧每帧
+// 一次 Users.ByID 是可观的固定 DB 开销。成功复核结果在 connStateTTL 内复用，
+// 失败路径（封禁 / tv 变更 / 用户已删除）不缓存且都会断开连接，不影响时效。
 func (h *Hub) checkConnState(c *Client, convID uint) bool {
 	if h.deps == nil || h.deps.Users == nil {
+		return true
+	}
+	if time.Since(time.Unix(0, c.connStateAt.Load())) < connStateTTL {
 		return true
 	}
 	u, err := h.deps.Users.ByID(c.UserID)
@@ -574,6 +626,8 @@ func (h *Hub) checkConnState(c *Client, convID uint) bool {
 		h.denyConn(c, convID, "登录已失效，请重新登录")
 		return false
 	}
+	// 全部通过才缓存复核时刻；失败分支都要断连，无需缓存。
+	c.connStateAt.Store(time.Now().UnixNano())
 	return true
 }
 
@@ -597,8 +651,9 @@ func (h *Hub) memberMuted(c *Client, convID uint) bool {
 	return m.MuteUntil != nil && m.MuteUntil.After(time.Now())
 }
 
-// requireMember 上行帧的会话成员校验。
-func (h *Hub) requireMember(c *Client, convID uint) bool {
+// requireMember 上行帧的会话成员校验。clientMsgID 可选：chat 发送被拒时回传
+// 被拒帧的 clientMsgId（F33），其余帧类型不传，错误帧保持不带该字段。
+func (h *Hub) requireMember(c *Client, convID uint, clientMsgID ...string) bool {
 	if convID == 0 || h.deps == nil {
 		return false
 	}
@@ -606,7 +661,7 @@ func (h *Hub) requireMember(c *Client, convID uint) bool {
 	if err != nil || m == nil {
 		// 非成员上行帧可能来自被踢后的残留客户端，也可能是越权探测：记 info 便于排查
 		slog.Info("ws frame rejected: not a member", "uid", c.UserID, "conv", convID, "err", errStr(err))
-		h.sendError(c, "无权访问该会话")
+		h.sendError(c, "无权访问该会话", clientMsgID...)
 		return false
 	}
 	return true
@@ -619,8 +674,15 @@ func errStr(err error) string {
 	return err.Error()
 }
 
-func (h *Hub) sendError(c *Client, reason string) {
-	c.trySend(mustJSON(ginH{"type": "error", "reason": reason}))
+// sendError 回 error 帧。clientMsgID 可选（F33）：chat 发送被拒时原样回传被拒
+// 帧的 clientMsgId（camelCase，与 message 帧一致），前端据此把对应的乐观消息
+// 立即置为失败，而不用等 8 秒超时兜底；其余帧不携带该字段。
+func (h *Hub) sendError(c *Client, reason string, clientMsgID ...string) {
+	frame := ginH{"type": "error", "reason": reason}
+	if len(clientMsgID) > 0 && clientMsgID[0] != "" {
+		frame["clientMsgId"] = clientMsgID[0]
+	}
+	c.trySend(mustJSON(frame))
 }
 
 // resolveMentions 过滤 @ 目标：只留会话成员、去重、排除发送者，上限 20 个。

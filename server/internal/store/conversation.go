@@ -197,9 +197,38 @@ func (s *ConversationStore) SetPrefs(userID, convID uint, pinned, muted, archive
 
 // DeleteInbox 从该用户的会话列表移除（不退出群、不删除消息）。
 // 之后该会话再来新消息时，UpsertInbox 会重新创建收件箱行。
+//
+// 收件行上还存着「清空记录水位」（ClearHistory），物理删除会连水位一起丢掉：
+// 行没了之后水位子查询退化为 0，用户清空过的历史会整段复活。因此删除前先把
+// 水位以下的消息固化成逐条「仅自己删除」标记（历史分页与搜索都按标记过滤）：
+// ≤ 水位的清空历史不再复活，> 水位的新消息按设计仍会重新出现。
 func (s *ConversationStore) DeleteInbox(userID, convID uint) error {
-	return s.db.Where("user_id = ? AND conversation_id = ?", userID, convID).
-		Delete(&model.UserConversation{}).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// 先锁收件行再读水位：与 ClearHistory（更新同一行）串行化，
+		// 避免读到旧水位后行被并发清空，固化出的标记缺一段。
+		var uc model.UserConversation
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND conversation_id = ?", userID, convID).
+			First(&uc).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if uc.ClearedBeforeID > 0 {
+			// created_at 显式带上：开发期 AutoMigrate 建的列没有 DEFAULT CURRENT_TIMESTAMP
+			if err := tx.Exec(
+				"INSERT IGNORE INTO message_deletions (user_id, message_id, created_at) "+
+					"SELECT ?, m.id, ? FROM messages m WHERE m.conversation_id = ? AND m.id <= ?",
+				userID, time.Now(), convID, uc.ClearedBeforeID,
+			).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("user_id = ? AND conversation_id = ?", userID, convID).
+			Delete(&model.UserConversation{}).Error
+	})
 }
 
 // ClearHistory 清空该用户在该会话的聊天记录：设置水位并重置预览/未读。

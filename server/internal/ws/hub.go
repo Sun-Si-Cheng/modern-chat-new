@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
@@ -45,10 +46,13 @@ type Deps struct {
 // Hub 在线连接注册表（按用户分片锁）。
 type Hub struct {
 	shards [ShardCount]*shard
-	deps   *Deps
-	done   chan struct{}
-	closed bool
-	mu     sync.RWMutex
+	// presenceMu 上下线广播的分片互斥（F1）：同一用户的 online/offline 广播
+	// 串行化，避免重连竞态导致好友端在线状态颠倒。
+	presenceMu [ShardCount]sync.Mutex
+	deps       *Deps
+	done       chan struct{}
+	closed     bool
+	mu         sync.RWMutex
 }
 
 // Client 一条 WS 连接。
@@ -72,6 +76,13 @@ type Client struct {
 	pendingClose atomic.Bool
 	// sendOnce 保证 c.send 只被 close 一次（Unregister 幂等保护）。
 	sendOnce sync.Once
+	// ctrl 非聊天上行帧（typing/read/recall/edit/reaction/delivered）的每连接
+	// 令牌桶（F2）：serve.go 装配；测试裸构造 Client 时由 allowCtrlFrame 惰性创建。
+	ctrl *rate.Limiter
+	// connStateAt 上次连接级复核（checkConnState）成功的 UnixNano：短 TTL 内
+	// 复用结果，避免高频帧每帧一次 Users.ByID 查库（F2）。封禁 / 重置密码均由
+	// KickUser 立即断连兜底，此处只是把防御性复核降频。
+	connStateAt atomic.Int64
 }
 
 func newShard() *shard { return &shard{conns: make(map[uint]map[*Client]struct{})} }

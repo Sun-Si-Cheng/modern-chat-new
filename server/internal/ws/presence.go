@@ -3,11 +3,26 @@ package ws
 import "gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
 
 // notifyPresence 上下线广播：好友 + 所有同会话成员（含本人，便于多端同步）。
+//
+// 修复缺陷（F1）：上线（Register 后）与下线（readPump 退出后）广播是两个独立
+// goroutine，各自先查库再入队、彼此无同步——刷新页面重连时，旧连接排定的
+// offline 广播可能落地在新连接的 online 之后，好友端按「online→offline」收尾，
+// 把实际在线的用户显示成离线，且要等其下次上下线事件才能自愈。
+// 现按用户分片互斥串行化：同一用户的上下线广播在锁内「先复查注册表、再入队」，
+// 排定后在线状态已翻转的过期广播（旧连接的 offline / 秒断的 online）直接跳过，
+// 由后到的广播落地最新状态，保证接收端最终收到的状态与注册表一致。
 func (h *Hub) notifyPresence(u *model.User, online bool) {
 	if h.deps == nil {
 		return
 	}
-	// 修复缺陷：NewHub(nil) / 未注入依赖时 deps 非 nil 但字段为 nil，直接调用会 panic。
+	mu := &h.presenceMu[u.ID%ShardCount]
+	mu.Lock()
+	defer mu.Unlock()
+	if h.Online(u.ID) != online {
+		return
+	}
+	// NewHub(nil) / 未注入依赖时由上面的 deps 判空跳过；relatedUsers 内部
+	// 对各依赖字段另行判空，单测场景不会 panic。
 	h.ToUsers(h.relatedUsers(u.ID), ginH{
 		"type": "presence", "userId": u.ID, "online": online,
 	})

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
 	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
@@ -116,6 +117,8 @@ func Serve(
 		send:   make(chan []byte, sendBuffer),
 		kickCh: make(chan struct{}),
 		hub:    hub,
+		// 非聊天上行帧限流桶（F2）：20 帧/秒、突发 40，见 dispatch.go 阈值说明
+		ctrl: rate.NewLimiter(ctrlFrameRate, ctrlFrameBurst),
 	}
 	hub.Register(client)
 	slog.Info("ws connected", "uid", u.ID)

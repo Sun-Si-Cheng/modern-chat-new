@@ -374,6 +374,9 @@ func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, 
 		Joins("JOIN conversations c ON c.id = m.conversation_id").
 		Joins("JOIN users u ON u.id = m.sender_id").
 		Where("f.user_id = ? AND m.admin_deleted_at IS NULL", userID).
+		// 清空水位：用户清空过的消息不再以全文形式下发（与 chat.go 的清空语义一致）
+		Where("m.id > COALESCE((SELECT uc.cleared_before_id FROM user_conversations uc "+
+			"WHERE uc.user_id = ? AND uc.conversation_id = m.conversation_id), 0)", userID).
 		Order("f.created_at DESC").
 		Limit(limit).
 		Scan(&rows).Error; err != nil {
@@ -413,7 +416,8 @@ func (s *MessageStore) Favorites(userID uint, limit int) ([]model.FavoriteView, 
 	return rows, nil
 }
 
-// Search 消息搜索：只搜索调用者已加入的会话，排除已撤回与本人「仅自己删除」的消息。
+// Search 消息搜索：只搜索调用者已加入的会话，排除已撤回、本人「仅自己删除」
+// 与已清空（水位以下）的消息。
 // convID=0 表示全局搜索。≥2 字符的关键词走 FULLTEXT ngram 短语匹配（中文按连续
 // 子串匹配），单字符回退 LIKE（ngram 最小 token 是 2 字符）；FULLTEXT 异常时也
 // 回退 LIKE，保证搜索永远可用。
@@ -478,7 +482,10 @@ func (s *MessageStore) searchOnce(userID, convID uint, kw string, limit int, ful
 		Joins("JOIN users u ON u.id = m.sender_id").
 		Where(cond, args...).
 		Where("EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = m.conversation_id AND cm.user_id = ?)", userID).
-		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID)
+		Where("NOT EXISTS (SELECT 1 FROM message_deletions d WHERE d.user_id = ? AND d.message_id = m.id)", userID).
+		// 清空水位：与分页（PageBefore/AfterID）口径一致，早于水位的消息不再下发给该用户
+		Where("m.id > COALESCE((SELECT uc.cleared_before_id FROM user_conversations uc "+
+			"WHERE uc.user_id = ? AND uc.conversation_id = m.conversation_id), 0)", userID)
 	if convID > 0 {
 		q = q.Where("m.conversation_id = ?", convID)
 	}

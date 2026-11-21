@@ -262,7 +262,8 @@ export type ServerFrame =
   | { type: 'conv_change'; convId: number; meta?: boolean }
   | { type: 'kicked'; reason: string }
   | { type: 'pong' }
-  | { type: 'error'; reason: string }
+  /** 带 clientMsgId 表示某条上行消息被拒（禁言/敏感词/拉黑等），前端据此立即定位失败的乐观消息 */
+  | { type: 'error'; reason: string; clientMsgId?: string }
 
 // ===== 描述式 UI（§8.2，白名单组件） =====
 
