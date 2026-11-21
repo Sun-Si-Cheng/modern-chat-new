@@ -237,7 +237,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	}
 
 	// 成员列表：@ 校验与收件箱冗余都要用，只取一次
-	memberIDs, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	memberIDs, err := h.MemberUserIDsCached(f.ConvID)
 	if err != nil {
 		slog.Error("ws members", "err", err.Error())
 		h.sendError(c, "服务器开小差了，请稍后再试", f.ClientMsgID)
@@ -367,7 +367,7 @@ func (h *Hub) handleTyping(c *Client, f *clientFrame) {
 	if !h.requireMember(c, f.ConvID) {
 		return
 	}
-	ids, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	ids, err := h.MemberUserIDsCached(f.ConvID)
 	if err != nil {
 		return
 	}
@@ -410,7 +410,7 @@ func (h *Hub) handleRead(c *Client, f *clientFrame) {
 	if affected == 0 {
 		return
 	}
-	ids, err := h.deps.Convs.MemberUserIDs(f.ConvID)
+	ids, err := h.MemberUserIDsCached(f.ConvID)
 	if err != nil {
 		return
 	}
@@ -455,7 +455,7 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 		slog.Error("ws recall unread adjust", "err", err.Error())
 	}
 	slog.Info("message recalled", "msg", msg.ID, "conv", msg.ConversationID, "by", c.UserID)
-	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	ids, err := h.MemberUserIDsCached(msg.ConversationID)
 	if err != nil {
 		return
 	}
@@ -550,7 +550,7 @@ func (h *Hub) handleEdit(c *Client, f *clientFrame) {
 		h.sendError(c, "服务器开小差了，请稍后再试")
 		return
 	}
-	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	ids, err := h.MemberUserIDsCached(msg.ConversationID)
 	if err != nil {
 		return
 	}
@@ -581,7 +581,7 @@ func (h *Hub) handleReaction(c *Client, f *clientFrame) {
 		h.sendError(c, "表情不合法")
 		return
 	}
-	ids, err := h.deps.Convs.MemberUserIDs(msg.ConversationID)
+	ids, err := h.MemberUserIDsCached(msg.ConversationID)
 	if err != nil {
 		return
 	}

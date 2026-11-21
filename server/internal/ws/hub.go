@@ -50,9 +50,12 @@ type Hub struct {
 	// 串行化，避免重连竞态导致好友端在线状态颠倒。
 	presenceMu [ShardCount]sync.Mutex
 	deps       *Deps
-	done       chan struct{}
-	closed     bool
-	mu         sync.RWMutex
+	// membersCache 会话成员 id 列表短 TTL 缓存（见 membercache.go），
+	// REST 侧成员变更经 Notifier.InvalidateMembers 失效。
+	membersCache sync.Map // convID -> *membersEntry
+	done         chan struct{}
+	closed       bool
+	mu           sync.RWMutex
 }
 
 // Client 一条 WS 连接。

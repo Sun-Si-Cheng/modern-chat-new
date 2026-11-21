@@ -501,6 +501,8 @@ func (h *ConversationHandler) Invite(c *gin.Context) {
 		return
 	}
 	slog.Info("members invited", "conv", convID, "by", me.ID, "added", len(added))
+	// WS 控制帧与 fan-out 走成员列表短 TTL 缓存，成员增减后立即失效
+	notifyFor(c).InvalidateMembers(convID)
 	// 新成员也要收到：他们的会话列表需要立刻出现这个群
 	notifyFor(c).ToUsers(allIDs, convMetaFrame(convID))
 	c.JSON(http.StatusOK, gin.H{"ok": true, "added": len(added)})
@@ -672,6 +674,8 @@ func (h *ConversationHandler) Leave(c *gin.Context) {
 		internal(c, err)
 		return
 	}
+	// WS 控制帧与 fan-out 走成员列表短 TTL 缓存，成员增减后立即失效
+	notifyFor(c).InvalidateMembers(convID)
 	ids, err := h.convs.MemberUserIDs(convID)
 	if err != nil {
 		internal(c, err)
@@ -1033,6 +1037,8 @@ func (h *ConversationHandler) Kick(c *gin.Context) {
 			internal(c, err)
 			return
 		}
+		// WS 控制帧与 fan-out 走成员列表短 TTL 缓存，成员增减后立即失效
+		notifyFor(c).InvalidateMembers(convID)
 		ids, err := h.convs.MemberUserIDs(convID)
 		if err != nil {
 			internal(c, err)

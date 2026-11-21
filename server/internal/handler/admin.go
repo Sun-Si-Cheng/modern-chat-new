@@ -546,6 +546,8 @@ func (h *AdminHandler) Announce(c *gin.Context) {
 		"msgType":   "text",
 		"createdAt": msg.CreatedAt,
 	}
+	// 公告可能补入新成员（AddMembersIgnoreDuplicate），失效成员列表缓存
+	notifyFor(c).InvalidateMembers(conv.ID)
 	notifyFor(c).ToUsers(userIDs, frame)
 	notifyFor(c).ToUsers(userIDs, gin.H{"type": "conv_change", "convId": conv.ID})
 

@@ -15,6 +15,9 @@ type Notifier interface {
 	OnlineCount() int
 	// Online 该用户是否在线。
 	Online(userID uint) bool
+	// InvalidateMembers 会话成员增减后失效 Hub 侧成员列表缓存（WS 控制帧
+	// 每帧查成员列表走短 TTL 缓存，见 ws/membercache.go）。
+	InvalidateMembers(convID uint)
 }
 
 // NoopNotifier 空实现（测试 / Hub 未就绪）。
@@ -29,6 +32,8 @@ func (NoopNotifier) KickUser(uint, string) {}
 func (NoopNotifier) OnlineCount() int { return 0 }
 
 func (NoopNotifier) Online(uint) bool { return false }
+
+func (NoopNotifier) InvalidateMembers(uint) {}
 
 // notifyFor 从 gin 上下文取 Notifier。
 func notifyFor(c *gin.Context) Notifier {

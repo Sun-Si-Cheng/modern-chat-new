@@ -58,6 +58,71 @@ func (w *dailyWriter) Write(p []byte) (int, error) {
 	return w.f.Write(p)
 }
 
+// asyncWriter 把文件写异步化：日志先入带缓冲 channel，后台 goroutine 落盘。
+// 高 QPS 下每条日志同步双写（stdout + 文件、各持锁）会把 slog 调用点串行化，
+// 慢磁盘时还会反压到请求 goroutine。stdout 保持同步（容器采集实时）；
+// 文件侧缓冲满时丢弃计数、绝不阻塞调用方——日志背压不能拖垮请求路径。
+type asyncWriter struct {
+	w       *dailyWriter
+	ch      chan []byte
+	done    chan struct{}
+	mu      sync.Mutex
+	closed  bool
+	dropped int
+}
+
+const asyncBufLines = 4096
+
+func newAsyncWriter(w *dailyWriter) *asyncWriter {
+	a := &asyncWriter{w: w, ch: make(chan []byte, asyncBufLines), done: make(chan struct{})}
+	go func() {
+		defer close(a.done)
+		for b := range a.ch {
+			_, _ = a.w.Write(b)
+		}
+	}()
+	return a
+}
+
+func (a *asyncWriter) Write(p []byte) (int, error) {
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return len(p), nil
+	}
+	b := make([]byte, len(p))
+	copy(b, p)
+	select {
+	case a.ch <- b:
+	default:
+		a.dropped++
+	}
+	a.mu.Unlock()
+	return len(p), nil
+}
+
+// Close 停止接收、排空缓冲、关闭文件句柄（进程退出前的收尾）。
+// 关闭后到达的日志静默丢弃：Default handler 可能尚未切换，
+// 这里绝不能向已关闭的 channel 发送（会 panic）。
+func (a *asyncWriter) Close() error {
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return nil
+	}
+	a.closed = true
+	dropped := a.dropped
+	ch := a.ch
+	a.mu.Unlock()
+	close(ch)
+	<-a.done
+	if dropped > 0 {
+		// 此时文件通道已停用，slog 只剩 stdout 一路，不会再回到本结构
+		slog.Warn("log lines dropped due to full buffer", "count", dropped)
+	}
+	return a.w.Close()
+}
+
 func (w *dailyWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -87,7 +152,10 @@ func Setup(level slog.Level, dir string, retainDays int) (io.Closer, error) {
 	if err != nil {
 		return nil, err
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stdout, w), opts)))
+	// 文件侧异步化：slog 调用点只做一次内存 channel 投递，磁盘写挪到后台
+	// goroutine（见 asyncWriter）。Closer 返回异步包装，停机时排空缓冲。
+	aw := newAsyncWriter(w)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stdout, aw), opts)))
 
 	// 启动即清理一次，随后每小时检查（跨天生成新文件、清理过期文件）
 	go janitor(dir, retainDays)
@@ -96,7 +164,7 @@ func Setup(level slog.Level, dir string, retainDays int) (io.Closer, error) {
 		"dir", absPath(dir), "retain_days", retainDays,
 		"file", filePrefix+time.Now().Format(dateLayout)+fileSuffix,
 	)
-	return w, nil
+	return aw, nil
 }
 
 // janitor 周期清理过期日志。
