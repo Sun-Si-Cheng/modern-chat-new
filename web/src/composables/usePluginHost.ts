@@ -15,7 +15,7 @@ import { reactive, readonly } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 
 import type { Plugin, PanelDesc, ServerFrame } from '@/types/proto'
-import { convApi, pluginApi } from '@/core/network/endpoints'
+import { convApi, pluginApi, userApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { usePluginsStore } from '@/stores/plugins'
@@ -201,6 +201,20 @@ function createHost() {
             reply(runtime, callId, false, undefined, 'storage value too large')
             return
           }
+          // 每插件总量配额 256KB：localStorage 全站共享，没有总量上限的话
+          // 一个插件可以用海量小 key 把整站本地存储吃满，殃及其他插件与偏好
+          const prefix = `mc_plug_${runtime.plugin.id}_`
+          let total = value.length
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i)
+            if (k && k.startsWith(prefix) && k !== prefix + key) {
+              total += (localStorage.getItem(k) ?? '').length
+            }
+          }
+          if (total > 256 * 1024) {
+            reply(runtime, callId, false, undefined, 'storage quota exceeded (256KB per plugin)')
+            return
+          }
           localStorage.setItem(storageKey(runtime.plugin.id, key), value)
           reply(runtime, callId, true)
           break
@@ -227,7 +241,35 @@ function createHost() {
             // 一起发给 allowed_hosts 里声明的本站域名
             credentials: 'omit',
           })
-          const text = await res.text()
+          // 响应体上限 2MB：插件代理在宿主进程里读响应，无上限的话一个
+          // allowed_hosts 指向的大文件就能把宿主内存打爆
+          const MAX_BODY = 2 * 1024 * 1024
+          let text = ''
+          if (res.body) {
+            const reader = res.body.getReader()
+            const chunks: Uint8Array[] = []
+            let received = 0
+            for (;;) {
+              const { done, value } = await reader.read()
+              if (done) break
+              received += value.byteLength
+              if (received > MAX_BODY) {
+                await reader.cancel()
+                reply(runtime, callId, false, undefined, 'response too large (max 2MB)')
+                return
+              }
+              chunks.push(value)
+            }
+            const merged = new Uint8Array(received)
+            let offset = 0
+            for (const chunk of chunks) {
+              merged.set(chunk, offset)
+              offset += chunk.byteLength
+            }
+            text = new TextDecoder().decode(merged)
+          } else {
+            text = await res.text()
+          }
           let body: unknown = text
           try {
             body = JSON.parse(text)
@@ -266,7 +308,14 @@ function createHost() {
             return
           }
           const list = state.actions[runtime.plugin.id] ?? (state.actions[runtime.plugin.id] = [])
-          if (!list.some((a) => a.id === id)) list.push({ id, label })
+          // 数量上限：右键菜单按插件全量渲染，无上限会让一个插件把菜单顶爆
+          if (!list.some((a) => a.id === id)) {
+            if (list.length >= 10) {
+              reply(runtime, callId, false, undefined, 'too many message actions (max 10)')
+              return
+            }
+            list.push({ id, label })
+          }
           reply(runtime, callId, true)
           break
         }
@@ -311,6 +360,32 @@ function createHost() {
               role: m.role,
             })),
           )
+          break
+        }
+        case 'users.search': {
+          const kw = String(args[0] ?? '').slice(0, 50)
+          if (!kw) {
+            reply(runtime, callId, true, [])
+            return
+          }
+          const rows = await userApi.search(kw)
+          // 目录信息只含定位字段：username 可用于 send 定向，绝不带 email
+          reply(
+            runtime,
+            callId,
+            true,
+            (rows ?? []).map((u) => ({
+              id: u.id,
+              username: u.username,
+              nickname: u.nickname,
+              avatarColor: u.avatarColor,
+            })),
+          )
+          break
+        }
+        case 'removeSidePanel': {
+          delete state.panels[runtime.plugin.id]
+          reply(runtime, callId, true)
           break
         }
         case 'messages.recent': {
@@ -437,6 +512,9 @@ function createHost() {
     // 音频却由沙箱文档里的 <audio> 发出——跨文档没有这个委托，浏览器会把
     // 未发生过用户手势的沙箱帧当作自动播放拦下（表现：点了播放没声音）。
     iframe.setAttribute('allow', 'autoplay')
+    // 隐私加固：第三方媒体 / 请求不应从 Referer 学到站点 URL（opaque origin
+    // 下多数浏览器本就不发，这里显式声明兜底差异实现）
+    iframe.setAttribute('referrerpolicy', 'no-referrer')
     iframe.style.display = 'none'
     // 监听器必须存进 Runtime：卸载时要按同一个引用 removeEventListener
     // 这里必须先声明后赋值：onMessage 回调内部要引用 runtime（互相引用），无法合并为 const
@@ -466,7 +544,7 @@ function createHost() {
     // 用 srcdoc 注入：sandbox 未给 allow-same-origin 时，父页面无权访问
     // iframe.contentWindow.document，document.open/write 会直接抛 SecurityError，
     // 插件永远不会启动；srcdoc 在挂载前写入即可正常执行且仍是 opaque origin
-    iframe.srcdoc = bootHtml(code, plugin.allowedHosts ?? [], runtime.token)
+    iframe.srcdoc = bootHtml(code, plugin.allowedHosts ?? [], runtime.token, window.location.origin)
     window.addEventListener('message', onMessage)
     document.body.appendChild(iframe)
     runtimes.set(plugin.id, runtime)

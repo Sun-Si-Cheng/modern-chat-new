@@ -272,6 +272,7 @@ export type DeclarativeComponent =
   | 'image'
   | 'button'
   | 'input'
+  | 'select'
   | 'card'
   | 'list'
   | 'divider'

@@ -38,13 +38,17 @@ function buildSandboxCsp(allowedHosts: string[]): string {
   ].join('; ')
 }
 
-export function bootHtml(pluginCode: string, allowedHosts: string[], token: string): string {
+export function bootHtml(pluginCode: string, allowedHosts: string[], token: string, hostOrigin: string): string {
   // `</script>` 与 `<script` 都必须转义：否则插件代码里的字符串可在 HTML 解析阶段
   // 提前闭合引导脚本，或进入 script-data double-escaped 状态
   const safeCode = pluginCode
     .replace(/<\/script/gi, '<\\/script')
     .replace(/<script/gi, '<\\script')
   const csp = buildSandboxCsp(allowedHosts)
+  // 沙箱 → 宿主的 postMessage 目标 origin 收紧为宿主真实 origin（此前是 "*"）：
+  // 沙箱自导航到外部站点后，旧文档的 postMessage 将不再送达宿主，纵深防御。
+  // 宿主 → 沙箱方向仍必须用 "*"——沙箱是 opaque origin（null），指定具体 origin 会发送失败。
+  const targetOrigin = /^https?:\/\//.test(hostOrigin) ? hostOrigin : '*'
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script>
 "use strict";
 (function () {
@@ -52,7 +56,9 @@ export function bootHtml(pluginCode: string, allowedHosts: string[], token: stri
   // 文档身份令牌：只有本引导文档知道（跨文档不可读）。沙箱每条出站消息都带回 tk，
   // 宿主据此拒收「自导航后的陌生文档」发的消息（详见 mountRuntime）
   var TK = "${token}";
-  function post(m) { m.tk = TK; parent.postMessage(m, "*"); }
+  // 宿主 origin：出站消息只发往宿主，"*" 会让自导航后的外部文档也能向宿主方向探测
+  var HOST = "${targetOrigin}";
+  function post(m) { m.tk = TK; parent.postMessage(m, HOST); }
   window.addEventListener("message", function (ev) {
     var m = ev.data;
     if (!m || typeof m !== "object" || !m.__mc) return;
@@ -82,10 +88,14 @@ export function bootHtml(pluginCode: string, allowedHosts: string[], token: stri
     });
   }
   var sdk = {
+    // 宿主 API 级别：插件据此做特性检测（新增 SDK 能力时递增）
+    version: "1",
     on: function (ev, fn) { (handlers[ev] || (handlers[ev] = [])).push(fn); },
     send: function (convId, payload, msgType) { return call("send", [convId, payload, msgType]); },
     registerMessageRenderer: function (type, fn) { renderers.set(type, fn); return call("registerMessageRenderer", [type]); },
     addSidePanel: function (desc) { return call("addSidePanel", [desc]); },
+    // 收起自己的面板（需 ui:panel）；重新展示用 addSidePanel
+    removeSidePanel: function () { return call("removeSidePanel", []); },
     // 右键菜单动作：desc = { id, label }，触发时收到 on('message:action', { actionId, message })
     registerMessageAction: function (desc) { return call("registerMessageAction", [desc]); },
     // 当前用户身份（需 conv:read）：只含 id / 昵称
@@ -109,7 +119,11 @@ export function bootHtml(pluginCode: string, allowedHosts: string[], token: stri
       set: function (k, v) { return call("storage.set", [k, v]); }
     },
     request: function (url, opts) { return call("request", [url, opts || {}]); },
-    theme: { apply: function (vars) { return call("theme.apply", [vars]); } }
+    theme: { apply: function (vars) { return call("theme.apply", [vars]); } },
+    // 站内用户目录搜索（需 conv:read）：只含 id / username / nickname / avatarColor
+    users: {
+      search: function (kw) { return call("users.search", [kw]); }
+    }
   };
   window.__mcActivate = null;
   // 插件代码放进独立函数作用域执行。

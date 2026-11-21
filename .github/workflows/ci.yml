@@ -74,6 +74,9 @@ jobs:
         run: |
           npx oxlint .
           npx eslint .
+      - name: 单元测试（插件内核：UI 校验 / CSP / 转义 / 权限表）
+        working-directory: web
+        run: npm test
       - name: 设计令牌审计（报告硬编码颜色基线）
         working-directory: web
         run: node scripts/audit-tokens.mjs

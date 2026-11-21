@@ -12,6 +12,7 @@ const ALLOWED_COMPONENTS = new Set([
   'image',
   'button',
   'input',
+  'select',
   'card',
   'list',
   'divider',

@@ -31,6 +31,14 @@ interface McMemberLite {
   role: string
 }
 
+/** 站内用户目录条目（users.search 结果；绝不含 email） */
+interface McUserLite {
+  id: number
+  username: string
+  nickname: string
+  avatarColor: string
+}
+
 /** 右键菜单里被点击的那条消息 */
 interface McActionMessage {
   id: number
@@ -44,10 +52,10 @@ interface McActionMessage {
 type McPrimitive = string | number | boolean | null
 
 interface McUIDescNode {
-  /** text | image | button | input | card | list | divider | link | table | progress | badge */
+  /** text | image | button | input | select | card | list | divider | link | table | progress | badge */
   component: string
   props: Record<string, McPrimitive>
-  /** button / input 触发时回传给 on('ui:action') 的动作名 */
+  /** button / input / select 触发时回传给 on('ui:action') 的动作名 */
   action?: string
   children?: McUIDescNode[]
 }
@@ -80,14 +88,18 @@ type McEvent =
   | 'message:action'
 
 interface McApi {
+  /** 宿主 API 级别（新增 SDK 能力时递增），插件据此做特性检测 */
+  version: string
   /** 监听事件（需 message:read 权限） */
   on(event: McEvent, fn: (payload: unknown) => void): void
   /** 发消息，msgType 可自定义（需 message:send） */
   send(convId: number, payload: unknown, msgType?: string): Promise<void>
   /** 注册自定义消息类型的渲染器（需 message:render） */
   registerMessageRenderer(type: string, fn: (payload: unknown) => McPanelDesc | McUIDescNode): Promise<void>
-  /** 侧边栏面板（需 ui:panel） */
+  /** 侧边栏面板（需 ui:panel）；再次调用即更新内容 */
   addSidePanel(desc: McPanelDesc): Promise<void>
+  /** 收起自己的面板（需 ui:panel）；重新展示用 addSidePanel */
+  removeSidePanel(): Promise<void>
   /** 注册消息右键菜单项（需 ui:actions）；点击后收到 on('message:action', { actionId, message }) */
   registerMessageAction(desc: { id: string; label: string }): Promise<void>
 
@@ -102,6 +114,10 @@ interface McApi {
   messages: {
     /** 最近 n 条（1–50），按时间正序 */
     recent(n?: number): Promise<McMessageLite[]>
+  }
+  users: {
+    /** 站内用户目录搜索（需 conv:read；结果不含 email，≤20 条） */
+    search(kw: string): Promise<McUserLite[]>
   }
 
   /** 宿主侧动作（需 ui:host） */

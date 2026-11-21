@@ -5,7 +5,7 @@
  * props 仅接受原始值；链接/图片仅 http(s)（双保险，桥接层已校验过）。
  */
 import { defineComponent, h, type PropType, type VNode } from 'vue'
-import { Button as TButton, Divider as TDivider, Input as TInput } from 'tdesign-vue-next'
+import { Button as TButton, Divider as TDivider, Input as TInput, Select as TSelect } from 'tdesign-vue-next'
 
 import i18n from '@/i18n'
 import type { UIDescNode } from '@/types/proto'
@@ -64,6 +64,27 @@ export const DeclarativeNodes = defineComponent({
             value: str('value'),
             onChange: (v: unknown) => props.onAction?.(String(node.action ?? 'input'), v),
           })
+        case 'select': {
+          // 选项用字符串传（与 table 同款约定）：options='["甲","乙"]'，仅接受字符串数组，
+          // 上限 50 项防插件塞巨列表顶爆面板
+          let options: string[] = []
+          try {
+            const parsed: unknown = JSON.parse(str('options', '[]'))
+            if (Array.isArray(parsed)) {
+              options = parsed.slice(0, 50).map((o) => String(o ?? ''))
+            }
+          } catch {
+            options = []
+          }
+          return h(TSelect, {
+            size: 'small',
+            clearable: true,
+            placeholder: str('placeholder'),
+            value: str('value'),
+            options: options.map((o) => ({ label: o, value: o })),
+            onChange: (v: unknown) => props.onAction?.(String(node.action ?? 'select'), v === null ? '' : String(v)),
+          })
+        }
         case 'card':
           return h(
             'div',
