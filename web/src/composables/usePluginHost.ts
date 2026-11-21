@@ -14,82 +14,19 @@ import { reactive, readonly } from 'vue'
 
 import { MessagePlugin } from 'tdesign-vue-next'
 
-import type { Plugin, PanelDesc, ServerFrame, UIDescNode } from '@/types/proto'
+import type { Plugin, PanelDesc, ServerFrame } from '@/types/proto'
 import { convApi, pluginApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
+// 内核子模块：声明式 UI 校验 / 权限映射 / 沙箱引导，各自单一职责（见 ./plugin/）
+import { validatePanel, validateRenderDesc } from './plugin/uiDesc'
+import { API_PERMISSION, EVENT_PERMISSION } from './plugin/permissions'
+import { bootHtml } from './plugin/sandbox'
 
-// ===== 白名单校验 =====
-
-const ALLOWED_COMPONENTS = new Set([
-  'text',
-  'image',
-  'button',
-  'input',
-  'card',
-  'list',
-  'divider',
-  'link',
-  // 数据展示类：表格 / 进度条 / 徽标，让面板能承载统计与状态，而不只是一段文字
-  'table',
-  'progress',
-  'badge',
-])
-
-/** 校验 UI 描述：白名单外组件、javascript: 链接、非 plain props 一律拒绝 */
-export function validateUIDesc(node: unknown, depth = 0): UIDescNode | null {
-  if (depth > 8 || !node || typeof node !== 'object') return null
-  const n = node as Record<string, unknown>
-  if (typeof n.component !== 'string' || !ALLOWED_COMPONENTS.has(n.component)) return null
-  // props 是可选的：list / divider 这类纯结构节点在业务上不需要 props，
-  // 渲染器也不读它。旧版强制要求 props，会让整个面板被判非法后丢弃。
-  const rawProps = n.props
-  if (rawProps !== undefined && rawProps !== null && typeof rawProps !== 'object') return null
-  const props: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries((rawProps ?? {}) as Record<string, unknown>)) {
-    // 仅放行原始值，杜绝对象/函数注入面
-    if (['string', 'number', 'boolean'].includes(typeof v) || v === null) props[k] = v
-  }
-  if (n.component === 'link' && typeof props.href === 'string') {
-    if (!/^https?:\/\//i.test(props.href)) return null
-  }
-  if (n.component === 'image' && typeof props.src === 'string') {
-    if (!/^https?:\/\//i.test(props.src)) return null
-  }
-  const children = Array.isArray(n.children)
-    ? n.children.map((c) => validateUIDesc(c, depth + 1)).filter((c): c is UIDescNode => !!c)
-    : undefined
-  return { component: n.component as UIDescNode['component'], props, action: typeof n.action === 'string' ? n.action : undefined, children }
-}
-
-/**
- * 校验面板描述：{ title?, body: UIDescNode[] }。
- * 面板对象本身没有 component 字段，不能直接交给 validateUIDesc（会被判 null）；
- * 这里校验外层形状后逐节点校验，任一节点非法则整体拒绝（保持严格的安全边界）。
- */
-export function validatePanel(desc: unknown): PanelDesc | null {
-  if (!desc || typeof desc !== 'object') return null
-  const d = desc as Record<string, unknown>
-  if (d.title !== undefined && typeof d.title !== 'string') return null
-  if (!Array.isArray(d.body)) return null
-  const body: UIDescNode[] = []
-  for (const node of d.body) {
-    const v = validateUIDesc(node)
-    if (!v) return null
-    body.push(v)
-  }
-  return { kind: 'panel', title: typeof d.title === 'string' ? d.title : '', body }
-}
-
-/** 渲染结果：面板形状（有 body 数组）走 validatePanel，单节点则包成只含一个节点的面板 */
-function validateRenderDesc(desc: unknown): PanelDesc | null {
-  if (!desc || typeof desc !== 'object') return null
-  if (Array.isArray((desc as Record<string, unknown>).body)) return validatePanel(desc)
-  const node = validateUIDesc(desc)
-  return node ? { kind: 'panel', title: '', body: [node] } : null
-}
+// 公共校验函数保持原有导出面（外部如有引用不受拆分影响）
+export { validateUIDesc, validatePanel } from './plugin/uiDesc'
 
 // ===== allowed_hosts 匹配 =====
 
@@ -125,158 +62,12 @@ function messageMeta(message: unknown): Record<string, unknown> | null {
   }
 }
 
-const API_PERMISSION: Record<string, string> = {
-  on: 'message:read',
-  send: 'message:send',
-  registerMessageRenderer: 'message:render',
-  addSidePanel: 'ui:panel',
-  'storage.get': 'storage',
-  'storage.set': 'storage',
-  request: 'net',
-  'theme.apply': 'ui:theme',
-  // 扩展点（§8.3）
-  registerMessageAction: 'ui:actions',
-  me: 'conv:read',
-  'conv.current': 'conv:read',
-  'conv.members': 'conv:read',
-  'messages.recent': 'conv:read',
-  'nav.openConversation': 'ui:host',
-  'nav.jumpToMessage': 'ui:host',
-  toast: 'ui:host',
-}
-
 /** 插件注册的消息动作（右键菜单项） */
 export interface PluginMessageAction {
   pluginId: number
   pluginName: string
   id: string
   label: string
-}
-
-// ===== 沙箱引导 HTML =====
-
-/**
- * 构造沙箱 CSP：把插件自身网络出口收敛到 manifest 的 allowed_hosts。
- * 之前插件可以直接在自己的 iframe 里 fetch()，完全绕过宿主 request() 的白名单；
- * 有了 connect-src 后 fetch/XHR/WebSocket/beacon 只能到达这些主机，未声明则全部禁止。
- * 注意不能加 allow-same-origin：插件拿不到父页面 localStorage/JWT 是硬约束。
- */
-function buildSandboxCsp(allowedHosts: string[]): string {
-  const hosts = allowedHosts
-    .map((h) => h.trim().toLowerCase())
-    // 只接受主机名或 *.子域形式，避免把端口/路径/引号拼进 CSP 指令
-    .filter((h) => /^(\*\.)?[a-z0-9][a-z0-9.-]*$/.test(h))
-  const connect = hosts.length ? hosts.join(' ') : "'none'"
-  // 媒体能力（通用，无音乐等业务语义）：插件可在自己的沙箱文档里用 <audio>/<video>
-  // 播放其 allowedHosts 内的媒体（音频/播客等），blob: 支持先 fetch 缓冲再播。
-  // 与 connect-src 同一信任边界——都来自插件安装时声明的 allowedHosts，不新增决策点。
-  // 沙箱无 same-origin，读不到跨域媒体字节（不可缓存/解析波形），只能顺序播放。
-  const media = hosts.length ? `${connect} blob:` : "'none'"
-  return [
-    "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    'img-src data:',
-    `connect-src ${connect}`,
-    `media-src ${media}`,
-    "base-uri 'none'",
-    "form-action 'none'",
-    "frame-src 'none'",
-    "object-src 'none'",
-    "worker-src 'none'",
-  ].join('; ')
-}
-
-function bootHtml(pluginCode: string, allowedHosts: string[], token: string): string {
-  // `</script>` 与 `<script` 都必须转义：否则插件代码里的字符串可在 HTML 解析阶段
-  // 提前闭合引导脚本，或进入 script-data double-escaped 状态
-  const safeCode = pluginCode
-    .replace(/<\/script/gi, '<\\/script')
-    .replace(/<script/gi, '<\\script')
-  const csp = buildSandboxCsp(allowedHosts)
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body><script>
-"use strict";
-(function () {
-  var handlers = {}, callSeq = 0, pending = new Map(), renderers = new Map();
-  // 文档身份令牌：只有本引导文档知道（跨文档不可读）。沙箱每条出站消息都带回 tk，
-  // 宿主据此拒收「自导航后的陌生文档」发的消息（详见 mountRuntime）
-  var TK = "${token}";
-  function post(m) { m.tk = TK; parent.postMessage(m, "*"); }
-  window.addEventListener("message", function (ev) {
-    var m = ev.data;
-    if (!m || typeof m !== "object" || !m.__mc) return;
-    // 宿主在 iframe 每次 load 后都会 ping；带 token 的 pong 证明原文档仍在位
-    if (m.__mc === "ping") { post({ __mc: "pong" }); return; }
-    if (m.__mc === "event") {
-      (handlers[m.event] || []).forEach(function (fn) {
-        try { fn(m.payload); } catch (e) { console.error("[plugin] handler error", e); }
-      });
-    } else if (m.__mc === "render") {
-      var r = renderers.get(m.msgType);
-      if (!r) { post({ __mc: "renderResult", callId: m.callId, error: "no renderer for " + m.msgType }); return; }
-      Promise.resolve().then(function () { return r(m.payload); }).then(
-        function (desc) { post({ __mc: "renderResult", callId: m.callId, desc: desc }); },
-        function (e) { post({ __mc: "renderResult", callId: m.callId, error: String((e && e.message) || e) }) }
-      );
-    } else if (m.__mc === "result") {
-      var p = pending.get(m.callId);
-      if (p) { pending.delete(m.callId); if (m.ok) p.resolve(m.data); else p.reject(new Error(m.error || "plugin api error")); }
-    }
-  });
-  function call(name, args) {
-    return new Promise(function (resolve, reject) {
-      var callId = ++callSeq;
-      pending.set(callId, { resolve: resolve, reject: reject });
-      post({ __mc: "call", callId: callId, api: name, args: args });
-    });
-  }
-  var sdk = {
-    on: function (ev, fn) { (handlers[ev] || (handlers[ev] = [])).push(fn); },
-    send: function (convId, payload, msgType) { return call("send", [convId, payload, msgType]); },
-    registerMessageRenderer: function (type, fn) { renderers.set(type, fn); return call("registerMessageRenderer", [type]); },
-    addSidePanel: function (desc) { return call("addSidePanel", [desc]); },
-    // 右键菜单动作：desc = { id, label }，触发时收到 on('message:action', { actionId, message })
-    registerMessageAction: function (desc) { return call("registerMessageAction", [desc]); },
-    // 当前用户身份（需 conv:read）：只含 id / 昵称
-    me: function () { return call("me", []); },
-    // 当前会话只读数据（需 conv:read）
-    conv: {
-      current: function () { return call("conv.current", []); },
-      members: function () { return call("conv.members", []); }
-    },
-    messages: {
-      recent: function (n) { return call("messages.recent", [n]); }
-    },
-    // 宿主侧动作（需 ui:host）
-    nav: {
-      openConversation: function (id) { return call("nav.openConversation", [id]); },
-      jumpToMessage: function (id) { return call("nav.jumpToMessage", [id]); }
-    },
-    toast: function (text, kind) { return call("toast", [text, kind]); },
-    storage: {
-      get: function (k) { return call("storage.get", [k]); },
-      set: function (k, v) { return call("storage.set", [k, v]); }
-    },
-    request: function (url, opts) { return call("request", [url, opts || {}]); },
-    theme: { apply: function (vars) { return call("theme.apply", [vars]); } }
-  };
-  window.__mcActivate = null;
-  // 插件代码放进独立函数作用域执行。
-  // 关键：不能与引导器同一个作用域 —— 插件顶层的 var/function 声明会与引导器
-  // 同名变量互相覆盖（插件写 var api = null 就把引导器的 sdk 顶掉，
-  // __mcActivate 收到 null 并抛 "Cannot read properties of null (reading 'on')"）。
-  // 也不能用 new Function：沙箱 CSP 只开 script-src 'unsafe-inline'，没有 'unsafe-eval'。
-  (function () {
-${safeCode}
-    // 两种入口写法都支持：顶层 function __mcActivate，或挂到 window 上
-    var entry = typeof __mcActivate === "function" ? __mcActivate : null;
-    if (!entry && typeof window.__mcActivate === "function") entry = window.__mcActivate;
-    if (!entry) { post({ __mc: "ready", error: "missing __mcActivate" }); return; }
-    try { entry(sdk); post({ __mc: "ready" }); }
-    catch (e) { console.error("[plugin] activate error", e); post({ __mc: "ready", error: String((e && e.message) || e) }); }
-  })();
-})();
-</script></body></html>`
 }
 
 // ===== 运行时 =====
@@ -590,17 +381,6 @@ function createHost() {
   }
 
   // ----- 事件分发 -----
-
-  /**
-   * 事件 -> 接收方必须持有的权限。
-   * message:new/recall 的 payload 是整条消息（含正文），只发给声明 message:read 的插件；
-   * presence 同样带 userId 列表，按同一权限收敛。
-   */
-  const EVENT_PERMISSION: Record<string, string> = {
-    'message:new': 'message:read',
-    'message:recall': 'message:read',
-    presence: 'message:read',
-  }
 
   function dispatchEvent(event: string, payload: unknown) {
     const required = EVENT_PERMISSION[event]
