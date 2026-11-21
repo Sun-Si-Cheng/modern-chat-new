@@ -423,6 +423,7 @@ onBeforeUnmount(stopQrPolling)
             clearable
             @enter="verifyTwofa"
           >
+          </UiInput>
           <UiButton
             class="auth-card__submit"
             theme="primary"
@@ -459,6 +460,7 @@ onBeforeUnmount(stopQrPolling)
             clearable
             @enter="verifyTwofa"
           >
+          </UiInput>
           <UiButton
             class="auth-card__submit"
             theme="primary"
