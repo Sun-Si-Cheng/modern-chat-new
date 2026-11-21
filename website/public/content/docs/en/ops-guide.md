@@ -55,8 +55,6 @@ The backend reads all config from environment variables (`server/internal/config
 | `RELEASE_API_URL` / `RELEASE_DL_URL` | empty | no | release mode: GitHub latest-release API and download prefix, written into `.env` by `install.sh`; when both are empty, a `.git` install directory uses source mode, otherwise the addresses are derived from `RELEASE_REPO_GITHUB` (or the default official repo) as a fallback |
 | `RELEASE_REPO_GITHUB` | `modern-day-team/modern-chat-new` | no | repo hosting the releases (`owner/repo`): derives the update source when the explicit URLs are unset; point it at a fork / mirror repo if needed |
 | `GITHUB_TOKEN` | empty | no | optional GitHub API token: anonymous `api.github.com` calls are limited to 60/hour/IP, a token raises it to 5000/hour and enables private-repo checks. Sent only with GitHub-host update requests, never logged |
-| `MUSICD_ENDPOINT` / `MUSICD_KEY` | `http://127.0.0.1:8310` / empty | no | online-music source runtime musicd (local Node service, loopback only) and shared secret (`X-Music-Key`, same value on both sides). Without musicd the chat's "online music" tab hides automatically; see `docs/在线音乐与自定义音源.md` (en/online-music.md) |
-| `CHAT_MUSIC_ENDPOINT` / `CHAT_MUSIC_KEY` | empty | no | legacy player endpoint fallback (still resolve-only; enabled only when both are set) |
 | `SSO_SITE_URL` / `SSO_APP_BASE` / `SSO_HUB_URL` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | empty / `/app` | no | unified login (aggregated login center): enabled only when all are set; when disabled every `/api/auth/sso/*` answers 404. `SSO_APP_BASE` must match the frontend mount prefix (empty when the SPA sits at the site root) |
 | `METRICS_TOKEN` | empty | no | when non-empty, `GET /api/metrics` requires `Authorization: Bearer <token>`; when empty, same-site anonymous scraping is allowed — set it for internet-facing deployments |
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | no | database backup output directory |
@@ -226,31 +224,6 @@ What is removed and default behavior:
 | Install/update logs | removed with the install directory; `/var/log/modernchat/` is kept | kept |
 
 System-level components such as Go / Node / MySQL / nginx are not uninstalled (other apps may use them).
-
-### 3.2.1 musicd source runtime (online music, optional)
-
-The chat's "online music" relies on a local Node service `musicd` (repo `server/musicd/`, zero npm dependencies, Node ≥ 20):
-the browser gets third-party direct links and downloads the audio itself; audio bytes never pass through this server.
-Without musicd the online tab hides automatically.
-
-```bash
-# 1) Install Node 22 and sync the repo's server/musicd/ to the install directory
-# 2) Generate the shared secret (same value as MUSICD_KEY in the Go side's .env)
-echo "MUSICD_KEY=$(openssl rand -hex 32)" > /etc/modernchat-nc/musicd.env && chmod 600 /etc/modernchat-nc/musicd.env
-# 3) Install the systemd unit (template: server/musicd/modernchat-musicd.service; adjust WorkingDirectory/ExecStart)
-cp server/musicd/modernchat-musicd.service /etc/systemd/system/ && systemctl daemon-reload
-systemctl enable --now modernchat-musicd
-# 4) Write the same MUSICD_KEY into the Go side's .env and restart the main service; add a drop-in so the
-#    main service starts after musicd: /etc/systemd/system/modernchat-nc.service.d/musicd-dep.conf
-#    [Unit]
-#    Wants=modernchat-musicd.service
-#    After=network-online.target modernchat-musicd.service
-```
-
-Ops commands: `systemctl restart modernchat-musicd` (required after changing source scripts); source scripts live in
-`server/musicd/sources/` (uploaded by admins / placed manually, named `NN-lx-name.js` / `NN-mf-name.js`);
-`POST /api/music/sources/reload` (owner only) hot-reloads. Pipeline, sandbox and security boundaries: see
-`docs/在线音乐与自定义音源.md` (en/online-music.md).
 
 ### 3.3 Manual Deployment
 

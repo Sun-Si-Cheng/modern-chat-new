@@ -129,10 +129,6 @@ func New(d Deps) *gin.Engine {
 	migrateH := handler.NewMigrateHandler(d.Cfg, migrateSvc)
 	// 站长后台群聊管理（只读）
 	adminGroupsH := handler.NewAdminGroupsHandler(convs, msgs)
-	// 在线音乐：只解析第三方直链，不搬运音频字节（musicd 音源运行时，
-	// 见 docs/在线音乐与自定义音源.md；musicd 未部署时在线标签页自动隐藏）
-	musicH := handler.NewMusicHandler(d.Cfg.MusicdEndpoint, d.Cfg.MusicdKey).
-		WithLegacy(d.Cfg.ChatMusicEndpoint, d.Cfg.ChatMusicKey, "")
 
 	// 上传文件存储由 main 依据配置构造（本地或 S3 兼容），这里只挂接口与静态服务
 	storage := d.Storage
@@ -287,14 +283,6 @@ func New(d Deps) *gin.Engine {
 		authed.GET("/plugins/:id/code", pluginH.Code)
 		pluginLimit := middleware.RateLimit(d.PluginLimiter, middleware.KeyByUID)
 		authed.POST("/plugins/upload", pluginLimit, pluginH.Upload)
-
-		// 在线音乐：全部挂在登录态下（游客拿不到直链）；重载音源仅站长
-		authed.GET("/music/status", musicH.Status)
-		authed.GET("/music/search", musicH.Search)
-		authed.POST("/music/resolve", musicH.Resolve)
-		authed.POST("/music/lyric", musicH.Lyric)
-		authed.GET("/music/sources", musicH.Sources)
-		authed.POST("/music/sources/reload", musicH.ReloadSources)
 
 		// 图片 / 语音上传：按用户限流（10 次/分），避免被当图床刷
 		if uploadH != nil {

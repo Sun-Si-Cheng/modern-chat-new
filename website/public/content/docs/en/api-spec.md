@@ -152,12 +152,6 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/plugins/from-url` | `{url}` | `Plugin`; §6 SSRF checks run before fetching; same-name upgrade semantics as above |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | updated `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
-| GET `/api/music/status` | — | `{online, engine:"musicd", platforms}`; `online` = musicd reachable or fallback configured. The frontend uses it to show the "online music" tab |
-| GET `/api/music/search` | `?name=` (≤60 chars) `&source=` (kw/kg/tx/wy/mg/qs) `&page=` (1-99) | `{ok, data:{list,…}, list}`; proxies musicd search (built-in SDK, serial queue + cache) |
-| POST `/api/music/resolve` | `{songInfo, quality?, source?}` | `{ok, data:{url, direct:true, by?}}`; **resolves direct links only, never relays audio** — url is the third party's real address (signed, time-limited); the browser downloads/caches/plays it directly. When musicd fails, falls back to the legacy player endpoint (response carries `via:"legacy"`) |
-| POST `/api/music/lyric` | `{songInfo, source?}` | `{ok, data:{lyric, tlyric}}`; returns empty lyrics on failure instead of an error |
-| GET `/api/music/sources` | — | `{ok, data:{count, sources, …}}`; the currently loaded source list (for the admin console) |
-| POST `/api/music/sources/reload` | — | `{ok, data}`; re-scans the source directory, **owner only** (role=owner, otherwise 403) |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
 | GET `/api/admin/users` | `?page=&pageSize=&kw=&role=&status=` (`kw` matches username/nickname, `role`=user\|admin, `status`=active\|banned) | `{users: AdminUserRow[], total, page, pageSize}`; AdminUserRow = User + `createdAt` |
 | GET `/api/admin/users/:id` | — | `{user: AdminUserRow, stats:{conversations,messages,plugins}, online}` |

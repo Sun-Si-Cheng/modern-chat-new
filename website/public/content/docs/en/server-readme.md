@@ -54,11 +54,6 @@ All environment variables are listed in [`.env.example`](.env.example); the key 
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push (optional); enabled only when both keys are configured |
 | `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | site-admin console online-update switch and GitHub Release update source (written by `install.sh`); when both are empty they are derived from `RELEASE_REPO_GITHUB` (or the default official repo), and a `.git` install directory still uses source mode |
 | `RELEASE_REPO_GITHUB` / `GITHUB_TOKEN` | repo hosting the releases (owner/repo) and an optional GitHub API token (raises the 60/hour anonymous API limit); see `server/.env.example` |
-| `MUSICD_ENDPOINT` / `MUSICD_KEY` | online-music source runtime musicd (local Node service, default `http://127.0.0.1:8310`) and shared secret; without it the online-music tab hides automatically |
-| `CHAT_MUSIC_ENDPOINT` / `CHAT_MUSIC_KEY` | legacy player endpoint fallback (optional; enabled only when both are set) |
-| `SSO_SITE_URL` / `SSO_APP_BASE` / `SSO_HUB_URL` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | unified login (aggregated login center); enabled only when all are set, see `handler/sso.go` |
-| `MUSICD_ENDPOINT` / `MUSICD_KEY` | online-music source runtime musicd (local Node service, default `http://127.0.0.1:8310`) and shared secret; without it the online-music tab hides automatically |
-| `CHAT_MUSIC_ENDPOINT` / `CHAT_MUSIC_KEY` | legacy player endpoint fallback (optional; enabled only when both are set) |
 | `SSO_SITE_URL` / `SSO_APP_BASE` / `SSO_HUB_URL` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | unified login (aggregated login center); enabled only when all are set, see `handler/sso.go` |
 
 ## Logs

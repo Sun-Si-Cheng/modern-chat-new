@@ -13,7 +13,6 @@ import DetailPanel from '@/components/chat/DetailPanel.vue'
 import FavoriteDrawer from '@/components/chat/FavoriteDrawer.vue'
 import GroupPane from '@/components/chat/GroupPane.vue'
 import MessagePane from '@/components/chat/MessagePane.vue'
-import MusicFloatBar from '@/components/chat/MusicFloatBar.vue'
 import NotificationDrawer from '@/components/chat/NotificationDrawer.vue'
 import PluginDrawer from '@/components/chat/PluginDrawer.vue'
 import PaneResizer from '@/components/common/PaneResizer.vue'
@@ -30,7 +29,6 @@ import { useFriendsStore } from '@/stores/friends'
 import { PANE_LIMITS, useLayoutStore, type PaneKey } from '@/stores/layout'
 import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
-import { playerDockClass } from '@/composables/usePlayerLayout'
 import type { ServerFrame } from '@/types/proto'
 
 const router = useRouter()
@@ -54,12 +52,6 @@ const pluginDrawerVisible = ref(false)
 const addFriendVisible = ref(false)
 const favoriteDrawerVisible = ref(false)
 const notificationDrawerVisible = ref(false)
-
-// ===== 常驻播放条（music-player 插件启用时才挂载） =====
-const playerExpanded = ref(false)
-const musicPluginOn = computed(() =>
-  pluginsStore.plugins.some((p) => p.enabled && p.name === 'music-player'),
-)
 
 // ===== 全站公告弹窗 =====
 
@@ -242,11 +234,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="mc-layout"
-    :style="layout.vars"
-    :class="[{ 'has-conv': !!convStore.currentConv }, playerDockClass]"
-  >
+  <div class="mc-layout" :style="layout.vars" :class="{ 'has-conv': !!convStore.currentConv }">
     <!-- 断线提示：重连成功即消失；期间消息会进失败态，可直接点「重发」 -->
     <div v-if="offline" class="mc-layout__offline" role="status">
       {{ t('chat.reconnecting') }}
@@ -368,10 +356,6 @@ onUnmounted(() => {
     <AddFriendDialog v-model:visible="addFriendVisible" />
     <AnnouncementDialog v-model:visible="announcementVisible" :content="announcementContent" />
 
-    <!-- 常驻播放条：只有 music-player 插件启用时才挂载（卸掉插件即回到没有音乐的状态）；
-         fixed 定位 + 贴边模式由 usePlayerLayout 记忆，配合根元素的 has-player-* 让位 -->
-    <MusicFloatBar v-if="musicPluginOn" :expanded="playerExpanded" @expand="playerExpanded = !playerExpanded" />
-
     <!-- 抽屉遮罩：点击空白处收起 -->
     <div v-if="hasOpenDrawer" class="mc-layout__scrim" @click="layout.closeAll()" />
   </div>
@@ -382,18 +366,8 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   overflow: hidden;
-  box-sizing: border-box;
   /* 抽屉浮层的定位上下文 */
   position: relative;
-}
-
-/* 播放控件贴顶/贴底时给宿主让出一条横条高度，避免压住输入框/顶栏 */
-.mc-layout.has-player-bottom {
-  padding-bottom: 64px;
-}
-
-.mc-layout.has-player-top {
-  padding-top: 64px;
 }
 
 /* ===== 布局：可拖拽宽度 + 抽屉形态 ===== */

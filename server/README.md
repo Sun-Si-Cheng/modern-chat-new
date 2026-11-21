@@ -53,8 +53,6 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（可选），两项密钥都配置才启用 |
 | `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | 站长后台在线更新开关与 GitHub Release 更新源（install.sh 写入）；两者都空时按 `RELEASE_REPO_GITHUB`（或默认官方仓库）派生，安装目录有 `.git` 仍走源码模式 |
 | `RELEASE_REPO_GITHUB` / `GITHUB_TOKEN` | Release 托管仓库（owner/repo）与 GitHub API 令牌（可选，防匿名 60 次/小时限流）；详见 `server/.env.example` |
-| `MUSICD_ENDPOINT` / `MUSICD_KEY` | 在线音乐音源运行时 musicd（本机 Node 服务，默认 `http://127.0.0.1:8310`）与共享密钥；未部署时在线音乐标签页自动隐藏 |
-| `CHAT_MUSIC_ENDPOINT` / `CHAT_MUSIC_KEY` | 旧播放器端点兜底（可选，两项都配置才启用） |
 | `SSO_SITE_URL` / `SSO_APP_BASE` / `SSO_HUB_URL` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | 统一登录（聚合登录中心）；全部配置才启用，见 `handler/sso.go` |
 
 ## 日志

@@ -76,13 +76,6 @@ const DOCS: DocItem[] = [
     descEn: 'Attachment auth, sessions, realtime, plugin security, migrations',
   },
   {
-    file: 'online-music.md',
-    zh: '在线音乐与音源',
-    en: 'Online music & sources',
-    descZh: '直链化链路、musicd 音源运行时、沙箱安全与运维命令',
-    descEn: 'Direct-link pipeline, musicd runtime, sandbox security & ops',
-  },
-  {
     file: 'server-readme.md',
     zh: '后端运行手册',
     en: 'Server runbook',

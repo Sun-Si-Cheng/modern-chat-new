@@ -152,12 +152,6 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前执行 §6 SSRF 检查；同名升级语义同上 |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | 更新后 `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
-| GET `/api/music/status` | — | `{online, engine:"musicd", platforms}`；`online` = musicd 可达或兜底已配置。前端据此决定是否展示「在线音乐」标签页 |
-| GET `/api/music/search` | `?name=`（≤60 字）`&source=`（kw\|kg\|tx\|wy\|mg\|qs）`&page=`（1-99） | `{ok, data:{list,…}, list}`；代理 musicd 搜索（内置 SDK，串行队列 + 缓存） |
-| POST `/api/music/resolve` | `{songInfo, quality?, source?}` | `{ok, data:{url, direct:true, by?}}`；**只解析直链，不中转音频**——url 是第三方真实地址（带签名与时效），浏览器直连下载/缓存/播放。musicd 失败时降级旧播放器端点（响应带 `via:"legacy"`） |
-| POST `/api/music/lyric` | `{songInfo, source?}` | `{ok, data:{lyric, tlyric}}`；解析失败返回空歌词（不报错） |
-| GET `/api/music/sources` | — | `{ok, data:{count, sources, …}}`；当前加载的音源清单（后台展示用） |
-| POST `/api/music/sources/reload` | — | `{ok, data}`；重新扫描音源目录，**仅站长**（role=owner，否则 403） |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
 | GET `/api/admin/users` | `?page=&pageSize=&kw=&role=&status=`（`kw` 匹配用户名/昵称，`role`=user\|admin，`status`=active\|banned） | `{users: AdminUserRow[], total, page, pageSize}`；AdminUserRow = User + `createdAt` |
 | GET `/api/admin/users/:id` | — | `{user: AdminUserRow, stats:{conversations,messages,plugins}, online}` |

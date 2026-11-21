@@ -53,16 +53,6 @@ type Config struct {
 	// 匿名调用 api.github.com 限流 60 次/小时/IP，配置后提升到 5000 次/小时，
 	// 并支持私有仓库的 Release 检查。仅用于更新请求头，不落日志。
 	GithubToken string
-	// MusicdEndpoint / MusicdKey 在线音乐音源运行时 musicd（MUSICD_ENDPOINT / MUSICD_KEY）。
-	// musicd 是本机 Node 服务（server/musicd/，默认 http://127.0.0.1:8310，仅回环监听），
-	// 负责解析第三方直链，音频字节不经过本服务器；Key 为共享密钥（请求头 X-Music-Key），
-	// 与 musicd 侧一致，为空表示 musicd 未设密钥。
-	MusicdEndpoint string
-	MusicdKey      string
-	// ChatMusicEndpoint / ChatMusicKey 旧播放器端点兜底（CHAT_MUSIC_ENDPOINT / CHAT_MUSIC_KEY）：
-	// musicd 不可用时仍能解析出直链（只解析、不中转音频）。都为空 = 不启用兜底。
-	ChatMusicEndpoint string
-	ChatMusicKey      string
 	// SSO 统一登录（聚合登录中心，见 handler/sso.go）：
 	//   - SSOSiteURL 本站对外地址（如 https://chat.example.com，用于拼回调与回跳页）
 	//   - SSOAppBase 前端挂载前缀（默认 /app；前端部署在站点根时设为空）
@@ -147,11 +137,6 @@ func Load() (Config, error) {
 		ReleaseDLURL:      os.Getenv("RELEASE_DL_URL"),
 		ReleaseRepoGithub: os.Getenv("RELEASE_REPO_GITHUB"),
 		GithubToken:       os.Getenv("GITHUB_TOKEN"),
-		// 在线音乐：musicd 音源运行时 + 旧播放器兜底（未部署 musicd 时在线标签页自动隐藏）
-		MusicdEndpoint:    getv("MUSICD_ENDPOINT", "http://127.0.0.1:8310"),
-		MusicdKey:         os.Getenv("MUSICD_KEY"),
-		ChatMusicEndpoint: os.Getenv("CHAT_MUSIC_ENDPOINT"),
-		ChatMusicKey:      os.Getenv("CHAT_MUSIC_KEY"),
 		// 统一登录（聚合登录中心）：全部配置才启用，见 SSOEnabled
 		SSOSiteURL:      os.Getenv("SSO_SITE_URL"),
 		SSOAppBase:      getv("SSO_APP_BASE", "/app"),
