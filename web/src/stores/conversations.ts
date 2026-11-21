@@ -248,9 +248,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     }
     // await 期间用户可能已切到别的会话：继续补齐/上报已读，等于把没看过的消息标成已读
     if (currentConvId.value !== convId) return
-    // 离线期间可能积压超过一页：未读积压按服务端已读游标补齐；
-    // 本地缓存有中间断档（另一端已读越过缺口时 unreadCount 为 0）也要补，
-    // 否则这些消息上翻历史都够不到
+    // 断线积压（游标上方）与游标下方的缺口都由 catchUp 补齐——
+    // 后者常见于另一端已把消息读完（unreadCount=0）的多端场景
     const conv = conversations.value.find((c) => c.id === convId)
     const hasUnreadBacklog = (conv?.unreadCount ?? 0) > 0 && (conv?.lastReadMessageId ?? 0) > 0
     if (hasUnreadBacklog || hasCacheGap(convId)) {
@@ -670,34 +669,71 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   /**
-   * 离线补齐：填上「本地缓存」与「服务端已读游标」之间的缺口。
-   * 补齐起点取「本地最早已加载消息 id」与「服务端已读游标」的较小者——
-   * 只从游标往后拉的话，另一端把消息读完（游标越过缺口、unreadCount=0）时
-   * 结构上永远拿不到缺口本身。最多翻 10 页（约 1000 条），防止超大群一次拉全量历史。
+   * 已加载消息中「已读游标下方」第一个断档的下沿（跳过删除留下的单点空洞）；
+   * 没有则返回 0。缺口判定口径与 hasCacheGap 一致：宽度超过 1 的空洞才算。
+   */
+  function firstGapBelowCursor(list: Message[], lastRead: number): number {
+    let prev = 0
+    for (const m of list) {
+      if (m.id <= 0) continue // 未落库的 pending 消息（id<0）不参与
+      if (prev > 0 && m.id - prev > 2 && prev < lastRead) return prev
+      prev = m.id
+    }
+    return 0
+  }
+
+  /**
+   * 离线补齐，分两段：
+   * ① 游标下方缺口：多端场景另一端把消息读完（unreadCount=0、游标越过缺口），
+   *    或上次补齐中断留下的已加载断档。从断档下沿起扫（等价于从
+   *    min(最早已加载 id, 游标) 起扫，但跳过中间整段已知区，避免整段缓存重拉），
+   *    与已知消息重叠即说明该区域已对齐（服务端不再下发的删除单点除外）。
+   * ② 游标上方积压：断线积压可能超过一页，最新一页（首屏 / loadLatest）只盖住
+   *    顶部 30 条，从已读游标向后拉到本地最新一条为止。
+   * 每段最多 10 页（约 1000 条），防止超大群一次拉全量历史。
    */
   async function catchUp(convId: number) {
     const conv = conversations.value.find((c) => c.id === convId)
-    const earliestLoaded = (messagesByConv[convId] ?? []).find((m) => m.id > 0)?.id ?? 0
+    const list = messagesByConv[convId] ?? []
     const lastRead = conv?.lastReadMessageId ?? 0
-    // 没有本地缓存时退回已读游标（连游标都没有则无事可补）
-    let after =
-      earliestLoaded > 0 && lastRead > 0
-        ? Math.min(earliestLoaded, lastRead)
-        : Math.max(earliestLoaded, lastRead)
-    if (after <= 0) return
-    // 上界取两者较大者：越过它就是游标之后的新消息，由最新页与 WS 帧负责，不在这里重复拉
-    const stopAt = Math.max(earliestLoaded, lastRead)
-    for (let i = 0; i < 10; i++) {
-      const page = await convApi.messagesAfter(convId, after, 100)
-      const incoming = page.messages ?? []
-      if (!incoming.length) break
-      mergeServerPage(convId, incoming)
-      const next = incoming[incoming.length - 1]?.id ?? after
-      if (next <= after) break
-      after = next
-      // 已经越过上界（本地最早一条与服务端游标的较大者），缺口已填满
-      if (after >= stopAt) break
-      if (!page.hasMore) break
+    const topLoaded = maxMessageId(list)
+    const knownIds = new Set(list.filter((m) => m.id > 0).map((m) => m.id))
+    let after = 0
+    // ① 游标下方缺口：可能有多段，逐段补齐（页数共用 10 页上限）
+    let pages = 10
+    for (let round = 0; round < 3; round++) {
+      const start = firstGapBelowCursor(list, lastRead)
+      if (start <= 0 || pages <= 0) break
+      after = start
+      for (let i = 0; i < 10 && pages > 0; i++) {
+        pages--
+        const page = await convApi.messagesAfter(convId, after, 100)
+        const incoming = page.messages ?? []
+        if (!incoming.length) break
+        const overlapped = incoming.some((m) => knownIds.has(m.id))
+        mergeServerPage(convId, incoming)
+        const next = incoming[incoming.length - 1]?.id ?? after
+        if (next <= after) break
+        after = next
+        // 命中已知区（断档上方已对齐）或接上游标：本段完毕，上方积压交给 ②
+        if (overlapped || after >= lastRead || !page.hasMore) break
+      }
+    }
+    // ② 游标上方积压：无未读（另一端已读完，游标即最新）或从未读过（游标 0）时无事可补
+    if (lastRead > 0 && (conv?.unreadCount ?? 0) > 0) {
+      after = lastRead
+      for (let i = 0; i < 10; i++) {
+        const page = await convApi.messagesAfter(convId, after, 100)
+        const incoming = page.messages ?? []
+        if (!incoming.length) break
+        mergeServerPage(convId, incoming)
+        const next = incoming[incoming.length - 1]?.id ?? after
+        if (next <= after) break
+        after = next
+        // 已接上本地最新一条：再往上只会有 WS 帧增量，不在这里重复拉
+        if (topLoaded > 0 && after >= topLoaded) break
+        if (!page.hasMore) break
+      }
     }
     if (conv) conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, after)
   }
