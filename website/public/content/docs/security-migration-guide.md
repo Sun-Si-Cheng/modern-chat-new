@@ -225,21 +225,22 @@ base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; worker
 
 | 权限 | 能力 |
 |---|---|
-| `message:read` | `api.on(...)` 订阅事件 |
+| `message:read` | `message:new` / `message:recall` / `presence` 事件投递（正文与用户列表，见下） |
 | `message:send` | `api.send(...)` |
 | `message:render` | `api.registerMessageRenderer(...)` |
-| `ui:panel` | `api.addSidePanel(...)` |
-| `ui:actions` | `api.registerMessageAction(...)` |
+| `ui:panel` | `api.addSidePanel(...)` / `removeSidePanel()`，以及自己的 `ui:action` 面板动作投递 |
+| `ui:actions` | `api.registerMessageAction(...)` 与 `message:action` 投递 |
 | `conv:read` | `api.me()` / `api.conv.current()` / `api.conv.members()` / `api.messages.recent()` |
 | `ui:host` | `api.nav.*` / `api.toast()` |
 | `storage` | `api.storage.get/set`（每插件命名空间，值 ≤64KB） |
 | `net` | `api.request()`（还受 `allowedHosts` 限制） |
 | `ui:theme` | `api.theme.apply()`（仅 `--td-*` 令牌） |
 
-事件分发额外按权限过滤（`EVENT_PERMISSION`）：
+事件投递按 `EVENT_PERMISSION` 过滤（`api.on` 在沙箱内是本地注册、无 RPC，把关全部在投递层）：
 
 - `message:new` / `message:recall` / `presence` 的 payload 含消息正文或用户列表，只发给声明 `message:read` 的插件；
-- `conv:open` / `ui:action` 不含隐私正文，不额外限制；
+- `ui:action` 由面板动作定向投递给拥有该面板的插件（能创建面板才有 `ui:panel`，门槛写入事件表固化语义）；
+- `conv:open` 故意不设门槛：payload 只有会话 id，不含内容；设门槛会逼插件申请更宽权限；
 - `message:action` 只投递给**注册了该 action 的插件**，不广播；
 - `messages.recent` 只返回已落库、非 pending/failed 的可见消息，撤回消息的 `content` 置空，避免把撤回原文交给插件。
 

@@ -3,10 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -21,10 +24,11 @@ import (
 type PluginHandler struct {
 	cfg     config.Config
 	plugins *store.PluginStore
+	audits  *store.AuditStore
 }
 
-func NewPluginHandler(cfg config.Config, plugins *store.PluginStore) *PluginHandler {
-	return &PluginHandler{cfg: cfg, plugins: plugins}
+func NewPluginHandler(cfg config.Config, plugins *store.PluginStore, audits *store.AuditStore) *PluginHandler {
+	return &PluginHandler{cfg: cfg, plugins: plugins, audits: audits}
 }
 
 // List 我的插件。
@@ -130,12 +134,20 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string, source strin
 	perms, _ := json.Marshal(m.Permissions)
 	hosts, _ := json.Marshal(m.AllowedHosts)
 	me := middleware.UserFrom(c).ID
+	detail := fmt.Sprintf("version=%s; perms=[%s]; hosts=[%s]; source=%s",
+		m.Version, strings.Join(m.Permissions, ","), strings.Join(m.AllowedHosts, ","), source)
 
 	// 同名插件已安装：视为升级覆盖（保留 id / 启停状态 / 全局下架状态）
 	if existing, err := h.plugins.ByUserAndName(me, m.Name); err != nil {
 		internal(c, err)
 		return
 	} else if existing != nil {
+		// 权限 / 域名白名单与旧版不同时必须让前端重新确认：旧授权是用户
+		// 针对旧代码给的，覆盖升级后不能默认延续到新代码上。
+		// 前端据此弹确认框；用户拒绝时停用插件（新代码不再自动运行）。
+		permsChanged := !jsonSetEqual(existing.Permissions, string(perms)) ||
+			!jsonSetEqual(existing.AllowedHosts, string(hosts))
+		detail = fmt.Sprintf("version=%s->%s; %s", existing.Version, m.Version, detail)
 		existing.Version = m.Version
 		existing.Description = m.Description
 		existing.CodeText = code
@@ -145,9 +157,14 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string, source strin
 			internal(c, err)
 			return
 		}
+		h.audit(c, "plugin_update", existing.ID, m.Name, detail)
 		slog.Info("plugin updated",
-			"uid", me, "plugin", existing.ID, "name", m.Name, "version", m.Version, "source", source)
+			"uid", me, "plugin", existing.ID, "name", m.Name, "version", m.Version,
+			"permsChanged", permsChanged, "source", source)
 		c.Header("X-Plugin-Updated", "true")
+		if permsChanged {
+			c.Header("X-Plugin-Perms-Changed", "true")
+		}
 		c.JSON(http.StatusOK, existing.View())
 		return
 	}
@@ -179,7 +196,48 @@ func (h *PluginHandler) createFromCode(c *gin.Context, code string, source strin
 		"uid", me, "plugin", p.ID, "name", p.Name, "version", p.Version,
 		"perms", len(m.Permissions), "hosts", len(m.AllowedHosts), "source", source,
 		"globalDisabled", p.GlobalDisabled)
+	h.audit(c, "plugin_install", p.ID, p.Name, detail)
 	c.JSON(http.StatusOK, p.View())
+}
+
+// audit 记录插件安装 / 升级到审计表（与站长操作同表）：审计的动作语义是
+// 「谁在什么时候装了什么权限的什么代码」，这是站长全局下架能发挥作用的前提。
+// 写失败只打日志，不影响安装主流程。
+func (h *PluginHandler) audit(c *gin.Context, action string, targetID uint, targetName, detail string) {
+	me := middleware.UserFrom(c)
+	if me == nil {
+		return
+	}
+	if err := h.audits.Record(store.AuditEntry{
+		AdminID:    me.ID,
+		Action:     action,
+		TargetType: "plugin",
+		TargetID:   targetID,
+		TargetName: targetName,
+		Detail:     detail,
+		IP:         c.ClientIP(),
+	}); err != nil {
+		slog.Warn("plugin audit write failed", "action", action, "target", targetID, "err", err.Error())
+	}
+}
+
+// jsonSetEqual 比较两个 JSON 字符串数组是否为同一集合（顺序无关）：
+// permissions / allowedHosts 在库里按 JSON 存储，集合相同即视为未变化。
+func jsonSetEqual(a, b string) bool {
+	var av, bv []string
+	_ = json.Unmarshal([]byte(a), &av)
+	_ = json.Unmarshal([]byte(b), &bv)
+	if len(av) != len(bv) {
+		return false
+	}
+	sort.Strings(av)
+	sort.Strings(bv)
+	for i := range av {
+		if av[i] != bv[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // SetEnabled 启用 / 禁用（仅本人）。

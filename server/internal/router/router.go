@@ -122,7 +122,7 @@ func New(d Deps) *gin.Engine {
 	modH := handler.NewModerationHandler(users, convs, msgs, moderation)
 	stickerH := handler.NewStickerHandler(stickers, d.Storage)
 	fileH := handler.NewFileHandler(files, convs, d.Storage)
-	pluginH := handler.NewPluginHandler(d.Cfg, plugins)
+	pluginH := handler.NewPluginHandler(d.Cfg, plugins, audits)
 	adminH := handler.NewAdminHandler(d.Cfg, users, convs, msgs, plugins, audits, settings, d.Mailer)
 	opsH := handler.NewOpsHandler(d.Cfg, d.DB, d.Backup)
 	pushH := handler.NewPushHandler(d.Push, pushSubs)

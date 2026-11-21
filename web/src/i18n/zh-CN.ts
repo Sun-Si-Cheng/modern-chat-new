@@ -511,6 +511,10 @@ export default {
     installTitle: '安装「{name}」v{version}',
     updateTitle: '更新「{name}」到 v{version}',
     permBody: '该插件申请以下权限：\n{perms}\n\n网络访问白名单：{hosts}\n\n{desc}',
+    updatePermChangedBody:
+      '注意：新版本更改了权限或网络白名单，旧授权不会自动延续。\n\n新版权限：\n{perms}\n\n网络访问白名单：{hosts}\n\n{desc}\n\n确认后新版本生效；拒绝则立即停用插件，重新启用时才运行新版本。',
+    declineDisable: '拒绝并停用',
+    declinedDisabled: '已停用「{name}」：新版权限未经确认，可在插件管理中重新启用',
     confirmEnable: '确认并启用',
     confirmUpdate: '更新并重载',
     laterEnable: '暂不启用',
@@ -729,7 +733,7 @@ export default {
     storagePublicBaseHint: '如 https://cdn.example.com；留空则用 Endpoint/Bucket 拼接',
     storageRestartHint:
       'ⓘ 填好 Endpoint 与 Bucket 并保存后，重启服务即切换到对象存储；未填则继续使用本地磁盘。已上传的历史文件不会自动迁移。',
-    auditHint: '记录后台写操作：封禁、踢下线、角色调整、插件处理与公告。',
+    auditHint: '记录后台写操作与插件安装/升级：封禁、踢下线、角色调整、插件处理、插件安装与公告。',
     auditTime: '时间',
     auditAction: '操作',
     auditTarget: '对象',

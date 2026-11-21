@@ -158,9 +158,6 @@ function createHost() {
     }
     try {
       switch (apiName) {
-        case 'on':
-          reply(runtime, callId, true) // 事件订阅在沙箱侧，主站无操作
-          break
         case 'send': {
           const [convId, payload, msgType] = args as [number, unknown, string | undefined]
           const content = typeof payload === 'string' ? payload : JSON.stringify(payload)

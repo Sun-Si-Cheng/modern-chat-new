@@ -10,6 +10,8 @@
 
 ### 变更
 
+- **插件内核信任链补强（升级重确认 / 安装审计 / 事件权限表收口）**：三条同属「内核做通用底座」的信任闭环。① **升级权限重确认**：同名升级覆盖时服务端比较新旧 `permissions` 与 `allowedHosts` 集合，有变化返回 `X-Plugin-Perms-Changed: true`；前端对已启用插件强制重新确认——确认后重载新代码，取消 / ESC / 遮罩关闭一律视为拒绝并**立即停用**插件（旧授权不再默认延续到新代码，新代码不会在未确认状态下自动运行）。② **安装 / 升级审计落库**：写入审计表（`plugin_install` / `plugin_update`，含版本变化、权限与域名清单、来源与 IP），后台审计页可见「谁在什么时候装了什么」——此前只有 slog 日志，审计表查不到。③ **事件权限表收口**：`api.on` 在沙箱内是本地注册、不走 RPC，宿主侧 `API_PERMISSION.on` 与 `executeCall` 的 `case 'on'` 属死代码，删除；`EVENT_PERMISSION` 补全 `ui:action`→`ui:panel`、`message:action`→`ui:actions` 两条（固化既有定向投递语义），`conv:open` 刻意不设门槛（payload 只有会话 id，设门槛反而逼插件申请更宽权限）。纯面板插件（只有 `ui:panel`）收自己的面板动作无需 `message:read`——行为与既有代码一致，本次是把权限表与文档对齐到真实语义。**存量影响**：升级已启用插件且权限有变化时会多一步确认，拒绝升级的插件被停用（重新启用即运行新版）；审计页新增两类动作记录；文档同步修正「确认后才装」的实际时序（装后默认停用、确认后启用）与 `api.on` 的门槛描述。
+
 - **安装 / 更新源改为仅 GitHub**：Gitee 仓库已弃用，`scripts/install.sh` 移除 Gitee Release 源（`RELEASE_SOURCE` / `RELEASE_REPO_GITEE` 环境变量不再生效），GitHub 仓库默认 `modern-day-team/modern-chat-new`（可用 `RELEASE_REPO_GITHUB` 覆盖）；打包 / 更新脚本、后台在线更新与文档同步只认 GitHub。**存量影响**：已安装实例一般无需改动——`server/.env` 记录的是完整的 `RELEASE_API_URL` / `RELEASE_DL_URL`；但从旧版 Gitee 源安装的实例，这两个地址仍指向 Gitee，在线更新会失败，需手动改成 GitHub 地址（`https://api.github.com/repos/modern-day-team/modern-chat-new/releases/latest` 与 `https://github.com/modern-day-team/modern-chat-new/releases/download`）后重启服务。
 
 - **图片改为「每张只存一份」**：移除服务端 `_t.jpg` 缩略图生成（`service/thumbnail.go` 整体删除，本地与对象存储两条上传路径都不再派生）。原因是收益与代价不成比例——前端上传前已把图压到最大边 1600 / webp q0.82，实测一张 76 KB 的图派生出的缩略图仍有 50 KB，只省 26 KB 却要多存一个对象、多一次写入，后台存储清单里还会显示成「一张图变成两个文件」。现在气泡、灯箱、保存、下载全部使用同一份主图，行为更直观、排查更简单。**存量影响**：历史 `_t.jpg` 不再被任何消息引用，会随「清理孤儿附件」按普通孤儿回收（受 24 小时保护期约束），不需要单独写迁移脚本；旧前端若仍按约定派生缩略图地址，会因为改用了主图而自然失效——两侧已同步修改，无兼容窗口。

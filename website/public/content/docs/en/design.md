@@ -459,7 +459,7 @@ Everything except register/login/forgot/reset/logout requires `Authorization: Be
 
 Conventions: errors `{error:"msg"}`; group admin checks the `owner` / `admin` roles; `/api/admin/*` checks `role=admin`.
 `PATCH /api/me` changing the email must consume a code sent to the new address; only after success is it written and `email_verified=true` set; unbinding (empty string) needs no verification.
-Plugin upload / URL install hitting "same user + same name" performs an **upgrade overwrite** (reuses the record, keeps enable state, response header `X-Plugin-Updated: true`).
+Plugin upload / URL install hitting "same user + same name" performs an **upgrade overwrite** (reuses the record, keeps enable state, response header `X-Plugin-Updated: true`); when the upgraded `permissions` / `allowedHosts` set differs, the response also carries `X-Plugin-Perms-Changed: true` (the frontend forces re-confirmation; declining disables the plugin), and installs and upgrades are written to the audit table (`plugin_install` / `plugin_update`).
 
 ---
 

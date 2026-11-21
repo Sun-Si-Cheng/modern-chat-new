@@ -159,8 +159,8 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | GET `/api/plugins` | — | `Plugin[]`（installedBy=me，按 createdAt 降序） |
 | GET `/api/plugins/active` | — | `Plugin[]`（enabled=1 且 global_disabled=0） |
 | GET `/api/plugins/:id/code` | — | `text/javascript` 源码（须本人已安装；global_disabled→403） |
-| POST `/api/plugins/upload` | body = 插件文件字节流（`Content-Type: application/octet-stream`，≤1MB）；`?lang=ts\|js` 指定语言，缺省按源码特征判断 | `Plugin`（默认 enabled=false）；命中"本人同名"时为升级覆盖，响应头 `X-Plugin-Updated: true` |
-| POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前执行 §6 SSRF 检查；同名升级语义同上 |
+| POST `/api/plugins/upload` | body = 插件文件字节流（`Content-Type: application/octet-stream`，≤1MB）；`?lang=ts\|js` 指定语言，缺省按源码特征判断 | `Plugin`（默认 enabled=false）；命中"本人同名"时为升级覆盖，响应头 `X-Plugin-Updated: true`；升级后权限 / `allowedHosts` 集合有变化时另带 `X-Plugin-Perms-Changed: true`（前端须重新确认）；安装 / 升级写入审计表（`plugin_install` / `plugin_update`） |
+| POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前执行 §6 SSRF 检查；同名升级语义同上（含 `X-Plugin-Perms-Changed` 与审计） |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | 更新后 `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
@@ -408,5 +408,5 @@ server/
 6. §7 三条限流生效并返回 429
 7. URL 安装对私网 / 回环 / 非 http(s) / 超限响应体全部拒绝（有测试）
 8. `go test ./...` 全绿（含 `-tags integration`）
-9. 同名上传为升级覆盖（`id` 不变、`X-Plugin-Updated: true`），站长全局下架后该插件代码下发 403
+9. 同名上传为升级覆盖（`id` 不变、`X-Plugin-Updated: true`；权限 / `allowedHosts` 变化时 `X-Plugin-Perms-Changed: true` 且写入 `plugin_update` 审计），站长全局下架后该插件代码下发 403
 10. WS 握手对非白名单 Origin 拒绝；`GET /api/version` 返回注入后的版本信息

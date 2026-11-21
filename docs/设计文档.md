@@ -455,7 +455,7 @@ modernchat-new/
 
 约定：错误 `{error:"msg"}`；群管理按 `owner` / `admin` 角色校验；`/api/admin/*` 校验 `role=admin`。
 `PATCH /api/me` 换绑邮箱必须核销新邮箱验证码，成功后才落库并置 `email_verified=true`；解绑（空串）不需要验证。
-插件上传 / URL 安装命中"同一用户 + 同名插件"时执行**升级覆盖**（复用记录、保留启停、响应头 `X-Plugin-Updated: true`）。
+插件上传 / URL 安装命中"同一用户 + 同名插件"时执行**升级覆盖**（复用记录、保留启停、响应头 `X-Plugin-Updated: true`）；升级后权限 / `allowedHosts` 集合变化时另带 `X-Plugin-Perms-Changed: true`（前端强制重新确认，拒绝即停用），安装与升级均写入审计表（`plugin_install` / `plugin_update`）。
 
 ---
 

@@ -202,8 +202,8 @@ curl https://站点/api/conversations -H 'Authorization: Bearer <token>'
 | GET `/api/plugins` | — | `Plugin[]`（本人安装记录，倒序） |
 | GET `/api/plugins/active` | — | `Plugin[]`（enabled 且未全局下架） |
 | GET `/api/plugins/:id/code` | — | `text/javascript` 源码；global_disabled→403 |
-| POST `/api/plugins/upload` | 字节流（`application/octet-stream`，≤1MB），`?lang=ts\|js` | `Plugin`（默认 enabled=false）；本人同名=升级覆盖（响应头 `X-Plugin-Updated: true`）；TS 由服务端 esbuild 转译，语法错误→400 含行号 |
-| POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前做 SSRF 检查 |
+| POST `/api/plugins/upload` | 字节流（`application/octet-stream`，≤1MB），`?lang=ts\|js` | `Plugin`（默认 enabled=false）；本人同名=升级覆盖（响应头 `X-Plugin-Updated: true`；权限 / `allowedHosts` 集合变化时另带 `X-Plugin-Perms-Changed: true`，前端须重新确认）；安装 / 升级写入审计（`plugin_install` / `plugin_update`）；TS 由服务端 esbuild 转译，语法错误→400 含行号 |
+| POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前做 SSRF 检查；升级语义同 upload（含响应头与审计） |
 | PATCH `/api/plugins/:id` | `{enabled}` | 更新后 `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
 

@@ -36,4 +36,27 @@ describe('API_PERMISSION 完整性', () => {
       .map(([api, perm]) => `${api} -> ${perm}`)
     expect(bad).toEqual([])
   })
+
+  it('on 不进 API_PERMISSION：api.on 是沙箱内本地注册，不走 RPC', () => {
+    expect('on' in API_PERMISSION).toBe(false)
+  })
+})
+
+describe('EVENT_PERMISSION 门槛', () => {
+  it('含正文/用户列表的事件必须 message:read', () => {
+    expect(EVENT_PERMISSION['message:new']).toBe('message:read')
+    expect(EVENT_PERMISSION['message:recall']).toBe('message:read')
+    expect(EVENT_PERMISSION['presence']).toBe('message:read')
+  })
+
+  it('面板/右键动作按对应 UI 权限收敛，不要求 message:read', () => {
+    // 纯面板插件（只有 ui:panel）必须能收到自己的面板动作——
+    // 这是不引入 message:read 的前提；右键动作同理归 ui:actions
+    expect(EVENT_PERMISSION['ui:action']).toBe('ui:panel')
+    expect(EVENT_PERMISSION['message:action']).toBe('ui:actions')
+  })
+
+  it('conv:open 故意不设门槛（payload 只有 convId）', () => {
+    expect('conv:open' in EVENT_PERMISSION).toBe(false)
+  })
 })

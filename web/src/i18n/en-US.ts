@@ -507,6 +507,10 @@ export default {
     installTitle: 'Install “{name}” v{version}',
     updateTitle: 'Update “{name}” to v{version}',
     permBody: 'This plugin requests:\n{perms}\n\nNetwork allowlist: {hosts}\n\n{desc}',
+    updatePermChangedBody:
+      'Note: the new version changes permissions or the network allowlist; the previous grant does not carry over.\n\nNew permissions:\n{perms}\n\nNetwork allowlist: {hosts}\n\n{desc}\n\nConfirm to apply the new version; declining disables the plugin until you re-enable it.',
+    declineDisable: 'Decline & disable',
+    declinedDisabled: 'Disabled “{name}”: the new version’s permissions were not confirmed. Re-enable it in plugin management.',
     confirmEnable: 'Confirm and enable',
     confirmUpdate: 'Update and reload',
     laterEnable: 'Not now',
@@ -729,7 +733,7 @@ export default {
     storagePublicBaseHint: 'e.g. https://cdn.example.com; leave blank to use Endpoint/Bucket',
     storageRestartHint:
       'ⓘ Fill in Endpoint and Bucket, save, then restart the service to switch to object storage. Existing files are not migrated.',
-    auditHint: 'Records console write operations: ban, force offline, role changes, plugins and announcements.',
+    auditHint: 'Records console write operations and plugin installs/upgrades: ban, force offline, role changes, plugin actions, installs and announcements.',
     auditTime: 'Time',
     auditAction: 'Action',
     auditTarget: 'Target',

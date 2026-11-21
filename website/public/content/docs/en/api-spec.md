@@ -159,8 +159,8 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | GET `/api/plugins` | — | `Plugin[]` (installedBy=me, createdAt desc) |
 | GET `/api/plugins/active` | — | `Plugin[]` (enabled=1 and global_disabled=0) |
 | GET `/api/plugins/:id/code` | — | `text/javascript` source (must be own install; global_disabled→403) |
-| POST `/api/plugins/upload` | body = plugin file bytes (`Content-Type: application/octet-stream`, ≤1MB); `?lang=ts\|js` selects the language, omitted means inferred from source features | `Plugin` (default enabled=false); hitting "own + same name" upgrades in place, response header `X-Plugin-Updated: true` |
-| POST `/api/plugins/from-url` | `{url}` | `Plugin`; §6 SSRF checks run before fetching; same-name upgrade semantics as above |
+| POST `/api/plugins/upload` | body = plugin file bytes (`Content-Type: application/octet-stream`, ≤1MB); `?lang=ts\|js` selects the language, omitted means inferred from source features | `Plugin` (default enabled=false); hitting "own + same name" upgrades in place, response header `X-Plugin-Updated: true`; when the upgraded `permissions` / `allowedHosts` set differs, the response also carries `X-Plugin-Perms-Changed: true` (the frontend must re-confirm); installs and upgrades are written to the audit table (`plugin_install` / `plugin_update`) |
+| POST `/api/plugins/from-url` | `{url}` | `Plugin`; §6 SSRF checks run before fetching; same-name upgrade semantics as above (incl. `X-Plugin-Perms-Changed` and auditing) |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | updated `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
@@ -412,5 +412,5 @@ Tests share directories with the code under test as `*_test.go`; cross-process i
 6. §7's rate limits are effective and return 429
 7. URL install rejects private / loopback / non-http(s) / oversized bodies (with tests)
 8. `go test ./...` all green (incl. `-tags integration`)
-9. Same-name upload upgrades in place (`id` unchanged, `X-Plugin-Updated: true`); after a site-admin global takedown, code serving for that plugin returns 403
+9. Same-name upload upgrades in place (`id` unchanged, `X-Plugin-Updated: true`; when `permissions` / `allowedHosts` change, `X-Plugin-Perms-Changed: true` plus a `plugin_update` audit row); after a site-admin global takedown, code serving for that plugin returns 403
 10. WS handshake refuses non-whitelisted Origins; `GET /api/version` returns the injected build info

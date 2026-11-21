@@ -68,14 +68,16 @@ async function installFromUrl() {
 }
 
 /** 安装 / 升级 → 弹权限清单，用户确认后才生效（§8.4） */
-async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: boolean }>) {
+async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: boolean; permsChanged: boolean }>) {
   installing.value = true
   let plugin: Plugin
   let updated = false
+  let permsChanged = false
   try {
     const r = await action()
     plugin = r.plugin
     updated = r.updated
+    permsChanged = r.permsChanged
   } catch (e) {
     void MessagePlugin.error(te(e) || t('plugin.installFailed'))
     installing.value = false
@@ -93,18 +95,42 @@ async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: b
     ? plugin.permissions.map((p) => permLabel(p)).join(', ')
     : t('plugin.noPerm')
   const hostText = plugin.allowedHosts.length ? plugin.allowedHosts.join(', ') : t('plugin.noPerm')
+  // 危险升级：插件正启用，而新代码的权限 / 域名白名单与用户上次授权不同。
+  // 旧授权是针对旧代码给的，不能默认延续到新代码上——确认前新代码不得运行，
+  // 用户拒绝则立即停用（旧运行时一并卸载），重新启用时才加载新版。
+  const needsReconfirm = updated && permsChanged && plugin.enabled
+  let confirmed = false
+  let declined = false
+  async function declineReconfirm() {
+    if (declined || confirmed || !plugin) return
+    declined = true
+    try {
+      await pluginsStore.setEnabled(plugin.id, false)
+      await host.reloadPlugin({ ...plugin, enabled: false })
+      void MessagePlugin.warning(t('plugin.declinedDisabled', { name: plugin.name }))
+    } catch (e) {
+      void MessagePlugin.error(te(e))
+    }
+  }
   const dialog = DialogPlugin.confirm({
     header: updated
       ? t('plugin.updateTitle', { name: plugin.name, version: plugin.version })
       : t('plugin.installTitle', { name: plugin.name, version: plugin.version }),
-    body: t('plugin.permBody', {
-      perms: permText,
-      hosts: hostText,
-      desc: plugin.description || '',
-    }),
+    body: needsReconfirm
+      ? t('plugin.updatePermChangedBody', {
+          perms: permText,
+          hosts: hostText,
+          desc: plugin.description || '',
+        })
+      : t('plugin.permBody', {
+          perms: permText,
+          hosts: hostText,
+          desc: plugin.description || '',
+        }),
     confirmBtn: updated ? t('plugin.confirmUpdate') : t('plugin.confirmEnable'),
-    cancelBtn: updated ? t('plugin.laterReload') : t('plugin.laterEnable'),
+    cancelBtn: needsReconfirm ? t('plugin.declineDisable') : updated ? t('plugin.laterReload') : t('plugin.laterEnable'),
     onConfirm: async () => {
+      confirmed = true
       try {
         if (updated) {
           // 升级：保持原启停状态；已启用则立即重载新代码
@@ -124,6 +150,8 @@ async function installConfirm(action: () => Promise<{ plugin: Plugin; updated: b
       }
       dialog.destroy()
     },
+    onCancel: declineReconfirm,
+    onClose: declineReconfirm,
   })
 }
 

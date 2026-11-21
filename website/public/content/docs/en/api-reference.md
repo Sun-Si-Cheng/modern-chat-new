@@ -202,8 +202,8 @@ The sandbox model and SDK are described in the plugin dev guide; below is the RE
 | GET `/api/plugins` | — | `Plugin[]` (my installs, newest first) |
 | GET `/api/plugins/active` | — | `Plugin[]` (enabled and not globally disabled) |
 | GET `/api/plugins/:id/code` | — | the `text/javascript` source; global_disabled→403 |
-| POST `/api/plugins/upload` | byte stream (`application/octet-stream`, ≤1MB), `?lang=ts\|js` | `Plugin` (enabled=false by default); same-name install by me = upgrade overwrite (header `X-Plugin-Updated: true`); TS is transpiled server-side by esbuild, syntax errors→400 with the line number |
-| POST `/api/plugins/from-url` | `{url}` | `Plugin`; SSRF checks run before the server-side fetch |
+| POST `/api/plugins/upload` | byte stream (`application/octet-stream`, ≤1MB), `?lang=ts\|js` | `Plugin` (enabled=false by default); same-name install by me = upgrade overwrite (header `X-Plugin-Updated: true`; when the `permissions` / `allowedHosts` set changes, also `X-Plugin-Perms-Changed: true`, frontend must re-confirm); installs / upgrades are audited (`plugin_install` / `plugin_update`); TS is transpiled server-side by esbuild, syntax errors→400 with the line number |
+| POST `/api/plugins/from-url` | `{url}` | `Plugin`; SSRF checks run before the server-side fetch; upgrade semantics as upload (headers and audit included) |
 | PATCH `/api/plugins/:id` | `{enabled}` | updated `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
 

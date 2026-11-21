@@ -224,21 +224,22 @@ Key points:
 
 | Permission | Capability |
 |---|---|
-| `message:read` | `api.on(...)` subscribe to events |
+| `message:read` | delivery of the `message:new` / `message:recall` / `presence` events (message bodies and user lists, see below) |
 | `message:send` | `api.send(...)` |
 | `message:render` | `api.registerMessageRenderer(...)` |
-| `ui:panel` | `api.addSidePanel(...)` |
-| `ui:actions` | `api.registerMessageAction(...)` |
+| `ui:panel` | `api.addSidePanel(...)` / `removeSidePanel()`, plus delivery of the plugin's own `ui:action` panel events |
+| `ui:actions` | `api.registerMessageAction(...)` and `message:action` delivery |
 | `conv:read` | `api.me()` / `api.conv.current()` / `api.conv.members()` / `api.messages.recent()` |
 | `ui:host` | `api.nav.*` / `api.toast()` |
 | `storage` | `api.storage.get/set` (per-plugin namespace, value ≤64KB) |
 | `net` | `api.request()` (also limited by `allowedHosts`) |
 | `ui:theme` | `api.theme.apply()` (`--td-*` tokens only) |
 
-Event dispatch is additionally filtered by permission (`EVENT_PERMISSION`):
+Event delivery is filtered by `EVENT_PERMISSION` (`api.on` registers locally inside the sandbox with no RPC — the gate lives entirely at the delivery layer):
 
 - The payloads of `message:new` / `message:recall` / `presence` contain message bodies or user lists, so they are only sent to plugins declaring `message:read`;
-- `conv:open` / `ui:action` carry no private body, so no extra restriction;
+- `ui:action` is delivered by panel actions to the plugin that owns the panel (creating a panel implies `ui:panel`; the gate is recorded in the event table to fix the semantics);
+- `conv:open` is intentionally ungated: the payload is only a conversation id with no content; gating it would push plugins to request broader permissions;
 - `message:action` is delivered only to **plugins that registered that action**, never broadcast;
 - `messages.recent` only returns visible messages already persisted and not pending/failed; the `content` of recalled messages is blanked so the recalled original is never handed to plugins.
 

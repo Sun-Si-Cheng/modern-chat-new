@@ -90,7 +90,7 @@ type McEvent =
 interface McApi {
   /** 宿主 API 级别（新增 SDK 能力时递增），插件据此做特性检测 */
   version: string
-  /** 监听事件（需 message:read 权限） */
+  /** 监听事件。门槛按事件而定：message:new/recall、presence 需 message:read；ui:action / message:action 只投递给注册者本身（见 docs/插件开发.md §5） */
   on(event: McEvent, fn: (payload: unknown) => void): void
   /** 发消息，msgType 可自定义（需 message:send） */
   send(convId: number, payload: unknown, msgType?: string): Promise<void>
