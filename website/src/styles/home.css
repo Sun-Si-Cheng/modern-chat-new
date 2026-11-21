@@ -569,7 +569,7 @@
     width: 100%;
     border-radius: var(--r-lg);
   }
-  /* 小屏让命令换行完整展示，截断成 "curl -fsSL https://gitee.com/Sun-Si-…" 没意义 */
+  /* 小屏让命令换行完整展示，截断成 "curl -fsSL https://github.com/modern-day-…" 没意义 */
   .hero__install code {
     white-space: normal;
     word-break: break-all;

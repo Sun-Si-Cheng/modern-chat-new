@@ -9,9 +9,9 @@ import (
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 const (

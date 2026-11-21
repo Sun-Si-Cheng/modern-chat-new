@@ -2,13 +2,13 @@
 # ============================================================================
 # ModernChat 一键安装脚本（宝塔面板风格）
 #
-# 流程：检测/安装运行环境（MySQL、nginx）→ 从 GitHub / Gitee Release 下载
+# 流程：检测/安装运行环境（MySQL、nginx）→ 从 GitHub Release 下载
 #       预编译发行包（含前端/后端/迁移/部署脚本）→ 自动建库并写入配置
 #       → systemd 常驻 + nginx 反代 → 输出可直接访问的站点链接。
 #       无需 Go / Node / git —— 服务器上不编译任何东西。
 #
 # 用法（root 或 sudo）：
-#   curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
+#   curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh -o install.sh
 #   bash install.sh                          # 全程交互问答
 #
 #   # 也可以预设参数免交互（未给的项仍会询问）：
@@ -18,13 +18,13 @@
 #   BACKEND_PORT=8080 \
 #   DB_MODE=auto \                # auto=本机自动装MySQL | external=已有实例
 #   DB_HOST=127.0.0.1 DB_PORT=3306 DB_ROOT_USER=root DB_ROOT_PASS=xxx \
-#   RELEASE_SOURCE=gitee \        # gitee(默认，国内快) | github
 #   RELEASE_TAG=latest \          # latest=最新 Release | 指定 tag 如 v0.10.3
+#   GITHUB_TOKEN=ghp_xxx \        # 可选：GitHub API 令牌（匿名限流 60 次/小时/IP）
 #   bash install.sh
 #
 # 发行包资产（由 scripts/package-release.sh 产出并上传 Release 附件）：
 #   modernchat-<版本>-linux-<架构>.tar.gz（bin/ + web/dist/ + server/migrations/ + deploy/ + scripts/update.sh）+ .sha256
-#   GitHub 仓库与 Gitee 不同时，用 RELEASE_REPO_GITHUB=<owner>/<repo> 指定。
+#   Release 托管在别的仓库时，用 RELEASE_REPO_GITHUB=<owner>/<repo> 指定。
 #
 # 断点续跑：安装失败后重新运行同一命令，已完成的阶段自动跳过，参数不再重复
 # 询问（进度与参数存 /var/lib/modernchat/install-state）。--force 全部重跑。
@@ -43,10 +43,10 @@
 set -euo pipefail
 
 # ---------------- 可预设参数 ----------------
-RELEASE_SOURCE="${RELEASE_SOURCE:-gitee}"    # gitee | github
-RELEASE_REPO_GITEE="${RELEASE_REPO_GITEE:-Sun-Si-Cheng/modern-chat-new}"
-RELEASE_REPO_GITHUB="${RELEASE_REPO_GITHUB:-Sun-Si-Cheng/modern-chat-new}"
+RELEASE_REPO_GITHUB="${RELEASE_REPO_GITHUB:-modern-day-team/modern-chat-new}"
 RELEASE_TAG="${RELEASE_TAG:-latest}"         # latest | 指定 tag（v0.10.3）
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"             # GitHub API 令牌（可选）：匿名 api.github.com
+                                             # 限流 60 次/小时/IP，配置后提升到 5000 次/小时
 INSTALL_DIR="${INSTALL_DIR:-}"
 DOMAIN="${DOMAIN:-}"
 SITE_PORT="${SITE_PORT:-}"
@@ -64,16 +64,8 @@ INSTALL_NGINX="${INSTALL_NGINX:-}"   # yes/no：没有 nginx 时是否自动安�
 FORCE="${FORCE:-0}"                  # 1=忽略断点记录，全部阶段重跑
 
 # Release API / 下载前缀（也可直接用 RELEASE_API_URL / RELEASE_DL_URL 显式覆盖）
-if [ -z "${RELEASE_API_URL:-}" ]; then
-  if [ "$RELEASE_SOURCE" = "github" ]; then
-    RELEASE_API_URL="https://api.github.com/repos/${RELEASE_REPO_GITHUB}/releases/latest"
-    RELEASE_DL_URL="https://github.com/${RELEASE_REPO_GITHUB}/releases/download"
-  else
-    RELEASE_API_URL="https://gitee.com/api/v5/repos/${RELEASE_REPO_GITEE}/releases/latest"
-    RELEASE_DL_URL="https://gitee.com/${RELEASE_REPO_GITEE}/releases/download"
-  fi
-fi
-RELEASE_DL_URL="${RELEASE_DL_URL:-https://gitee.com/${RELEASE_REPO_GITEE}/releases/download}"
+RELEASE_API_URL="${RELEASE_API_URL:-https://api.github.com/repos/${RELEASE_REPO_GITHUB}/releases/latest}"
+RELEASE_DL_URL="${RELEASE_DL_URL:-https://github.com/${RELEASE_REPO_GITHUB}/releases/download}"
 
 # ---------------- 目录约定 ----------------
 STATE_DIR="/var/lib/modernchat"          # 断点续跑状态与参数（600 权限）
@@ -88,6 +80,20 @@ info()  { printf "${C_G}==>${C_0} %s\n" "$*"; }
 warn()  { printf "${C_Y}警告:${C_0} %s\n" "$*"; }
 err()   { printf "${C_R}错误:${C_0} %s\n" "$*" >&2; }
 die()   { err "$*"; err "已完成阶段已记录；重新运行同一命令将从当前阶段继续（已完成阶段自动跳过，--force 全部重跑）"; exit 1; }
+# curl 附加认证：仅 GitHub 官方域携带令牌（防匿名 API 限流；私有仓库附件下载也需要），
+# 其他目标（探测公网 IP、健康检查）不携带，避免令牌外泄。
+gh_curl() {
+  local url="${!#}" # 最后一个参数是目标 URL
+  case "$url" in
+    https://github.com/* | https://api.github.com/*) ;;
+    *) curl "$@"; return $? ;;
+  esac
+  if [ -n "$GITHUB_TOKEN" ]; then
+    curl -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+    return $?
+  fi
+  curl "$@"
+}
 ask()   { # ask "提示" "默认值" -> 回显到 REPLY
   local prompt="$1" def="${2:-}"
   if [ -n "$def" ]; then
@@ -364,14 +370,14 @@ SQL
 mark_stage db
 
 # ============================================================================
-# 阶段 3：下载发行包（GitHub / Gitee Release，含前端/后端/迁移/部署脚本）
+# 阶段 3：下载发行包（GitHub Release，含前端/后端/迁移/部署脚本）
 # ============================================================================
 CURRENT_STAGE="下载发行版(release)"
 stage_done release && ! [ "$FORCE" = "1" ] && { skip_stage "下载发行版" release; } || {
   # 解析版本：latest → 查 Release API；指定 tag 直接用
   if [ "$RELEASE_TAG" = "latest" ]; then
     info "查询最新 Release：$RELEASE_API_URL"
-    RESP="$(curl -fsS --max-time 30 "$RELEASE_API_URL")" || die "查询 Release 失败（检查网络 / RELEASE_SOURCE）"
+    RESP="$(gh_curl -fsS --max-time 30 "$RELEASE_API_URL")" || die "查询 Release 失败（检查网络；403 多为 GitHub API 限流，可配置 GITHUB_TOKEN）"
     TAG_NAME="$(printf '%s' "$RESP" | grep -o '"tag_name"[^,}]*' | head -n1 | sed 's/.*: *"//;s/"$//')"
     [ -n "$TAG_NAME" ] || die "未解析到最新 tag（仓库是否已发布 Release？见 scripts/package-release.sh）"
   else
@@ -383,11 +389,11 @@ stage_done release && ! [ "$FORCE" = "1" ] && { skip_stage "下载发行版" rel
   ASSET="modernchat-${TAG_NAME#v}-linux-$GO_ARCH.tar.gz"
   info "下载 $ASSET …"
   mkdir -p "$INSTALL_DIR.tmp"
-  curl -fL --retry 3 -o "$INSTALL_DIR.tmp/$ASSET" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET" \
+  gh_curl -fL --retry 3 -o "$INSTALL_DIR.tmp/$ASSET" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET" \
     || die "下载失败：$RELEASE_DL_URL/${TAG_NAME}/$ASSET（Release 是否有该架构附件？）"
 
   info "校验 sha256 …"
-  if curl -fsSL --max-time 30 -o "$INSTALL_DIR.tmp/$ASSET.sha256" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET.sha256" 2>/dev/null; then
+  if gh_curl -fsSL --max-time 30 -o "$INSTALL_DIR.tmp/$ASSET.sha256" "$RELEASE_DL_URL/${TAG_NAME}/$ASSET.sha256" 2>/dev/null; then
     EXPECTED="$(awk '{print $1}' "$INSTALL_DIR.tmp/$ASSET.sha256")"
     ACTUAL="$(sha256sum "$INSTALL_DIR.tmp/$ASSET" | awk '{print $1}')"
     # 附件可能被平台重定向到 HTML 页（反盗链/登录页）；64 位十六进制才算有效清单
@@ -461,6 +467,8 @@ SMTP_FROM=
 # 在线更新（Release 发行版）：后台图形化更新与 scripts/update.sh 共用
 RELEASE_API_URL=$RELEASE_API_URL
 RELEASE_DL_URL=$RELEASE_DL_URL
+# GitHub API 令牌（可选）：在线更新查询 Release 用；留空 = 匿名（60 次/小时/IP）
+GITHUB_TOKEN=$GITHUB_TOKEN
 ENV
   chmod 600 server/.env
   info "已写入 server/.env（MIGRATE=true，首次启动自动建表）"

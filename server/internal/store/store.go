@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	gormlog "gorm.io/gorm/logger"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // gormLogConfig GORM 日志策略：

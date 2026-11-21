@@ -1,0 +1,59 @@
+# ============================================================================
+# 自动发版：推送 v* tag → 校验版本一致性 → 打包双架构发行附件 → 发布 GitHub Release
+#
+# 产物（由 scripts/package-release.sh 生成，作为 Release 附件上传）：
+#   modernchat-<版本>-linux-amd64.tar.gz + .sha256
+#   modernchat-<版本>-linux-arm64.tar.gz + .sha256
+#
+# 发布后，install.sh / 后台图形化更新 / scripts/update.sh 即可从 Release 下载更新。
+# 发版步骤：
+#   1. 更新 CHANGELOG.md（基准版本）并对齐 web / website 的 package.json 与 links.ts
+#      （sh scripts/check-version.sh 校验）
+#   2. git tag v0.x.y && git push origin v0.x.y
+# ============================================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 创建 Release 与上传附件需要写权限
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # 基准 = CHANGELOG.md 最新正式版本；不一致直接失败，防止打出对不上号的发行包
+      - name: 版本一致性校验
+        run: sh scripts/check-version.sh
+
+      # 经 env 间接引用 tag 名，避免 ${{ }} 直接插入 shell 带来注入面
+      - name: 打包发行附件
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: bash scripts/package-release.sh "$TAG_NAME"
+
+      - name: 发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          ls -la dist-release/
+          # Release 已存在（如重跑 / 手动建过）时退化为覆盖上传附件，保证可重复执行
+          gh release create "$TAG_NAME" --title "$TAG_NAME" --generate-notes dist-release/* \
+            || gh release upload "$TAG_NAME" --clobber dist-release/*

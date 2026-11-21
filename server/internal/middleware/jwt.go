@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	jwt "github.com/golang-jwt/jwt/v5"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 const TokenTTL = 7 * 24 * time.Hour

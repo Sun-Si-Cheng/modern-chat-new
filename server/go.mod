@@ -1,4 +1,4 @@
-module gitee.com/Sun-Si-Cheng/modern-chat-new/server
+module github.com/modern-day-team/modern-chat-new/server
 
 go 1.26.0
 

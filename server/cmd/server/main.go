@@ -16,13 +16,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/logx"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/router"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/ws"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/logx"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/router"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/ws"
 )
 
 func main() {
@@ -144,7 +144,8 @@ func main() {
 	}
 
 	// 图形化更新（站长后台）：WEB_UPDATE=false 关闭；部署能力由 Updater.Available()
-	// 检测（发行版模式需 RELEASE_API_URL/RELEASE_DL_URL + systemd；源码模式需 .git）。
+	// 检测（systemd 部署；更新源优先 RELEASE_API_URL/RELEASE_DL_URL，未配置时按
+	// RELEASE_REPO_GITHUB 或默认官方仓库走 GitHub Release，git clone 部署仍走源码模式）。
 	// Docker / 裸机自动不可用。
 	var updater *service.Updater
 	if cfg.WebUpdate {
@@ -153,12 +154,17 @@ func main() {
 		if wdErr == nil {
 			root = filepath.Dir(wd)
 		}
-		updater = service.NewUpdater(root, cfg.Port, cfg.ReleaseAPIURL, cfg.ReleaseDLURL)
+		updater = service.NewUpdater(root, cfg.Port, service.ReleaseSource{
+			API:   cfg.ReleaseAPIURL,
+			DL:    cfg.ReleaseDLURL,
+			Repo:  cfg.ReleaseRepoGithub,
+			Token: cfg.GithubToken,
+		})
 		if updater.Available() {
-			slog.Info("web update enabled", "mode", updater.Mode(), "root", updater.RootDir(), "port", updater.Port())
+			slog.Info("web update enabled", "mode", updater.Mode(), "repo", updater.Repo(), "root", updater.RootDir(), "port", updater.Port())
 		}
 	} else {
-		updater = service.NewUpdater("", cfg.Port, "", "")
+		updater = service.NewUpdater("", cfg.Port, service.ReleaseSource{})
 		slog.Info("web update disabled (WEB_UPDATE=false)")
 	}
 

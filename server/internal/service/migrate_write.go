@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

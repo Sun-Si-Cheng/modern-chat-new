@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // TestBcryptAcceptsLegacy2yHash 证明 PHP 旧站的 `$2y$` bcrypt 哈希可以被

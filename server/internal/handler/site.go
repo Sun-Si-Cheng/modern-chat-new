@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 // SiteHandler 公开的站点信息（无需登录）。

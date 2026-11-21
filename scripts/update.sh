@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ModernChat 一键升级：从 Gitee 拉取最新代码 → 原子替换产物 → 热更新（不停机）
+# ModernChat 一键升级：从远端仓库拉取最新代码 → 原子替换产物 → 热更新（不停机）
 #
 # 用法（在仓库根目录）：
 #   ./scripts/update.sh                 # 拉 main，默认热更新（不停机）
@@ -42,7 +42,7 @@ touch "$LOG_FILE"; ln -sfn "$LOG_FILE" "$LOG_DIR/update-latest.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 info "日志：$LOG_FILE"
 
-MODULE="gitee.com/Sun-Si-Cheng/modern-chat-new/server"
+MODULE="github.com/modern-day-team/modern-chat-new/server"
 HOTSTATE="$ROOT/.hotupdate"          # BASE_PORT / ACTIVE_PORT（install.sh 生成，update.sh 维护）
 NGINX_CANDIDATES=(
   /etc/nginx/conf.d/modernchat.conf

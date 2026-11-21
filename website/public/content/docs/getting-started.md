@@ -127,12 +127,12 @@ modernchat-new/
 全新 Linux 服务器（root）**一条命令**完成「装环境 → 下载发行版 → 建库 → 部署 → 给出访问地址」：
 
 ```bash
-curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh | bash
+curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh | bash
 ```
 
-脚本自动检测服务器架构（amd64/arm64）与发行版（apt/dnf/yum），下载对应的预编译发行包——服务器**无需 Go / Node / git**，全程不编译。交互问答都有默认值，直接回车即可全自动；也可环境变量预设（`RELEASE_SOURCE=gitee|github` 选源、`RELEASE_TAG` 指定版本、`DOMAIN`/`DB_MODE` 等）。详见 [运维手册 §3.1](docs/运维手册.md)。
+脚本自动检测服务器架构（amd64/arm64）与发行版（apt/dnf/yum），下载对应的预编译发行包——服务器**无需 Go / Node / git**，全程不编译。交互问答都有默认值，直接回车即可全自动；也可环境变量预设（`RELEASE_TAG` 指定版本、`DOMAIN`/`DB_MODE` 等）。详见 [运维手册 §3.1](docs/运维手册.md)。
 
-发版流程：更新 `CHANGELOG.md` 并同步 `web/`、`website/` 的版本号后，先运行 `sh scripts/check-version.sh` 确认一致（以 CHANGELOG 最新正式版本为基准），再打 tag 并在构建机运行 `scripts/package-release.sh`，把 `dist-release/` 下的 tar.gz 与 .sha256 上传为 Release 附件（Gitee / GitHub 都可；后台图形化更新与安装脚本按 `RELEASE_SOURCE` 自动下载新版本）。
+发版流程：更新 `CHANGELOG.md` 并同步 `web/`、`website/` 的版本号后，先运行 `sh scripts/check-version.sh` 确认一致（以 CHANGELOG 最新正式版本为基准），再打 tag 并在构建机运行 `scripts/package-release.sh`，把 `dist-release/` 下的 tar.gz 与 .sha256 上传为 GitHub Release 附件（后台图形化更新与安装脚本自动下载新版本）。
 
 ### 方式一：Docker 一键起后端（本地开发）
 
@@ -325,7 +325,7 @@ UI 描述仅接受 8 个组件：`text / image / button / input / card / list / 
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
 ```
 
-- **发行版部署（install.sh）**：从 `RELEASE_API_URL` 查最新 tag → 下载对应 tar.gz + `.sha256` 校验 → 原子替换二进制 / 前端产物 → 优雅重启（蓝绿双实例，在线用户自动重连并补齐消息）。
+- **发行版部署（install.sh）**：从 `RELEASE_API_URL`（未配置时按 `RELEASE_REPO_GITHUB` / 默认官方仓库派生）查最新 tag → 下载对应 tar.gz + `.sha256` 校验 → 原子替换二进制 / 前端产物 → 优雅重启（蓝绿双实例，在线用户自动重连并补齐消息）。
 - **源码部署（git clone）**：`git pull --ff-only`（本地有分叉会直接报错，不自动合并）→ `go build`（注入版本号）→ `npm ci && npm run build` → 蓝绿切换。
 
 Windows 本地开发不走升级脚本：拉取后直接重新构建运行即可。
@@ -347,7 +347,7 @@ Windows 本地开发不走升级脚本：拉取后直接重新构建运行即可
 
 ## 仓库
 
-- 远端：<https://gitee.com/Sun-Si-Cheng/modern-chat-new>（分支 `main`）
+- 远端：<https://github.com/modern-day-team/modern-chat-new>（分支 `main`）
 - 提交约定：每完成一个模块 `git add -A` → commit → push
 
 ## 许可证

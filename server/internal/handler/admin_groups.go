@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 // 后台群聊管理（只读，契约见 docs/旧站迁移方案.md §8）。

@@ -61,7 +61,7 @@ const columns = [
 
       <div class="foot__col">
         <h3>{{ t('footer.repo') }}</h3>
-        <a :href="REPO" target="_blank" rel="noopener">Gitee</a>
+        <a :href="REPO" target="_blank" rel="noopener">GitHub</a>
         <a :href="RELEASES" target="_blank" rel="noopener">{{ t('footer.releases') }}</a>
         <a :href="`${REPO}/blob/main/LICENSE`" target="_blank" rel="noopener">LICENSE</a>
         <a :href="`${REPO}/blob/main/CHANGELOG.md`" target="_blank" rel="noopener">CHANGELOG</a>

@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version"
+	"github.com/modern-day-team/modern-chat-new/server/internal/version"
 )
 
 // Health 探活端点（免鉴权）。

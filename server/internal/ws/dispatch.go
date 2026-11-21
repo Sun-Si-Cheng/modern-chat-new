@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 // EditWindow 消息编辑时限（与前端 canEdit 的判断保持一致）。

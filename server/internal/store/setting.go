@@ -8,8 +8,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // 已知配置键。只有这里列出的键才能通过后台写入，

@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 // AdminUpdateHandler 站长后台的图形化更新（检查 / 启动 / 状态轮询）。

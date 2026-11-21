@@ -123,7 +123,7 @@
     "eco.3t": "更新日志",
     "eco.3d": "每个版本的新增、修复与安全变更都记在这里。",
     "eco.4t": "源码仓库",
-    "eco.4d": "Go + Vue 3 + MySQL，Apache-2.0，Gitee 上持续更新。",
+    "eco.4d": "Go + Vue 3 + MySQL，Apache-2.0，GitHub 上持续更新。",
 
     "band.title": "十分钟后，你自己的实例就起来了",
     "band.sub": "Apache-2.0 · 单实例部署 · 数据完全在你手里",
@@ -365,7 +365,7 @@
     "eco.3t": "Changelog",
     "eco.3d": "Every feature, fix and security change, by version.",
     "eco.4t": "Source",
-    "eco.4d": "Go + Vue 3 + MySQL, Apache-2.0, actively developed on Gitee.",
+    "eco.4d": "Go + Vue 3 + MySQL, Apache-2.0, actively developed on GitHub.",
 
     "band.title": "Your own instance, ten minutes from now",
     "band.sub": "Apache-2.0 · single instance · your data stays yours",

@@ -11,7 +11,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // ErrPushGone 端点已失效（浏览器卸载/清空站点数据），调用方应删除该订阅。

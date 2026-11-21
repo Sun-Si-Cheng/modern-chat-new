@@ -754,6 +754,9 @@ export default {
     updateRefresh: 'Refresh status',
     updateRemoteVersion: 'Latest version',
     updateRemoteMsg: 'Latest commit',
+    updateMode: 'Update mode',
+    updateSource: 'Update source',
+    updateNotes: 'Release notes',
     updateStart: 'Update now',
     updateStartHint:
       'The service restarts briefly during the update; online users reconnect automatically and no messages are lost. Build takes about 1-5 minutes.',

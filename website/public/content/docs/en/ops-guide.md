@@ -52,7 +52,9 @@ The backend reads all config from environment variables (`server/internal/config
 | `SMTP_FROM` | `modernchat@localhost` | no | sender, **QQ / 163 require it to equal `SMTP_USER`**, otherwise mail is rejected. **Editable in the admin console** |
 | `LOG_RESET_LINK` | `false` under release, `true` otherwise | no | whether to write the **full reset link** into the log when SMTP is unset. Off by default in production: a usable token in the log is an account-takeover entry point (log platforms and backups can see it). Turn it on explicitly only when you really need to fetch the link from the log |
 | `WEB_UPDATE` | `true` | no | site admin console "online update" switch. When `false`, all `/api/admin/update/*` endpoints are unavailable; Docker / bare metal deployments are unavailable automatically (see §4.2) |
-| `RELEASE_API_URL` / `RELEASE_DL_URL` | empty | no | release mode: latest-release version API and download prefix, written into `.env` by `install.sh`; when both are empty, source-code git mode is used |
+| `RELEASE_API_URL` / `RELEASE_DL_URL` | empty | no | release mode: GitHub latest-release API and download prefix, written into `.env` by `install.sh`; when both are empty, a `.git` install directory uses source mode, otherwise the addresses are derived from `RELEASE_REPO_GITHUB` (or the default official repo) as a fallback |
+| `RELEASE_REPO_GITHUB` | `modern-day-team/modern-chat-new` | no | repo hosting the releases (`owner/repo`): derives the update source when the explicit URLs are unset; point it at a fork / mirror repo if needed |
+| `GITHUB_TOKEN` | empty | no | optional GitHub API token: anonymous `api.github.com` calls are limited to 60/hour/IP, a token raises it to 5000/hour and enables private-repo checks. Sent only with GitHub-host update requests, never logged |
 | `METRICS_TOKEN` | empty | no | when non-empty, `GET /api/metrics` requires `Authorization: Bearer <token>`; when empty, same-site anonymous scraping is allowed — set it for internet-facing deployments |
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | no | database backup output directory |
 | `BACKUP_INTERVAL_HOURS` | `0` | no | automatic backup interval in hours; `0` = only the manual "Backup now" in the admin console |
@@ -169,14 +171,14 @@ Paths kept available (deliberate by design — do not change):
 On a **fresh Linux server** (Ubuntu / Debian / CentOS family, root):
 
 ```bash
-curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
+curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh -o install.sh
 bash install.sh
 ```
 
 The script does the whole flow "BT Panel style" and only asks a few questions:
 
 1. **Environment self-check and gap filling**: installs whatever is missing — curl/tar basics, MySQL 8, nginx. **No Go / Node / git needed** (no local compilation anymore).
-2. **Download the release**: fetch the prebuilt package `modernchat-<version>-linux-<arch>.tar.gz` from GitHub / Gitee Releases (sha256 verified; contains the backend binary + frontend dist + migration SQL + deploy scripts). `RELEASE_SOURCE=gitee|github` picks the source, `RELEASE_TAG=v0.10.3` pins the version (default latest).
+2. **Download the release**: fetch the prebuilt package `modernchat-<version>-linux-<arch>.tar.gz` from GitHub Releases (sha256 verified; contains the backend binary + frontend dist + migration SQL + deploy scripts). `RELEASE_TAG=v0.10.3` pins the version (default latest).
 3. **Automatic database creation**: MySQL is installed automatically when absent locally; for an existing instance (BT Panel / cloud database) choose "external" and fill in the connection info. Creates the `modernchat` database + a dedicated account, creating both `'localhost'` and `'%'` hosts to work around BT Panel restrictions. The **application DB password** can be preset with the `DB_PASS` environment variable or entered interactively; pressing Enter generates a random password — the final summary **explicitly prints** the database account and password (also stored in `server/.env` and `/var/lib/modernchat/install-state`, both 600; install logs are 600 too, root-readable only). In automatic-install mode MySQL root is **passwordless (auth_socket)**; the summary gives the command to set a root password (setting one does not affect the app, which uses the dedicated account).
 4. **Configuration and persistence**: generates `JWT_SECRET`, writes `server/.env` (including `RELEASE_API_URL` / `RELEASE_DL_URL` for online updates), registers the systemd service `modernchat@<port>`, generates and loads the nginx config (static hosting + `/api` proxy + `/ws` upgrade + `/ws` access log off).
 5. **Print the site link**: with a domain → `http://domain` (with the port when not 80); without one → `http://public-IP:port`. The first registered account automatically becomes the site admin.
@@ -186,15 +188,14 @@ Environment variables support non-interactive runs (unset items are still asked)
 ```bash
 INSTALL_DIR=/opt/modernchat DOMAIN=chat.example.com SITE_PORT=80 BACKEND_PORT=8080 \
 DB_MODE=external DB_HOST=127.0.0.1 DB_PORT=3306 DB_ROOT_USER=root DB_ROOT_PASS=xxx \
-RELEASE_SOURCE=gitee RELEASE_TAG=latest bash install.sh
+RELEASE_TAG=latest bash install.sh
 ```
 
 **Release flow** (publishing a new version for install / update):
 
 1. Update `CHANGELOG.md` to finalize the version, align the `package.json` / `package-lock.json` of `web/` and `website/` plus the official site hero badge to the same version; run `sh scripts/check-version.sh` and make it pass (the baseline is the latest stable version in CHANGELOG);
-2. Tag (e.g. `v0.10.3`) and push;
-3. Run `scripts/package-release.sh` on a build machine (needs Go + Node) — it produces `dist-release/modernchat-<version>-linux-{amd64,arm64}.tar.gz` and the matching `.sha256`;
-4. Upload these files as Gitee / GitHub Release assets (upload tags and assets on both platforms; the install script picks a source by `RELEASE_SOURCE`).
+2. Tag (e.g. `v0.10.3`) and push — **pushing the tag triggers GitHub Actions to do the next two steps automatically** (`.github/workflows/release.yml`: verify version consistency → run `scripts/package-release.sh` to package dual-arch assets → publish the GitHub Release and upload assets);
+3. Manual publishing (without Actions, or when re-packaging): run `scripts/package-release.sh` on a build machine (needs Go + Node) — it produces `dist-release/modernchat-<version>-linux-{amd64,arm64}.tar.gz` and the matching `.sha256`, then upload them as GitHub Release assets (the install script and the console's online update download from here automatically).
 
 Notes:
 
@@ -227,7 +228,7 @@ System-level components such as Go / Node / MySQL / nginx are not uninstalled (o
 
 ```bash
 # 1. Pull the code
-git clone https://gitee.com/Sun-Si-Cheng/modern-chat-new.git && cd modern-chat-new
+git clone https://github.com/modern-day-team/modern-chat-new.git && cd modern-chat-new
 
 # 2. Prepare the database
 mysql -uroot -p -e "CREATE DATABASE modernchat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -304,8 +305,8 @@ The site admin console adds an "Online update" tab: check for updates → one-cl
 
 | Mode | Trigger | Behavior |
 |---|---|---|
-| **Release** (install.sh default) | `server/.env` has `RELEASE_API_URL` / `RELEASE_DL_URL` | query the latest Release tag → download the prebuilt package → sha256 verify → atomically replace artifacts → restart. **No Go / Node / git on the server** |
-| **Source** (git clone deployment) | the install directory has `.git` and no RELEASE_* configured | git pull → local build (Go / Node required on the server) → atomic replace → restart |
+| **Release** (install.sh default) | `server/.env` has `RELEASE_API_URL` / `RELEASE_DL_URL`; or no `.git` and nothing configured (addresses derived from `RELEASE_REPO_GITHUB` / the default official repo) | query the latest Release tag → download the prebuilt package → sha256 verify → atomically replace artifacts → restart. **No Go / Node / git on the server** |
+| **Source** (git clone deployment) | the install directory has `.git` and no explicit RELEASE URLs | git pull → local build (Go / Node required on the server) → atomic replace → restart |
 
 Equivalent to `scripts/update.sh` (release mode shares the same path as the graphical update: download a new Release, verify, replace, restart; source mode supports blue-green hot updates). Boundaries:
 
@@ -325,13 +326,13 @@ Security boundaries: only the site admin (`middleware.Admin`) can trigger it; co
 - **Attachment persistence in containers**: `docker-compose.yml` does **not** mount a volume for `DATA_DIR` (default `data`) by default, so locally uploaded attachments are lost after `docker compose up -d --build` rebuilds the container. Production must mount a persistent volume or switch to S3; the `/uploads` static service itself works fine inside the container.
 - `--no-restart`: only builds and atomically replaces artifacts. The running old process keeps the old version; the switch completes on the next `update.sh` run (without arguments).
 
-The script: pulls Gitee → builds the backend (version injected) → builds the frontend → switches/restarts the service. Manual equivalent:
+The script: pulls the remote repo → builds the backend (version injected) → builds the frontend → switches/restarts the service. Manual equivalent:
 
 ```bash
 cd server
-go build -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=v1.0.0 \
-  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
-  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=$(date -u +%FT%TZ)" \
+go build -ldflags "-X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=v1.0.0 \
+  -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
+  -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=$(date -u +%FT%TZ)" \
   -o ../bin/modernchat-server ./cmd/server
 ```
 

@@ -127,12 +127,12 @@ modernchat-new/
 On a fresh Linux server (root), **one command** completes "install environment → download the release build → create the database → deploy → print the access URL":
 
 ```bash
-curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh | bash
+curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh | bash
 ```
 
-The script automatically detects the server architecture (amd64/arm64) and distro (apt/dnf/yum), then downloads the matching prebuilt release package — the server **needs no Go / Node / git**, and nothing is compiled at any point. Every interactive question has a default, so pressing Enter all the way gives a fully automatic run; values can also be preset via environment variables (`RELEASE_SOURCE=gitee|github` selects the source, `RELEASE_TAG` pins the version, `DOMAIN`/`DB_MODE` etc.). See [Ops Manual §3.1](docs/运维手册.md).
+The script automatically detects the server architecture (amd64/arm64) and distro (apt/dnf/yum), then downloads the matching prebuilt release package — the server **needs no Go / Node / git**, and nothing is compiled at any point. Every interactive question has a default, so pressing Enter all the way gives a fully automatic run; values can also be preset via environment variables (`RELEASE_TAG` pins the version, `DOMAIN`/`DB_MODE` etc.). See [Ops Manual §3.1](docs/运维手册.md).
 
-Release flow: update `CHANGELOG.md` and sync the version numbers in `web/` and `website/`, then run `sh scripts/check-version.sh` to confirm they match (the latest formal version in CHANGELOG is the baseline), then tag and run `scripts/package-release.sh` on the build machine, and upload the tar.gz and .sha256 from `dist-release/` as Release assets (Gitee / GitHub both work; the console's graphical update and the install script download the new version automatically according to `RELEASE_SOURCE`).
+Release flow: update `CHANGELOG.md` and sync the version numbers in `web/` and `website/`, then run `sh scripts/check-version.sh` to confirm they match (the latest formal version in CHANGELOG is the baseline), then tag and push — GitHub Actions (`.github/workflows/release.yml`) automatically packages the tar.gz and .sha256 from `dist-release/` and publishes the GitHub Release (the console's graphical update and the install script download the new version automatically). For manual publishing, run `scripts/package-release.sh` on a build machine and upload the assets yourself.
 
 ### Option 1: Docker one-command backend (local development)
 
@@ -325,7 +325,7 @@ Upgrade with **one command** on the deploy machine; the script detects the deplo
 RESTART_CMD="sudo systemctl restart modernchat" ./scripts/update.sh
 ```
 
-- **Release deployment (install.sh)**: look up the latest tag from `RELEASE_API_URL` → download the matching tar.gz + `.sha256` verification → atomically replace the binary / frontend artifacts → graceful restart (blue-green pair of instances; online users reconnect automatically and catch up on messages).
+- **Release deployment (install.sh)**: look up the latest tag from `RELEASE_API_URL` (or, when unset, the addresses derived from `RELEASE_REPO_GITHUB` / the default official repo) → download the matching tar.gz + `.sha256` verification → atomically replace the binary / frontend artifacts → graceful restart (blue-green pair of instances; online users reconnect automatically and catch up on messages).
 - **Source deployment (git clone)**: `git pull --ff-only` (errors out on local divergence, never auto-merges) → `go build` (version injected) → `npm ci && npm run build` → blue-green switch.
 
 Windows local development does not use the upgrade script: pull and rebuild manually.
@@ -347,7 +347,7 @@ Windows local development does not use the upgrade script: pull and rebuild manu
 
 ## Repository
 
-- Remote: <https://gitee.com/Sun-Si-Cheng/modern-chat-new> (branch `main`)
+- Remote: <https://github.com/modern-day-team/modern-chat-new> (branch `main`)
 - Commit convention: after finishing each module, `git add -A` → commit → push
 
 ## License

@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 	"gorm.io/gorm"
 )
 

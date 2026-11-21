@@ -11,9 +11,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
 )
 
 // OpsHandler 运维：附件统计/孤儿清理与数据库备份。

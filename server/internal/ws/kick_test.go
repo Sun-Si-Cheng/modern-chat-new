@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // modelUserForTest notifyPresence 用的最小 User 实例。

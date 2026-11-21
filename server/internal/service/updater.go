@@ -13,24 +13,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version"
+	"github.com/modern-day-team/modern-chat-new/server/internal/version"
 )
 
 // Updater 站长后台的图形化更新（web update）。两种模式：
 //
 //   - 发行版模式（RELEASE_API_URL / RELEASE_DL_URL 已配置，install.sh 默认）：
-//     从 GitHub / Gitee Release 下载预编译包 → sha256 校验 → 原子替换产物 → 重启。
-//     服务器无需 Go / Node / git。
-//   - 源码模式（两者为空，git clone 部署）：git pull → 本地编译 → 原子替换 → 重启。
+//     从 GitHub Release 下载预编译包 → sha256 校验 → 原子替换产物 → 重启。
+//     服务器无需 Go / Node / git。两者都未配置时按 RELEASE_REPO_GITHUB（或默认
+//     官方仓库）派生地址兜底——非 git clone 部署开箱即用，无需先跑 install.sh。
+//   - 源码模式（未显式配置 URL 且 rootDir 是 git clone 部署）：git pull →
+//     本地编译 → 原子替换 → 重启。
 //
 // 共同安全边界（设计文档原稿反对应用内升级，用户明确要求提供；此实现收敛风险面）：
 //   - 仅站长可触发（router 的 Admin 中间件），操作写审计；
-//   - 命令/URL 全部固定（发行版模式只请求配置好的 API 与下载前缀，版本号来自
+//   - 命令/URL 全部固定（发行版模式只请求配置好或派生的 API 与下载前缀，版本号来自
 //     Release 服务端返回；源码模式分支锁 origin/main），无用户输入注入面；
 //   - 仅支持 install.sh 的 systemd 模板单元部署（进程内检测），Docker / 裸机
 //     直接返回"不可用"，避免在容器里半更新；
@@ -39,9 +42,12 @@ type Updater struct {
 	rootDir string // 仓库根 / 安装目录（server 的父目录）
 	port    string // 当前实例端口（systemd 单元名 modernchat@<port>）
 
-	// 发行版模式（两者都非空时启用；源码模式两者为空）
-	releaseAPI string // releases/latest API（Gitee / GitHub）
+	// 发行版模式（显式配置或按仓库派生；源码 git 模式不使用）
+	releaseAPI string // releases/latest API（GitHub）
 	releaseDL  string // 下载前缀（…/releases/download）
+	repo       string // Release 托管仓库（owner/repo），展示用
+	token      string // GITHUB_TOKEN（可选，防匿名 API 限流；不落日志）
+	explicit   bool   // RELEASE_API_URL / RELEASE_DL_URL 是否显式配置（区别于兜底派生）
 
 	mu     sync.Mutex
 	busy   bool
@@ -52,18 +58,67 @@ type Updater struct {
 
 const maxLogLines = 600
 
-// NewUpdater rootDir 为安装目录；releaseAPI/releaseDL 传空 = 源码模式。
-func NewUpdater(rootDir string, port string, releaseAPI string, releaseDL string) *Updater {
-	return &Updater{rootDir: rootDir, port: port, releaseAPI: releaseAPI, releaseDL: releaseDL, phase: "idle"}
+// DefaultReleaseRepo 官方发行版托管仓库。RELEASE_API_URL / RELEASE_DL_URL /
+// RELEASE_REPO_GITHUB 都未配置时的兜底更新源，与 install.sh 默认值保持一致。
+const DefaultReleaseRepo = "modern-day-team/modern-chat-new"
+
+// ReleaseSource 发行版更新源配置（来自环境变量，见 internal/config）。
+type ReleaseSource struct {
+	API   string // RELEASE_API_URL 显式 releases/latest API 地址
+	DL    string // RELEASE_DL_URL 显式下载前缀（…/releases/download）
+	Repo  string // RELEASE_REPO_GITHUB 托管仓库（owner/repo）；API/DL 未配置时派生
+	Token string // GITHUB_TOKEN GitHub API 令牌（可选）
 }
 
-// Detect 源码模式：从进程工作目录推断仓库根（install.sh 的 WorkingDirectory 是 <root>/server）。
+// repoPattern owner/repo 形态校验：RELEASE_REPO_GITHUB 写错（如整段 URL）时
+// 不能拼进下载地址，否则会把不可信输入带进请求 URL。
+var repoPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
+
+// resolveRepo 校验托管仓库参数，为空或非法时回退官方仓库；容忍误粘的克隆地址
+// （剥掉结尾 .git），其余形态（整段 URL、路径等）不接受。
+func resolveRepo(repo string) string {
+	repo = strings.TrimSuffix(strings.TrimSpace(repo), ".git")
+	if repoPattern.MatchString(repo) {
+		return repo
+	}
+	return DefaultReleaseRepo
+}
+
+// deriveReleaseURLs 由托管仓库派生 Release API 与下载前缀（GitHub 官方域名）。
+func deriveReleaseURLs(repo string) (api, dl string) {
+	return "https://api.github.com/repos/" + repo + "/releases/latest",
+		"https://github.com/" + repo + "/releases/download"
+}
+
+// NewUpdater rootDir 为安装目录。src 为发行版更新源：API+DL 都配置时按显式地址
+// 更新；否则按 Repo（或默认官方仓库）派生。模式选择见 isReleaseMode。
+func NewUpdater(rootDir string, port string, src ReleaseSource) *Updater {
+	u := &Updater{
+		rootDir: rootDir,
+		port:    port,
+		repo:    resolveRepo(src.Repo),
+		token:   strings.TrimSpace(src.Token),
+		phase:   "idle",
+	}
+	if strings.TrimSpace(src.API) != "" && strings.TrimSpace(src.DL) != "" {
+		u.releaseAPI = strings.TrimSpace(src.API)
+		u.releaseDL = strings.TrimSpace(src.DL)
+		u.explicit = true
+	} else {
+		// 只配了一半的显式地址视为未配置：半配置会拼出错误的下载前缀，
+		// 整体退回仓库派生比"API 新地址 + DL 旧地址"更可控。
+		u.releaseAPI, u.releaseDL = deriveReleaseURLs(u.repo)
+	}
+	return u
+}
+
+// Detect 从进程工作目录推断仓库根（install.sh 的 WorkingDirectory 是 <root>/server）。
 func Detect() *Updater {
 	wd, err := os.Getwd()
 	if err != nil {
-		return NewUpdater("", "", "", "")
+		return NewUpdater("", "", ReleaseSource{})
 	}
-	return NewUpdater(filepath.Dir(wd), os.Getenv("PORT"), "", "")
+	return NewUpdater(filepath.Dir(wd), os.Getenv("PORT"), ReleaseSource{})
 }
 
 // statusView 传给 handler 的快照。
@@ -75,10 +130,20 @@ type StatusView struct {
 	Error     string   `json:"error,omitempty"`
 	Version   string   `json:"version"`
 	Commit    string   `json:"commit"`
-	Mode      string   `json:"mode"` // release | source
+	Mode      string   `json:"mode"`           // release | source
+	Repo      string   `json:"repo,omitempty"` // Release 托管仓库（发行版模式展示用）
 }
 
-func (u *Updater) isReleaseMode() bool { return u.releaseAPI != "" && u.releaseDL != "" }
+func (u *Updater) isReleaseMode() bool {
+	if u.explicit {
+		// RELEASE_API_URL / RELEASE_DL_URL 显式配置（install.sh 写入）：始终发行版模式
+		return true
+	}
+	// 未显式配置：git clone 部署保留源码模式（保持既有行为），其余部署
+	// 兜底用官方仓库的发行版，让在线更新开箱即用。
+	_, err := os.Stat(filepath.Join(u.rootDir, ".git"))
+	return err != nil
+}
 
 func (u *Updater) rootDirOK() bool {
 	if u.rootDir == "" {
@@ -112,6 +177,9 @@ func (u *Updater) RootDir() string { return u.rootDir }
 // Port 当前实例端口。
 func (u *Updater) Port() string { return u.port }
 
+// Repo Release 托管仓库（owner/repo；发行版模式下是实际更新源）。
+func (u *Updater) Repo() string { return u.repo }
+
 // Mode 更新模式名。
 func (u *Updater) Mode() string {
 	if u.isReleaseMode() {
@@ -126,7 +194,7 @@ func (u *Updater) Status() StatusView {
 	defer u.mu.Unlock()
 	lines := make([]string, len(u.lines))
 	copy(lines, u.lines)
-	return StatusView{
+	view := StatusView{
 		Available: u.rootDirOK(),
 		Busy:      u.busy,
 		Phase:     u.phase,
@@ -136,15 +204,23 @@ func (u *Updater) Status() StatusView {
 		Commit:    version.Current().Commit,
 		Mode:      u.Mode(),
 	}
+	if u.isReleaseMode() {
+		view.Repo = u.repo
+	}
+	return view
 }
+
+// maxNotesBytes Release 说明截断上限（防止异常巨大的 body 撑爆轮询响应）。
+const maxNotesBytes = 8192
 
 // CheckResult 检查更新结果。
 type CheckResult struct {
-	UpToDate  bool   `json:"upToDate"`
-	Local     string `json:"local"`
-	Remote    string `json:"remote"`
-	RemoteTag string `json:"remoteTag"`
-	RemoteMsg string `json:"remoteMsg"`
+	UpToDate    bool   `json:"upToDate"`
+	Local       string `json:"local"`
+	Remote      string `json:"remote"`
+	RemoteTag   string `json:"remoteTag"`
+	RemoteMsg   string `json:"remoteMsg"`
+	RemoteNotes string `json:"remoteNotes,omitempty"` // Release 说明（纯文本展示，已截断）
 }
 
 // Check 检查是否有新版本。发行版模式查询 Release API；源码模式对比 origin/main。
@@ -161,15 +237,16 @@ func (u *Updater) Check() (CheckResult, error) {
 	u.mu.Unlock()
 
 	if u.isReleaseMode() {
-		tag, name, err := u.latestRelease()
+		info, err := u.latestRelease()
 		if err != nil {
 			return res, err
 		}
-		res.RemoteTag = tag
-		res.RemoteMsg = name
-		res.Remote = tag
+		res.RemoteTag = info.TagName
+		res.RemoteMsg = info.Name
+		res.RemoteNotes = truncateNotes(info.Body)
+		res.Remote = info.TagName
 		res.Local = version.Current().Version
-		res.UpToDate = tag == "" || tag == version.Current().Version
+		res.UpToDate = info.TagName == "" || info.TagName == version.Current().Version
 		return res, nil
 	}
 
@@ -223,35 +300,78 @@ func (u *Updater) Start() bool {
 
 // ==================== 发行版模式 ====================
 
+// githubAPIAccept / githubAPIVersion GitHub REST API 的标准请求头。
+const (
+	githubAPIAccept  = "application/vnd.github+json"
+	githubAPIVersion = "2022-11-28"
+)
+
+// newGitHubReq 构造 GitHub 请求。对 github.com 域（API 查询与 Release 附件下载）
+// 附加 Accept / API 版本与可选的 Bearer 令牌：匿名调用 api.github.com 限流
+// 60 次/小时/IP，配置 GITHUB_TOKEN 后提升到 5000 次/小时，并支持私有仓库检查。
+// 令牌不写日志；跨域重定向（下载附件会 302 到 objects.githubusercontent.com）
+// 时 net/http 会自动剥离 Authorization，不会外泄；非 GitHub 域（自建镜像）不携带。
+func (u *Updater) newGitHubReq(ctx context.Context, url string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if host := req.URL.Host; host == "github.com" || host == "api.github.com" {
+		req.Header.Set("Accept", githubAPIAccept)
+		req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+		if u.token != "" {
+			req.Header.Set("Authorization", "Bearer "+u.token)
+		}
+	}
+	return req, nil
+}
+
 type releaseInfo struct {
 	TagName string `json:"tag_name"`
 	Name    string `json:"name"`
+	Body    string `json:"body"` // Release 说明（Markdown 源文本，前端按纯文本展示）
 }
 
-// latestRelease 查询最新 Release 的 tag 与名称。
-func (u *Updater) latestRelease() (tag string, name string, err error) {
+// latestRelease 查询最新 Release 的 tag / 名称 / 说明。
+func (u *Updater) latestRelease() (releaseInfo, error) {
+	var info releaseInfo
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.releaseAPI, nil)
+	req, err := u.newGitHubReq(ctx, u.releaseAPI)
 	if err != nil {
-		return "", "", err
+		return info, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("查询 Release 失败：%w", err)
+		return info, fmt.Errorf("查询 Release 失败：%w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("查询 Release 失败：HTTP %d", resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// 继续解析
+	case http.StatusForbidden:
+		return info, fmt.Errorf("查询 Release 失败：HTTP 403（GitHub API 限流：匿名 60 次/小时/IP；可在 .env 配置 GITHUB_TOKEN 后重启服务）")
+	case http.StatusNotFound:
+		return info, fmt.Errorf("查询 Release 失败：HTTP 404（仓库 %s 是否存在、是否已发布 Release？）", u.repo)
+	default:
+		return info, fmt.Errorf("查询 Release 失败：HTTP %d", resp.StatusCode)
 	}
-	var info releaseInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return "", "", fmt.Errorf("解析 Release 响应失败：%w", err)
+		return info, fmt.Errorf("解析 Release 响应失败：%w", err)
 	}
 	if info.TagName == "" {
-		return "", "", fmt.Errorf("仓库还没有发布任何 Release")
+		return info, fmt.Errorf("仓库还没有发布任何 Release")
 	}
-	return info.TagName, info.Name, nil
+	return info, nil
+}
+
+// truncateNotes 限制 Release 说明长度（按字节粗截，截断处可能落在多字节字符中间，
+// 仅作展示用途可接受；前端按纯文本渲染，无注入面）。
+func truncateNotes(s string) string {
+	if len(s) <= maxNotesBytes {
+		return s
+	}
+	return s[:maxNotesBytes] + "\n…（说明过长已截断）"
 }
 
 // goArch 当前进程架构映射（发行包资产命名用）。
@@ -275,11 +395,12 @@ func (u *Updater) runReleaseUpdate() {
 	}()
 
 	u.log("==> 查询最新 Release")
-	tag, _, err := u.latestRelease()
+	info, err := u.latestRelease()
 	if err != nil {
 		u.fail("%v", err)
 		return
 	}
+	tag := info.TagName
 	if tag == version.Current().Version {
 		u.fail("已是最新版本（%s），无需更新", tag)
 		return
@@ -563,11 +684,11 @@ func copyTree(src, dst string) error {
 	return nil
 }
 
-// download 下载 URL 到本地文件（10 分钟超时）。
+// download 下载 URL 到本地文件（10 分钟超时）；github.com 域自动带令牌（见 newGitHubReq）。
 func (u *Updater) download(url, dst string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := u.newGitHubReq(ctx, url)
 	if err != nil {
 		return err
 	}
@@ -593,7 +714,7 @@ func (u *Updater) download(url, dst string) error {
 func (u *Updater) fetchText(url string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := u.newGitHubReq(ctx, url)
 	if err != nil {
 		return "", err
 	}
@@ -675,7 +796,7 @@ func (u *Updater) runSourceUpdate() {
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Minute)
 	build := fmt.Sprintf(
-		"-s -w -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=%s -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=%s -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=%s",
+		"-s -w -X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=%s -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=%s -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=%s",
 		ver, commit, time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 	)
 	out, err = u.run(ctx2, serverDir, "go", "build", "-trimpath", "-ldflags", build, "-o", filepath.Join(root, "bin", ".modernchat-server.new"), "./cmd/server")

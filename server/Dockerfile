@@ -24,9 +24,9 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags="-s -w \
-      -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=${VERSION} \
-      -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=${COMMIT} \
-      -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=${BUILD_TIME}" \
+      -X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=${VERSION} \
+      -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=${COMMIT} \
+      -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=${BUILD_TIME}" \
     -o /out/modernchat-server ./cmd/server
 
 FROM ${RUNTIME_IMAGE}

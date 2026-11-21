@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
 )
 
 // ===== 系统设置（站长可改，落库覆盖环境变量）=====

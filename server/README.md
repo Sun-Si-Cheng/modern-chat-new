@@ -51,7 +51,8 @@ curl http://localhost:8080/api/version   # {"version":"dev","commit":"unknown",.
 | `METRICS_TOKEN` | 非空时 `/api/metrics` 需 Bearer |
 | `BACKUP_DIR` / `BACKUP_INTERVAL_HOURS` / `BACKUP_RETAIN` / `MYSQLDUMP_PATH` | 数据库备份目录 / 自动间隔（0=关闭）/ 保留份数 / mysqldump 路径 |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（可选），两项密钥都配置才启用 |
-| `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | 站长后台在线更新开关与发行版更新源（install.sh 写入） |
+| `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | 站长后台在线更新开关与 GitHub Release 更新源（install.sh 写入）；两者都空时按 `RELEASE_REPO_GITHUB`（或默认官方仓库）派生，安装目录有 `.git` 仍走源码模式 |
+| `RELEASE_REPO_GITHUB` / `GITHUB_TOKEN` | Release 托管仓库（owner/repo）与 GitHub API 令牌（可选，防匿名 60 次/小时限流）；详见 `server/.env.example` |
 
 ## 日志
 
@@ -90,13 +91,13 @@ grep -E '"level":"WARN"' logs/app-*.log | jq -r 'select(.msg=="rate limited") | 
 
 ```bash
 go build -trimpath \
-  -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=$(git describe --tags --always) \
-            -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
-            -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags "-X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=$(git describe --tags --always) \
+            -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
+            -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o modernchat-server ./cmd/server
 ```
 
-日常升级不用手敲：仓库根目录执行 `../scripts/update.sh`（拉 Gitee → 构建前后端 → 重启，详见根 README）。
+日常升级不用手敲：仓库根目录执行 `../scripts/update.sh`（拉远端仓库 → 构建前后端 → 重启，详见根 README）。
 
 ## 测试
 

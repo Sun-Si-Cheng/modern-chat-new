@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
 )
 
 func TestNormalizeEmail(t *testing.T) {

@@ -1640,10 +1640,14 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               </span>
             </div>
             <div v-if="updateStatus.mode" class="mc-admin__update-row">
-              <span>{{ t('admin.updateCurrent') }}</span>
+              <span>{{ t('admin.updateMode') }}</span>
               <span class="text-placeholder">
                 {{ updateStatus.mode === 'release' ? t('admin.updateModeRelease') : t('admin.updateModeSource') }}
               </span>
+            </div>
+            <div v-if="updateStatus.mode === 'release' && updateStatus.repo" class="mc-admin__update-row">
+              <span>{{ t('admin.updateSource') }}</span>
+              <span class="num">GitHub · {{ updateStatus.repo }}</span>
             </div>
             <div v-if="updateStatus.error" class="mc-admin__update-row">
               <span>{{ t('admin.updateError') }}</span>
@@ -1664,6 +1668,13 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
               <div class="mc-admin__update-row">
                 <span>{{ t('admin.updateRemoteMsg') }}</span>
                 <span>{{ updateCheck.remoteMsg }}</span>
+              </div>
+              <!-- Release 说明：纯文本插值展示（禁 v-html），超长由样式裁剪 -->
+              <div v-if="updateCheck.remoteNotes" class="mc-admin__update-notes">
+                <div class="mc-admin__update-row">
+                  <span>{{ t('admin.updateNotes') }}</span>
+                </div>
+                <p class="mc-admin__update-notes-body">{{ updateCheck.remoteNotes }}</p>
               </div>
               <UiButton
                 theme="primary"
@@ -2296,6 +2307,27 @@ async function toggleGlobalDisabled(row: AdminPluginRow) {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: var(--mc-radius-md);
+}
+.mc-admin__update-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mc-admin__update-notes > .mc-admin__update-row > span:first-child {
+  color: var(--td-text-color-placeholder);
+}
+.mc-admin__update-notes-body {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--td-text-color-primary);
   background: var(--td-bg-color-secondarycontainer);
   border-radius: var(--mc-radius-md);
 }

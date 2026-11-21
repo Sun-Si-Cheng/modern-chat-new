@@ -3,7 +3,6 @@ import type {
   AdminGroupDetail,
   AdminGroupListResp,
   AdminGroupMessagesResp,
-  AdminGroupRow,
   AuthPayload,
   Conversation,
   ConversationMember,
@@ -400,6 +399,7 @@ export interface AdminUpdateStatus {
   version: string
   commit: string
   mode?: string // release = 发行版下载 | source = 源码本地编译
+  repo?: string // Release 托管仓库（发行版模式展示用）
 }
 
 /** 在线更新：检查结果 */
@@ -409,6 +409,7 @@ export interface AdminUpdateCheck {
   remote: string
   remoteTag: string
   remoteMsg: string
+  remoteNotes?: string // Release 说明（纯文本展示，服务端已截断）
 }
 
 /** 注册邀请码 */

@@ -654,7 +654,7 @@ saving in the admin console validates ranges explicitly (out of range 400) witho
 - Local one-command environment: `docker-compose.yml` (MySQL 8 + backend, first start runs `MIGRATE=true` to create tables).
 - Production creates tables with versioned SQL from `migrations/`, not AutoMigrate.
 - Production must set `JWT_SECRET` (release mode refuses to start without it) and `FRONTEND_URL` (WS Origin whitelist + password-recovery links).
-- **Install (release-build mode, recommended)**: `scripts/package-release.sh` tags on the build machine and produces a precompiled package (ldflags injects the version; contains the backend binary + frontend dist + migration SQL), uploaded as a Gitee / GitHub Release attachment; on the server `scripts/install.sh` downloads and deploys with one command (auto-detects architecture/distro, sha256 verification), **no Go / Node / git needed — the server compiles nothing** (details in Ops Manual §3.1).
+- **Install (release-build mode, recommended)**: `scripts/package-release.sh` tags on the build machine and produces a precompiled package (ldflags injects the version; contains the backend binary + frontend dist + migration SQL), uploaded as a GitHub Release attachment; on the server `scripts/install.sh` downloads and deploys with one command (auto-detects architecture/distro, sha256 verification), **no Go / Node / git needed — the server compiles nothing** (details in Ops Manual §3.1).
 - **Upgrades**: three equivalent paths — ① `scripts/update.sh` (source deployment, blue-green two-instance hot swap); ② the `scripts/update.sh` inside the release package (release deployment, download a new Release, replace and restart gracefully); ③ the site admin console's "Online Update" tab (`server/internal/service/updater.go`: in release mode it checks the latest Release tag against `/api/version` → downloads and verifies → atomic replace → systemd restart; in source mode it git-pulls and builds locally). Security boundary: only the site admin can trigger it (Admin middleware + audit), the URL and commands are all fixed (version numbers come from the Release server / `origin/main`, with no user input accepted), and `WEB_UPDATE=false` disables it entirely. This endpoint is essentially "an admin account can trigger a code update", so a leaked account equals server control — the early design omitted in-app upgrade to avoid that risk and later added it at the user's request, with the risk narrowed by the boundary above.
 - Config (DB DSN, JWT_SECRET, SMTP) goes through environment variables, never committed.
 
@@ -670,7 +670,7 @@ cd web && npm install && npm run dev  # :5173, /api and /ws proxied to :8080
 The first registered account becomes the site admin (`/admin`: ban users / reset passwords / global plugin takedown).
 
 ## 12. Delivery & Git Conventions
-- Remote: Gitee `https://gitee.com/Sun-Si-Cheng/modern-chat-new.git`, branch `main`.
+- Remote: GitHub `https://github.com/modern-day-team/modern-chat-new.git`, branch `main`.
 - After each finished module, automatically `git add -A` → commit → push, no reminders needed.
 - **Docs and code update together**: users do not read commit logs, and docs are the only window into feature changes. Whenever a commit involves a content update (new feature, behavior change, entry-point move, config addition/removal, deployment change, etc.), the change must be written into the corresponding doc **in the same commit**, never deferred or backfilled:
   - Feature/architecture/protocol changes → `docs/设计文档.md` (and §13 implementation log when necessary)

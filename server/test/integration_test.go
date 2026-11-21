@@ -21,12 +21,12 @@ import (
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/router"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/ws"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/router"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/ws"
 )
 
 const dsnDefault = "root:root@tcp(127.0.0.1:3306)/modernchat_test?charset=utf8mb4&parseTime=True&loc=Local"

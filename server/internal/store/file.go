@@ -3,7 +3,7 @@ package store
 import (
 	"gorm.io/gorm"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // FileStore 群文件目录。

@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+	"github.com/modern-day-team/modern-chat-new/server/internal/model"
 )
 
 // PluginStore 插件。

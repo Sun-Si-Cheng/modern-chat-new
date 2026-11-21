@@ -14,7 +14,7 @@ const { t } = useI18n()
 const plain = (html: string) => html.replace(/<[^>]*>/g, '')
 
 /* ---------------- 首屏 ---------------- */
-const INSTALL = 'curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh | bash'
+const INSTALL = 'curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh | bash'
 
 const copied = ref(false)
 let copyTimer: ReturnType<typeof setTimeout> | undefined
@@ -121,7 +121,7 @@ const tabCode = computed<Record<TabKey, { name: string; html: string }>>(() => (
   script: {
     name: 'install.sh',
     html: `${com('dep.c1')}
-curl -fsSL ${str('https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh')} | bash
+curl -fsSL ${str('https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh')} | bash
 
 ${com('dep.c2')}
 ${com('dep.c3')}`,

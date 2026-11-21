@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
 )
 
 // migrateTestEnabledConfig 已启用迁移功能的配置（不会真的连旧库，连接是懒建的）。

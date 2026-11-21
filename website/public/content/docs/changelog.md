@@ -10,6 +10,8 @@
 
 ### 变更
 
+- **安装 / 更新源改为仅 GitHub**：Gitee 仓库已弃用，`scripts/install.sh` 移除 Gitee Release 源（`RELEASE_SOURCE` / `RELEASE_REPO_GITEE` 环境变量不再生效），GitHub 仓库默认 `modern-day-team/modern-chat-new`（可用 `RELEASE_REPO_GITHUB` 覆盖）；打包 / 更新脚本、后台在线更新与文档同步只认 GitHub。**存量影响**：已安装实例一般无需改动——`server/.env` 记录的是完整的 `RELEASE_API_URL` / `RELEASE_DL_URL`；但从旧版 Gitee 源安装的实例，这两个地址仍指向 Gitee，在线更新会失败，需手动改成 GitHub 地址（`https://api.github.com/repos/modern-day-team/modern-chat-new/releases/latest` 与 `https://github.com/modern-day-team/modern-chat-new/releases/download`）后重启服务。
+
 - **图片改为「每张只存一份」**：移除服务端 `_t.jpg` 缩略图生成（`service/thumbnail.go` 整体删除，本地与对象存储两条上传路径都不再派生）。原因是收益与代价不成比例——前端上传前已把图压到最大边 1600 / webp q0.82，实测一张 76 KB 的图派生出的缩略图仍有 50 KB，只省 26 KB 却要多存一个对象、多一次写入，后台存储清单里还会显示成「一张图变成两个文件」。现在气泡、灯箱、保存、下载全部使用同一份主图，行为更直观、排查更简单。**存量影响**：历史 `_t.jpg` 不再被任何消息引用，会随「清理孤儿附件」按普通孤儿回收（受 24 小时保护期约束），不需要单独写迁移脚本；旧前端若仍按约定派生缩略图地址，会因为改用了主图而自然失效——两侧已同步修改，无兼容窗口。
 
 - **迁移口径改为「只迁本人数据」**：旧站迁移不再为私聊对端、好友、群成员、群主补建占位账号（早期实现一次迁移能凭空多出几百个空用户，后台用户列表直接被撑爆）。现在一次迁移只落一个人——他自己的账号、他自己发的消息、他加入的群：好友只保留对方已迁移的关系；群照建但只加入已迁移的成员，群主未迁移时群主暂落在迁移用户身上；私聊只保留对端已迁移的会话，群聊按发送者映射落库、发送者未迁移的消息跳过；进度按「扫描过的行数」推进，跳过的消息不会让百分比卡住。**可见后果**：对端还没迁移时，双方私聊记录在新站暂时看不到，等对方自己迁移时会连同两个方向的消息一起带过来。
@@ -31,6 +33,7 @@
 
 ### 新增
 
+- **在线更新开箱即用（默认官方 GitHub 源）+ 自动发版流水线**：后台图形化更新不再依赖 `RELEASE_API_URL` / `RELEASE_DL_URL`——两者都未配置时按 `RELEASE_REPO_GITHUB`（可指向 fork / 镜像仓库）或默认官方仓库 `modern-day-team/modern-chat-new` 派生 GitHub Release 地址兜底，裸二进制 systemd 部署无需先跑 install.sh 也能在线更新（git clone 部署仍保留源码编译模式）；新增 `GITHUB_TOKEN`（可选）把 GitHub API 限额从匿名 60 次/小时提升到 5000 次/小时并支持私有仓库检查，令牌只随 GitHub 官方域请求发送、不落日志（后端与 install.sh / update.sh 脚本同规则）；「检查更新」响应新增 `remoteNotes`（Release 说明，纯文本展示、服务端截断 8 KB）与 `repo`（托管仓库）字段，更新面板同步展示更新源与说明。新增 `.github/workflows/release.yml`：推送 `v*` tag 自动校验版本一致性 → 运行 `scripts/package-release.sh` 打包双架构附件 → 发布 GitHub Release（`check-version.sh` 不过会拦截发版；手动打包上传流程保留）。**存量影响**：无——`.env` 已显式配置的实例行为不变；`scripts/update.sh --check` 等脚本在 `.env` 缺显式地址时改为自动派生更新源，不再报错退出。
 - **官网与聊天室同域部署（`/` + `/app/`）**：官网（`website/`）占站点根，聊天前端（`web/`）挂到 `/app/` 子路径。为此 `vite.config.ts` 改为 `base: '/app/'`，Service Worker 注册、`manifest.webmanifest` 的 `scope`/`start_url`/`icons`、登录跳转（`redirectToLogin`）、默认头像与登录背景图、favicon 全部改为按 `import.meta.env.BASE_URL` 推导，避免「开发时正常、上线后资源 404」；`public/sw.js` 的缓存根改为从 `self.location` 推导，并跳过 `/api`、`/ws`、`/uploads`、`/_dl`。后端与静态资源路径不变（`/api`、`/ws`、`/uploads`、`/_dl` 仍在根），官网导航新增「进入聊天室」按钮（`links.ts` 的 `CHAT_APP = '/app/'`）。nginx 需为 `/app/` 加 SPA 回退（`try_files $uri $uri/ /app/index.html`）并对 `index.html`、`sw.js` 禁缓存。**升级影响**：单独部署到根路径的旧部署方式需同步调整 nginx，否则刷新 `/app/xxx` 会 404。
 - **旧站迁移向导（旧站 → 新版一次性迁移）**：旧站（PHP）在 `chat.php` / `mobilechat.php` 登录校验之后插入 `migration_guard.php`——非管理员用户登录后不再进入旧聊天界面，而是进入四步向导：①确认头像/昵称/邮箱；②核对将要迁移的私聊与群聊消息（默认全选，可取消，不含已上传文件）；③带百分比进度条逐批迁移；④完成后跳转 `https://newchat.modern-chat.top/app/login?token=..&key=..&migrated=1` 自动登录，并提示「部分用户没有注册，可能无法向对应用户发送消息」。旧密码（bcrypt `$2y$`）原样复用，用户仍用原密码登录新站；文件类消息转为「【文件未迁移】原名」文本。管理员（`users.role='admin'`）同样走向导，可在向导页点「暂不迁移，先回旧站」放行一段时间（`MC_POSTPONE_SECONDS`，默认 1 小时）以便维护；`MC_SKIP_ADMIN` 仍保留为运维开关，默认 `false`。新增文件：`migrate.php`、`migrate_api.php`、`migrate_config.php`、`migration_guard.php`；新站侧新增 `POST /api/migrate/{preview,start,tick,complete,complete-existing}`（`X-Migrate-Secret` 头校验）与公开的 `POST /api/auth/migrate-login`（一次性票据，10 分钟有效），迁移表由**迁移 0029** 建立。
 - **迁移后自动加入「公共聊天室」**：迁移完成阶段会调用 `EnsureDefaultGroup` 并把迁移用户加进默认群（等价于注册时的自动入群），同时生成他的 `user_conversations` 行，落地即可在会话列表里看到公共聊天室，不用等有人说话。
@@ -319,11 +322,11 @@
 
 ---
 
-[0.10.3]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.2...v0.10.3
-[0.10.2]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.1...v0.10.2
-[0.10.1]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.0...v0.10.1
-[0.10.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.9.0...v0.10.0
-[0.9.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.8.0...v0.9.0
-[0.8.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.7.0...v0.8.0
-[0.7.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.6.0...v0.7.0
-[0.6.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/releases/tag/v0.6.0
+[0.10.3]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.2...v0.10.3
+[0.10.2]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/modern-day-team/modern-chat-new/releases/tag/v0.6.0

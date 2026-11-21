@@ -2,7 +2,7 @@
 # ============================================================================
 # ModernChat 发行版更新脚本（随发行包分发，命令行在线更新）
 #
-# 适用：scripts/install.sh 的发行版安装（从 GitHub / Gitee Release 下载预编译产物）。
+# 适用：scripts/install.sh 的发行版安装（从 GitHub Release 下载预编译产物）。
 # 与后台图形化更新同源：下载新发行包 → sha256 校验 → 原子替换产物 → 优雅重启。
 # 源码 git 部署请用仓库里的 scripts/update.sh（本地编译，支持蓝绿热更新）。
 #
@@ -10,6 +10,10 @@
 #   bash scripts/update.sh            # 更新到最新 Release
 #   TAG=v0.11.0 bash scripts/update.sh  # 更新到指定版本
 #   bash scripts/update.sh --check    # 只检查不更新
+#
+# 可选环境变量：
+#   GITHUB_TOKEN=ghp_xxx     # GitHub API 令牌：匿名 api.github.com 限流 60 次/小时/IP，
+#                            # 配置后提升到 5000 次/小时（也可写进 server/.env）
 # ============================================================================
 set -euo pipefail
 
@@ -18,18 +22,42 @@ info() { printf "${C_G}==>${C_0} %s\n" "$*"; }
 warn() { printf "${C_Y}警告:${C_0} %s\n" "$*"; }
 die()  { printf "${C_R}错误:${C_0} %s\n" "$*" >&2; exit 1; }
 
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+# curl 附加认证：仅 GitHub 官方域携带令牌（防匿名 API 限流；私有仓库附件下载也需要），
+# .env 里配置的第三方镜像地址不携带，避免令牌外泄。令牌来源：环境变量或 server/.env。
+gh_curl() {
+  local url="${!#}" # 最后一个参数是目标 URL
+  case "$url" in
+    https://github.com/* | https://api.github.com/*) ;;
+    *) curl "$@"; return $? ;;
+  esac
+  if [ -n "$GITHUB_TOKEN" ]; then
+    curl -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+    return $?
+  fi
+  curl "$@"
+}
+
 # 安装目录：本脚本位于 <安装目录>/scripts/ 下
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/server/.env"
 [ -f "$ENV_FILE" ] || die "未找到 $ENV_FILE —— 请在安装目录内运行（或手动设置 RELEASE_API_URL/RELEASE_DL_URL）"
 
-# 从 .env 读配置（install.sh 写入）
+# 从 .env 读配置（install.sh 写入）；显式地址缺失时按 RELEASE_REPO_GITHUB（或默认
+# 官方仓库）派生，与后台图形化更新同源——旧实例无需重跑 install.sh。
 get_env() { sed -n "s/^$1=//p" "$ENV_FILE" | head -n1; }
 API_URL="$(get_env RELEASE_API_URL)"
 DL_BASE="$(get_env RELEASE_DL_URL)"
 PORT="$(get_env PORT)"
-[ -n "$API_URL" ] || die ".env 缺少 RELEASE_API_URL（需要重新运行 install.sh）"
-[ -n "$DL_BASE" ] || die ".env 缺少 RELEASE_DL_URL（需要重新运行 install.sh）"
+if [ -z "$API_URL" ] || [ -z "$DL_BASE" ]; then
+  RELEASE_REPO="${RELEASE_REPO_GITHUB:-$(get_env RELEASE_REPO_GITHUB)}"
+  RELEASE_REPO="${RELEASE_REPO:-modern-day-team/modern-chat-new}"
+  info ".env 未配置 RELEASE_API_URL / RELEASE_DL_URL，按托管仓库派生更新源：$RELEASE_REPO"
+  API_URL="https://api.github.com/repos/${RELEASE_REPO}/releases/latest"
+  DL_BASE="https://github.com/${RELEASE_REPO}/releases/download"
+fi
+# 令牌也可写进 server/.env（600 权限），环境变量优先
+GITHUB_TOKEN="${GITHUB_TOKEN:-$(get_env GITHUB_TOKEN)}"
 
 CHECK_ONLY=0
 for arg in "$@"; do
@@ -48,7 +76,7 @@ case "$ARCH" in
 esac
 
 info "检查最新版本：$API_URL"
-RESP="$(curl -fsS --max-time 30 "$API_URL")" || die "查询 Release 失败（检查网络或 URL）"
+RESP="$(gh_curl -fsS --max-time 30 "$API_URL")" || die "查询 Release 失败（检查网络或 URL；403 多为 GitHub API 限流，可配置 GITHUB_TOKEN）"
 LATEST_TAG="$(printf '%s' "$RESP" | grep -o '"tag_name"[^,}]*' | sed 's/.*: *"//;s/"$//')"
 [ -n "$LATEST_TAG" ] || die "未解析到最新 tag"
 info "最新版本：$LATEST_TAG"
@@ -63,10 +91,10 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 info "下载 $ASSET …"
-curl -fL --retry 3 -o "$TMP/$ASSET" "$DL_BASE/${LATEST_TAG}/$ASSET" || die "下载失败：$DL_BASE/${LATEST_TAG}/$ASSET"
+gh_curl -fL --retry 3 -o "$TMP/$ASSET" "$DL_BASE/${LATEST_TAG}/$ASSET" || die "下载失败：$DL_BASE/${LATEST_TAG}/$ASSET"
 
 info "校验 sha256 …"
-if curl -fsSL --max-time 30 -o "$TMP/$ASSET.sha256" "$DL_BASE/${LATEST_TAG}/$ASSET.sha256" 2>/dev/null; then
+if gh_curl -fsSL --max-time 30 -o "$TMP/$ASSET.sha256" "$DL_BASE/${LATEST_TAG}/$ASSET.sha256" 2>/dev/null; then
   EXPECTED="$(awk '{print $1}' "$TMP/$ASSET.sha256")"
   ACTUAL="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
   # 附件可能被平台重定向到 HTML 页（反盗链/登录页）；64 位十六进制才算有效清单

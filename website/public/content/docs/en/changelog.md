@@ -10,10 +10,13 @@ This file records the important changes of ModernChat. Format follows [Keep a Ch
 
 ### Changed
 
+- **Install / update source is now GitHub only**: the Gitee repository is deprecated. `scripts/install.sh` drops the Gitee Release source (the `RELEASE_SOURCE` / `RELEASE_REPO_GITEE` environment variables no longer take effect); the GitHub repository defaults to `modern-day-team/modern-chat-new` (override with `RELEASE_REPO_GITHUB`). The packaging / update scripts, the console's online update and the docs only recognize GitHub. **Impact on existing installs**: most instances need no change — `server/.env` stores the full `RELEASE_API_URL` / `RELEASE_DL_URL`; but instances installed from the old Gitee source still point those two URLs at Gitee, so online updates will fail until they are changed to the GitHub addresses (`https://api.github.com/repos/modern-day-team/modern-chat-new/releases/latest` and `https://github.com/modern-day-team/modern-chat-new/releases/download`) and the service is restarted.
+
 - **Images are now stored once**: server-side `_t.jpg` thumbnail generation is removed (the whole `service/thumbnail.go` is deleted; neither the local nor the object-storage upload path derives a second file any more). The trade-off did not pay off — the browser already compresses to max edge 1600 / webp q0.82 before upload, and a 76 KB image still produced a 50 KB thumbnail: 26 KB saved for one extra object, one extra write and a storage listing that looks like "one image turned into two files". Bubbles, lightbox, save and download now all use the same main image. **Impact on existing data**: legacy `_t.jpg` files are no longer referenced by any message and are reclaimed by "clean orphan attachments" as ordinary orphans (subject to the 24-hour protection window); no migration script is needed. The frontend and backend were changed together, so no compatibility window is required.
 
 ### Added
 
+- **Out-of-the-box online update (default official GitHub source) + automated release pipeline**: the console's graphical update no longer depends on `RELEASE_API_URL` / `RELEASE_DL_URL` — when both are unset the addresses are derived from `RELEASE_REPO_GITHUB` (can point at a fork / mirror repo) or the default official repo `modern-day-team/modern-chat-new` as a fallback, so a bare-binary systemd deployment can update online without running install.sh first (git clone deployments keep the source-build mode); a new optional `GITHUB_TOKEN` raises the GitHub API quota from the anonymous 60/hour to 5000/hour and enables private-repo checks; the token is sent only with GitHub-host requests and never logged (same rule for the backend and the install.sh / update.sh scripts); the "check for updates" response gains `remoteNotes` (plain-text release notes, truncated to 8 KB server-side) and `repo` (hosting repo), and the update panel shows the source repo and notes. A new `.github/workflows/release.yml` runs on pushing a `v*` tag: verify version consistency → run `scripts/package-release.sh` to package dual-arch assets → publish the GitHub Release (a failing `check-version.sh` blocks the release; the manual packaging/upload flow is kept). **Impact on existing deployments**: none — instances with an explicit `.env` configuration behave as before; `scripts/update.sh --check` and similar scripts now derive the update source automatically when the explicit addresses are missing instead of erroring out.
 - **Configurable Docker build image sources**: `server/Dockerfile` gains four build args, `GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APK_MIRROR`, overriding the base image, the Go module proxy and the Alpine package mirror respectively; all defaults stay on the official sources (behaviour is unchanged when nothing is passed); `docker-compose.yml` forwards them, and the README and ops manual add examples for networks in mainland China (verify the trustworthiness of third-party mirrors yourself).
 
 ### Fixed
@@ -294,11 +297,11 @@ This file records the important changes of ModernChat. Format follows [Keep a Ch
 
 ---
 
-[0.10.3]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.2...v0.10.3
-[0.10.2]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.1...v0.10.2
-[0.10.1]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.10.0...v0.10.1
-[0.10.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.9.0...v0.10.0
-[0.9.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.8.0...v0.9.0
-[0.8.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.7.0...v0.8.0
-[0.7.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/compare/v0.6.0...v0.7.0
-[0.6.0]: https://gitee.com/Sun-Si-Cheng/modern-chat-new/releases/tag/v0.6.0
+[0.10.3]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.2...v0.10.3
+[0.10.2]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/modern-day-team/modern-chat-new/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/modern-day-team/modern-chat-new/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/modern-day-team/modern-chat-new/releases/tag/v0.6.0

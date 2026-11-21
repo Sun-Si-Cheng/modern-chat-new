@@ -52,7 +52,8 @@ All environment variables are listed in [`.env.example`](.env.example); the key 
 | `METRICS_TOKEN` | when non-empty, `/api/metrics` requires a Bearer token |
 | `BACKUP_DIR` / `BACKUP_INTERVAL_HOURS` / `BACKUP_RETAIN` / `MYSQLDUMP_PATH` | database backup directory / automatic interval (0 = off) / number of copies retained / mysqldump path |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push (optional); enabled only when both keys are configured |
-| `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | site-admin console online-update switch and release update source (written by `install.sh`) |
+| `WEB_UPDATE` / `RELEASE_API_URL` / `RELEASE_DL_URL` | site-admin console online-update switch and GitHub Release update source (written by `install.sh`); when both are empty they are derived from `RELEASE_REPO_GITHUB` (or the default official repo), and a `.git` install directory still uses source mode |
+| `RELEASE_REPO_GITHUB` / `GITHUB_TOKEN` | repo hosting the releases (owner/repo) and an optional GitHub API token (raises the 60/hour anonymous API limit); see `server/.env.example` |
 
 ## Logs
 
@@ -91,13 +92,13 @@ Versions are injected at build time to verify upgrades:
 
 ```bash
 go build -trimpath \
-  -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=$(git describe --tags --always) \
-            -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
-            -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags "-X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=$(git describe --tags --always) \
+            -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
+            -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o modernchat-server ./cmd/server
 ```
 
-Day-to-day upgrades need no hand-typing: run `../scripts/update.sh` from the repo root (pull Gitee → build both ends → restart; see the root README).
+Day-to-day upgrades need no hand-typing: run `../scripts/update.sh` from the repo root (pull the remote repo → build both ends → restart; see the root README).
 
 ## Testing
 

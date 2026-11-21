@@ -71,7 +71,9 @@ https://chat.example.com/qiniu/<key> → 对象存储 CDN（私有空间，需�
 | `SMTP_FROM` | `modernchat@localhost` | 否 | 发件人，**QQ / 163 必须与 `SMTP_USER` 一致**，否则被拒信。**可在后台改** |
 | `LOG_RESET_LINK` | release 下 `false`，其他模式 `true` | 否 | 未配置 SMTP 时是否把**完整重置链接**写进日志。生产默认关闭：日志里的可用令牌等于账户接管入口（日志平台/备份都能看到）。确实要靠日志取链接时再显式开 |
 | `WEB_UPDATE` | `true` | 否 | 站长后台「在线更新」开关。`false` 时 `/api/admin/update/*` 全部不可用；Docker / 裸机部署自动不可用（见 §4.2） |
-| `RELEASE_API_URL` / `RELEASE_DL_URL` | 空 | 否 | 发行版模式：Release 最新版本 API 与下载前缀，由 `install.sh` 写入 `.env`；两值为空时按源码 git 模式处理 |
+| `RELEASE_API_URL` / `RELEASE_DL_URL` | 空 | 否 | 发行版模式：GitHub Release 最新版本 API 与下载前缀，由 `install.sh` 写入 `.env`；两值为空时安装目录有 `.git` 走源码模式，否则按 `RELEASE_REPO_GITHUB`（或默认官方仓库）派生 GitHub 地址兜底 |
+| `RELEASE_REPO_GITHUB` | `modern-day-team/modern-chat-new` | 否 | Release 托管仓库（`owner/repo`）：显式 URL 未配置时用它派生更新源，Release 放在 fork / 镜像仓库时配置 |
+| `GITHUB_TOKEN` | 空 | 否 | GitHub API 令牌（可选）：匿名 `api.github.com` 限流 60 次/小时/IP，配置后提升到 5000 次/小时，并支持私有仓库检查。仅随 GitHub 域更新请求发送，不落日志 |
 | `METRICS_TOKEN` | 空 | 否 | 非空时 `GET /api/metrics` 需 `Authorization: Bearer <token>`；留空则同站可匿名抓取，公网部署建议设置 |
 | `LEGACY_API_SECRET` | 空 | 否 | 旧站迁移密钥（≥32 字节），必须与旧站 `chat/migrate_config.php` 的 `MC_MIGRATE_SECRET` 完全一致。留空则 `/api/migrate/*` 全部返回「迁移未启用」 |
 | `LEGACY_DB_DSN` | 空 | 否 | 旧站库（**只读账号**）连接串，迁移程序只读不写。生产示例：`legacy_ro:<密码>@tcp(127.0.0.1:3306)/chat?charset=utf8mb4&parseTime=True&loc=Local` |
@@ -190,14 +192,14 @@ https://chat.example.com/qiniu/<key> → 对象存储 CDN（私有空间，需�
 在**全新的 Linux 服务器**（Ubuntu / Debian / CentOS 系，root）上执行：
 
 ```bash
-curl -fsSL https://gitee.com/Sun-Si-Cheng/modern-chat-new/raw/main/scripts/install.sh -o install.sh
+curl -fsSL https://github.com/modern-day-team/modern-chat-new/raw/main/scripts/install.sh -o install.sh
 bash install.sh
 ```
 
 脚本按「宝塔面板」的方式完成全部流程，只需回答几个问题：
 
 1. **环境自检与补装**：缺什么装什么 —— curl/tar 基础工具、MySQL 8、nginx。**无需 Go / Node / git**（不再本地编译）。
-2. **下载发行版**：从 GitHub / Gitee Release 下载预编译包 `modernchat-<版本>-linux-<架构>.tar.gz`（sha256 校验；含后端二进制 + 前端 dist + 迁移 SQL + 部署脚本）。`RELEASE_SOURCE=gitee|github` 选源，`RELEASE_TAG=v0.10.3` 指定版本（默认 latest）。
+2. **下载发行版**：从 GitHub Release 下载预编译包 `modernchat-<版本>-linux-<架构>.tar.gz`（sha256 校验；含后端二进制 + 前端 dist + 迁移 SQL + 部署脚本）。`RELEASE_TAG=v0.10.3` 指定版本（默认 latest）。
 3. **数据库自动创建**：本机没有 MySQL 时可自动安装；已有实例（宝塔 / 云数据库）选「external」填连接信息。自动建 `modernchat` 库 + 专用账号，同时创建 `'localhost'` 与 `'%'` 两个 host 兼容宝塔的限制。**应用数据库密码**可用环境变量 `DB_PASS` 预设或在问答里输入，直接回车则自动生成随机密码——安装完成的摘要会**明示**数据库账号与密码（同时存于 `server/.env` 与 `/var/lib/modernchat/install-state`，均 600 权限；安装日志同为 600，仅 root 可读）。自动安装模式下 MySQL root 为**免密（auth_socket）**，摘要里给出设置 root 密码的命令（设密码不影响应用运行，应用用的是专用账号）。
 4. **配置与常驻**：自动生成 `JWT_SECRET`、写 `server/.env`（含 `RELEASE_API_URL` / `RELEASE_DL_URL`，供在线更新使用）、注册 systemd 服务 `modernchat@<端口>`、生成并加载 nginx 配置（静态托管 + `/api` 反代 + `/ws` 升级 + `/ws` 关闭访问日志）。
 5. **输出站点链接**：有域名 → `http://域名`（非 80 端口带端口号）；没域名 → `http://公网IP:端口`。首个注册账号自动成为站长。
@@ -207,15 +209,14 @@ bash install.sh
 ```bash
 INSTALL_DIR=/opt/modernchat DOMAIN=chat.example.com SITE_PORT=80 BACKEND_PORT=8080 \
 DB_MODE=external DB_HOST=127.0.0.1 DB_PORT=3306 DB_ROOT_USER=root DB_ROOT_PASS=xxx \
-RELEASE_SOURCE=gitee RELEASE_TAG=latest bash install.sh
+RELEASE_TAG=latest bash install.sh
 ```
 
 **发版流程**（发布新版本供安装 / 更新）：
 
 1. 更新 `CHANGELOG.md` 定版，并把 `web/`、`website/` 的 `package.json` / `package-lock.json` 与官网版本常量 `website/src/links.ts` 的 `VERSION` 对齐到同一版本；运行 `sh scripts/check-version.sh` 校验通过（基准为 CHANGELOG 最新正式版本）；
-2. 打 tag（如 `v0.10.3`）并推送；
-3. 在构建机（需 Go + Node）运行 `scripts/package-release.sh`——产出 `dist-release/modernchat-<版本>-linux-{amd64,arm64}.tar.gz` 与对应 `.sha256`；
-4. 把这些文件上传为 Gitee / GitHub 的 Release 附件（两个平台的 tag 与附件都传，安装脚本按 `RELEASE_SOURCE` 选源）。
+2. 打 tag（如 `v0.10.3`）并推送——**推送后 GitHub Actions 会自动完成后面两步**（`.github/workflows/release.yml`：校验版本一致性 → 运行 `scripts/package-release.sh` 打包双架构附件 → 发布 GitHub Release 并上传附件）；
+3. 手动发版（无 Actions 或需重打）时：在构建机（需 Go + Node）运行 `scripts/package-release.sh`——产出 `dist-release/modernchat-<版本>-linux-{amd64,arm64}.tar.gz` 与对应 `.sha256`，再上传为 GitHub 的 Release 附件（安装脚本与后台在线更新自动从这里下载）。
 
 注意事项：
 
@@ -248,7 +249,7 @@ AUTO_CONFIRM=yes PURGE_DB=yes DELETE_FILES=yes bash scripts/uninstall.sh   # 免
 
 ```bash
 # 1. 拉代码
-git clone https://gitee.com/Sun-Si-Cheng/modern-chat-new.git && cd modern-chat-new
+git clone https://github.com/modern-day-team/modern-chat-new.git && cd modern-chat-new
 
 # 2. 准备数据库
 mysql -uroot -p -e "CREATE DATABASE modernchat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -325,8 +326,8 @@ gzip on;          # 没有预压缩文件时实时压缩兜底
 
 | 模式 | 触发条件 | 行为 |
 |---|---|---|
-| **发行版**（install.sh 默认） | `server/.env` 里有 `RELEASE_API_URL` / `RELEASE_DL_URL` | 查询 Release 最新 tag → 下载预编译包 → sha256 校验 → 原子替换产物 → 重启。**服务器无需 Go / Node / git** |
-| **源码**（git clone 部署） | 安装目录有 `.git` 且未配置 RELEASE_* | git pull → 本地编译（需服务器装 Go / Node）→ 原子替换 → 重启 |
+| **发行版**（install.sh 默认） | `server/.env` 里有 `RELEASE_API_URL` / `RELEASE_DL_URL`；或无 `.git` 且未配置（按 `RELEASE_REPO_GITHUB` / 默认官方仓库派生 GitHub 地址） | 查询 Release 最新 tag → 下载预编译包 → sha256 校验 → 原子替换产物 → 重启。**服务器无需 Go / Node / git** |
+| **源码**（git clone 部署） | 安装目录有 `.git` 且未显式配置 RELEASE_URL | git pull → 本地编译（需服务器装 Go / Node）→ 原子替换 → 重启 |
 
 与 `scripts/update.sh` 等价（发行版模式与图形化同源：下载新 Release 校验替换后重启；源码模式支持蓝绿热更新），边界：
 
@@ -346,13 +347,13 @@ gzip on;          # 没有预压缩文件时实时压缩兜底
 - **容器内的附件持久化**：`docker-compose.yml` 默认**没有**为 `DATA_DIR`（默认 `data`）挂载卷，`docker compose up -d --build` 重建容器后本地上传附件会丢失。生产必须挂持久卷，或改用 S3；`/uploads` 静态服务本身在容器内可正常工作。
 - `--no-restart`：只构建并原子替换产物。运行中的老进程继续跑老版本，下次执行 `update.sh`（不带参数）时再完成切换。
 
-脚本会：拉取 Gitee → 构建后端（注入版本号）→ 构建前端 → 切换/重启服务。也可手工执行：
+脚本会：拉取远端仓库 → 构建后端（注入版本号）→ 构建前端 → 切换/重启服务。也可手工执行：
 
 ```bash
 cd server
-go build -ldflags "-X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Version=v1.0.0 \
-  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
-  -X gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/version.BuildTime=$(date -u +%FT%TZ)" \
+go build -ldflags "-X github.com/modern-day-team/modern-chat-new/server/internal/version.Version=v1.0.0 \
+  -X github.com/modern-day-team/modern-chat-new/server/internal/version.Commit=$(git rev-parse --short HEAD) \
+  -X github.com/modern-day-team/modern-chat-new/server/internal/version.BuildTime=$(date -u +%FT%TZ)" \
   -o ../bin/modernchat-server ./cmd/server
 ```
 

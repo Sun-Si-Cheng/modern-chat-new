@@ -5,7 +5,7 @@
  */
 export const VERSION = '0.10.3'
 
-export const REPO = 'https://gitee.com/Sun-Si-Cheng/modern-chat-new'
+export const REPO = 'https://github.com/modern-day-team/modern-chat-new'
 export const BRANCH = 'main'
 export const RELEASES = `${REPO}/releases`
 export const LICENSE_URL = `${REPO}/blob/${BRANCH}/LICENSE`

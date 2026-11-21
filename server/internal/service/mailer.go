@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
 )
 
 // mailTimeout 单个连接的建连/读写上限，避免 SMTP 故障拖住请求。

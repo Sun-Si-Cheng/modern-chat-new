@@ -41,9 +41,18 @@ type Config struct {
 	// WebUpdate 站长后台图形化更新开关（WEB_UPDATE，默认开）
 	WebUpdate bool
 	// ReleaseAPIURL / ReleaseDLURL 发行版模式：releases/latest API 与下载前缀
-	// （RELEASE_API_URL / RELEASE_DL_URL，install.sh 写入 .env）。都为空 = 源码 git 模式。
+	// （RELEASE_API_URL / RELEASE_DL_URL，install.sh 写入 .env）。都为空时按
+	// ReleaseRepoGithub 派生（未配置则用官方仓库），仅 git clone 部署仍走源码模式。
 	ReleaseAPIURL string
 	ReleaseDLURL  string
+	// ReleaseRepoGithub 发行版托管仓库（RELEASE_REPO_GITHUB，格式 owner/repo）。
+	// RELEASE_API_URL / RELEASE_DL_URL 未配置时用它派生两者；为空用官方仓库。
+	// 用于把 Release 托管在 fork / 自建镜像仓库的场景。
+	ReleaseRepoGithub string
+	// GithubToken 访问 GitHub API 的令牌（GITHUB_TOKEN，可选）。
+	// 匿名调用 api.github.com 限流 60 次/小时/IP，配置后提升到 5000 次/小时，
+	// 并支持私有仓库的 Release 检查。仅用于更新请求头，不落日志。
+	GithubToken string
 	// Web Push（VAPID）；两项都配置才启用
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
@@ -105,11 +114,13 @@ func Load() (Config, error) {
 		// 一律不可用；仅支持 install.sh 的 systemd 部署，Docker / 裸机自动不可用。
 		WebUpdate: getBool("WEB_UPDATE", true),
 		// 发行版模式（install.sh 写入 .env）：非空即从 Release 下载预编译包更新
-		ReleaseAPIURL:   os.Getenv("RELEASE_API_URL"),
-		ReleaseDLURL:    os.Getenv("RELEASE_DL_URL"),
-		VAPIDPublicKey:  getv("VAPID_PUBLIC_KEY", ""),
-		VAPIDPrivateKey: getv("VAPID_PRIVATE_KEY", ""),
-		VAPIDSubject:    getv("VAPID_SUBJECT", "mailto:admin@localhost"),
+		ReleaseAPIURL:     os.Getenv("RELEASE_API_URL"),
+		ReleaseDLURL:      os.Getenv("RELEASE_DL_URL"),
+		ReleaseRepoGithub: os.Getenv("RELEASE_REPO_GITHUB"),
+		GithubToken:       os.Getenv("GITHUB_TOKEN"),
+		VAPIDPublicKey:    getv("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey:   getv("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:      getv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),

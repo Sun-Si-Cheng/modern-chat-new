@@ -172,8 +172,8 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/admin/storage/gc` | `{dryRun?:boolean}` | `{ok:true,dryRun,deleted,freedBytes}`; deletes files not referenced by messages / stickers / group files / avatars |
 | GET `/api/admin/backups` | — | `{backups: BackupFile[], dir}`; `BackupFile = {name,size,createdAt}` |
 | POST `/api/admin/backups` | — | `{ok:true,file}`; requires `mysqldump` (`MYSQLDUMP_PATH`) |
-| GET `/api/admin/update/status` | — | `{available,busy,phase,lines,error?,version,commit,mode?}`; polled by the frontend |
-| GET `/api/admin/update/check` | — | `{upToDate,local,remote,remoteTag,remoteMsg}` |
+| GET `/api/admin/update/status` | — | `{available,busy,phase,lines,error?,version,commit,mode?,repo?}`; polled by the frontend; `repo` = repo hosting the releases (shown in release mode) |
+| GET `/api/admin/update/check` | — | `{upToDate,local,remote,remoteTag,remoteMsg,remoteNotes?}`; `remoteNotes` = plain-text release notes (truncated to 8 KB server-side) |
 | POST `/api/admin/update/start` | — | `{started:true}`; systemd deployments only; unavailable when `WEB_UPDATE=false`; writes the audit `web_update` |
 | GET `/api/health` | no auth | `{"status":"ok"}` (Nginx/container probes) |
 | GET `/api/version` | no auth | `{version, commit, buildTime}` (injected at build via ldflags; `go run` yields `dev/unknown`) |
@@ -323,8 +323,11 @@ BACKUP_INTERVAL_HOURS=0     # 0 = scheduled backups off
 BACKUP_RETAIN=7
 MYSQLDUMP_PATH=mysqldump
 WEB_UPDATE=true             # site-admin online update switch
-RELEASE_API_URL=            # release mode (written by install.sh)
-RELEASE_DL_URL=
+RELEASE_API_URL=            # release mode: GitHub Release update source (written by install.sh);
+RELEASE_DL_URL=             # when both are empty, derived from RELEASE_REPO_GITHUB (or the
+                            # default official repo); a .git install directory still uses source mode
+RELEASE_REPO_GITHUB=        # repo hosting the releases (owner/repo, optional)
+GITHUB_TOKEN=               # GitHub API token (optional, avoids the 60/hour anonymous limit)
 VAPID_PUBLIC_KEY= VAPID_PRIVATE_KEY= VAPID_SUBJECT=mailto:admin@localhost
 # Redis optional: when set, rate limits share a quota (multi-instance); on failure falls back to memory
 REDIS_ADDR= REDIS_PASSWORD= REDIS_DB=0

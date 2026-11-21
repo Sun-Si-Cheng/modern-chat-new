@@ -2,7 +2,7 @@
 # ============================================================================
 # ModernChat 发行版打包脚本（在构建机上运行，Linux 或 WSL；需 Go + Node）
 #
-# 产出（dist-release/ 下，直接作为 Gitee / GitHub Release 附件上传）：
+# 产出（dist-release/ 下，直接作为 GitHub Release 附件上传）：
 #   modernchat-<tag>-linux-amd64.tar.gz + .sha256
 #   modernchat-<tag>-linux-arm64.tar.gz + .sha256
 #
@@ -18,8 +18,7 @@
 #   ./scripts/package-release.sh              # 用 git describe（开发快照）
 #
 # 上传附件后，install.sh / 后台图形化更新即可从 Release 下载安装：
-#   Gitee:  https://gitee.com/<owner>/<repo>/releases/download/<tag>/<asset>
-#   GitHub: https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>
+#   https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>
 # ============================================================================
 set -euo pipefail
 
@@ -28,7 +27,7 @@ TAG="${TAG#v}"                     # 资产名不带 v 前缀（v0.10.3 → 0.10
 VERSION_FULL="${1:-$(git describe --tags --always 2>/dev/null || echo dev)}"   # 注入二进制的完整版本串
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/dist-release"
-MODULE="gitee.com/Sun-Si-Cheng/modern-chat-new/server"
+MODULE="github.com/modern-day-team/modern-chat-new/server"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 info() { printf "\033[32m==>\033[0m %s\n" "$*"; }

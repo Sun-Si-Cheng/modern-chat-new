@@ -11,13 +11,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/config"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/handler"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/metrics"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/middleware"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/service"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/store"
-	"gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/ws"
+	"github.com/modern-day-team/modern-chat-new/server/internal/config"
+	"github.com/modern-day-team/modern-chat-new/server/internal/handler"
+	"github.com/modern-day-team/modern-chat-new/server/internal/metrics"
+	"github.com/modern-day-team/modern-chat-new/server/internal/middleware"
+	"github.com/modern-day-team/modern-chat-new/server/internal/service"
+	"github.com/modern-day-team/modern-chat-new/server/internal/store"
+	"github.com/modern-day-team/modern-chat-new/server/internal/ws"
 )
 
 // Deps 路由依赖容器。

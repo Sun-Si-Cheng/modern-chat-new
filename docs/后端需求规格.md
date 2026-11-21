@@ -172,8 +172,8 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/admin/storage/gc` | `{dryRun?:boolean}` | `{ok:true,dryRun,deleted,freedBytes}`；删除未被消息 / 表情 / 群文件 / 头像引用的文件 |
 | GET `/api/admin/backups` | — | `{backups: BackupFile[], dir}`；`BackupFile = {name,size,createdAt}` |
 | POST `/api/admin/backups` | — | `{ok:true,file}`；依赖 `mysqldump`（`MYSQLDUMP_PATH`） |
-| GET `/api/admin/update/status` | — | `{available,busy,phase,lines,error?,version,commit,mode?}`；前端轮询 |
-| GET `/api/admin/update/check` | — | `{upToDate,local,remote,remoteTag,remoteMsg}` |
+| GET `/api/admin/update/status` | — | `{available,busy,phase,lines,error?,version,commit,mode?,repo?}`；前端轮询；`repo` = Release 托管仓库（发行版模式展示用） |
+| GET `/api/admin/update/check` | — | `{upToDate,local,remote,remoteTag,remoteMsg,remoteNotes?}`；`remoteNotes` = Release 说明纯文本（服务端截断 8 KB） |
 | POST `/api/admin/update/start` | — | `{started:true}`；仅 systemd 部署；`WEB_UPDATE=false` 时不可用；写审计 `web_update` |
 | GET `/api/health` | 免鉴权 | `{"status":"ok"}`（Nginx/容器探活） |
 | GET `/api/version` | 免鉴权 | `{version, commit, buildTime}`（编译期 ldflags 注入；`go run` 时为 `dev/unknown`） |
@@ -319,8 +319,11 @@ BACKUP_INTERVAL_HOURS=0     # 0=关闭定时备份
 BACKUP_RETAIN=7
 MYSQLDUMP_PATH=mysqldump
 WEB_UPDATE=true             # 站长后台在线更新开关
-RELEASE_API_URL=            # 发行版模式（install.sh 写入）
-RELEASE_DL_URL=
+RELEASE_API_URL=            # 发行版模式：GitHub Release 更新源（install.sh 写入）；
+RELEASE_DL_URL=             # 都为空时按 RELEASE_REPO_GITHUB（或默认官方仓库）派生，
+                            # 安装目录有 .git 仍走源码模式
+RELEASE_REPO_GITHUB=        # Release 托管仓库（owner/repo，可选）
+GITHUB_TOKEN=               # GitHub API 令牌（可选，防匿名 60 次/小时限流）
 VAPID_PUBLIC_KEY= VAPID_PRIVATE_KEY= VAPID_SUBJECT=mailto:admin@localhost
 # Redis 可选：配置后限流使用共享配额（多实例）；连接失败自动降级为内存
 REDIS_ADDR= REDIS_PASSWORD= REDIS_DB=0

@@ -1,6 +1,6 @@
 package ws
 
-import "gitee.com/Sun-Si-Cheng/modern-chat-new/server/internal/model"
+import "github.com/modern-day-team/modern-chat-new/server/internal/model"
 
 // notifyPresence 上下线广播：好友 + 所有同会话成员（含本人，便于多端同步）。
 //
