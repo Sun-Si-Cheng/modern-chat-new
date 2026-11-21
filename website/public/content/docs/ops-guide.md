@@ -219,6 +219,8 @@ RELEASE_TAG=latest bash install.sh
 2. 打 tag（如 `v0.10.3`）并推送——**推送后 GitHub Actions 会自动完成后面两步**（`.github/workflows/release.yml`：校验版本一致性 → 运行 `scripts/package-release.sh` 打包双架构附件 → 发布 GitHub Release 并上传附件）；
 3. 手动发版（无 Actions 或需重打）时：在构建机（需 Go + Node）运行 `scripts/package-release.sh`——产出 `dist-release/modernchat-<版本>-linux-{amd64,arm64}.tar.gz` 与对应 `.sha256`，再上传为 GitHub 的 Release 附件（安装脚本与后台在线更新自动从这里下载）。
 
+日常提交由 CI 把关（`.github/workflows/ci.yml`，推送 main / PR 触发）：版本一致性、后端 gofmt / vet / test（集成测试无 MySQL 自动跳过）、前端 vue-tsc / oxlint / eslint（只检查不改写）/ 令牌审计 / 构建、官网 type-check 与构建；同分支连推自动取消过期运行。
+
 注意事项：
 
 - **云服务器安全组**：脚本会放行 ufw / firewalld，但云控制台的安全组需要手动放行站点端口（宝塔用户：安全 → 端口规则）。

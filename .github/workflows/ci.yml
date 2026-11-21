@@ -1,0 +1,102 @@
+# ============================================================================
+# CI：推送 main / PR 时跑全量检查（版本一致性、后端、前端、官网）
+#
+# 与 release.yml 的分工：CI 管"每次提交都绿"，release.yml 管"发版产物"。
+# 注意：前端 lint 只做检查不改写（npm run lint 带 --fix，禁止在 CI 使用）。
+# 集成测试需本机 MySQL，CI 环境自动 t.Skip（go test 仍 ok，见 server/test/）。
+# ============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# 同分支快速连推时取消过期的旧运行，省配额
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repo:
+    name: 版本一致性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check-version（CHANGELOG 与 package.json / links.ts 对齐）
+        run: sh scripts/check-version.sh
+
+  server:
+    name: 后端（Go）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: gofmt 检查
+        working-directory: server
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "以下文件未格式化（gofmt -w 修复）："
+            echo "$out"
+            exit 1
+          fi
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+      - name: go test（单元测试；集成测试无 MySQL 自动跳过）
+        working-directory: server
+        run: go test ./...
+
+  web:
+    name: 前端（web）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 安装依赖
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: 类型检查（vue-tsc）
+        working-directory: web
+        run: npm run type-check
+      - name: Lint（只检查不改写）
+        working-directory: web
+        run: |
+          npx oxlint .
+          npx eslint .
+      - name: 设计令牌审计（报告硬编码颜色基线）
+        working-directory: web
+        run: node scripts/audit-tokens.mjs
+      - name: 构建（含预压缩产物，验证可发布性）
+        working-directory: web
+        run: npm run build
+
+  website:
+    name: 官网（website）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: 安装依赖
+        working-directory: website
+        run: npm ci --no-audit --no-fund
+      - name: 类型检查（vue-tsc）
+        working-directory: website
+        run: npm run type-check
+      - name: 构建
+        working-directory: website
+        run: npm run build

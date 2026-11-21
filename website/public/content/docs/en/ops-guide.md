@@ -198,6 +198,8 @@ RELEASE_TAG=latest bash install.sh
 2. Tag (e.g. `v0.10.3`) and push — **pushing the tag triggers GitHub Actions to do the next two steps automatically** (`.github/workflows/release.yml`: verify version consistency → run `scripts/package-release.sh` to package dual-arch assets → publish the GitHub Release and upload assets);
 3. Manual publishing (without Actions, or when re-packaging): run `scripts/package-release.sh` on a build machine (needs Go + Node) — it produces `dist-release/modernchat-<version>-linux-{amd64,arm64}.tar.gz` and the matching `.sha256`, then upload them as GitHub Release assets (the install script and the console's online update download from here automatically).
 
+Day-to-day commits are gated by CI (`.github/workflows/ci.yml`, triggered on pushes to main / PRs): version consistency, backend gofmt / vet / test (integration tests auto-skip without MySQL), frontend vue-tsc / oxlint / eslint (check-only, no rewriting) / token audit / build, and website type-check & build; stale runs are cancelled automatically on rapid successive pushes.
+
 Notes:
 
 - **Cloud security groups**: the script opens ufw / firewalld, but cloud console security groups must be opened manually for the site port (BT Panel users: Security → port rules).
