@@ -167,12 +167,18 @@ function buildSandboxCsp(allowedHosts: string[]): string {
     // 只接受主机名或 *.子域形式，避免把端口/路径/引号拼进 CSP 指令
     .filter((h) => /^(\*\.)?[a-z0-9][a-z0-9.-]*$/.test(h))
   const connect = hosts.length ? hosts.join(' ') : "'none'"
+  // 媒体能力（通用，无音乐等业务语义）：插件可在自己的沙箱文档里用 <audio>/<video>
+  // 播放其 allowedHosts 内的媒体（音频/播客等），blob: 支持先 fetch 缓冲再播。
+  // 与 connect-src 同一信任边界——都来自插件安装时声明的 allowedHosts，不新增决策点。
+  // 沙箱无 same-origin，读不到跨域媒体字节（不可缓存/解析波形），只能顺序播放。
+  const media = hosts.length ? `${connect} blob:` : "'none'"
   return [
     "default-src 'none'",
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",
     'img-src data:',
     `connect-src ${connect}`,
+    `media-src ${media}`,
     "base-uri 'none'",
     "form-action 'none'",
     "frame-src 'none'",
@@ -647,6 +653,10 @@ function createHost() {
     if (runtimes.has(plugin.id)) return
     const iframe = document.createElement('iframe')
     iframe.setAttribute('sandbox', 'allow-scripts')
+    // 媒体自动播放委托：插件播放器的「播放」按钮在宿主的声明式面板里点击，
+    // 音频却由沙箱文档里的 <audio> 发出——跨文档没有这个委托，浏览器会把
+    // 未发生过用户手势的沙箱帧当作自动播放拦下（表现：点了播放没声音）。
+    iframe.setAttribute('allow', 'autoplay')
     iframe.style.display = 'none'
     // 监听器必须存进 Runtime：卸载时要按同一个引用 removeEventListener
     // 这里必须先声明后赋值：onMessage 回调内部要引用 runtime（互相引用），无法合并为 const
