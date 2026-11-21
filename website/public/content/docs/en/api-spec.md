@@ -91,12 +91,20 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | GET `/api/auth/sso/callback` | center redirect `?code&state` or `?error` | verifies state → exchanges code for token → fetches profile → links or creates the local account by username (email must match, preventing account takeover) or email → issues a one-time ticket → 302 to `SSO_SITE_URL + SSO_APP_BASE + /sso/callback?ticket&redirect` |
 | POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`; **no auth**, the ticket is single-use and valid for 5 minutes |
 | POST `/api/auth/qr/start` | — | `{token, expiresAt}`; **no auth**. The desktop creates a QR session (5 minutes) and renders a QR pointing at `/app/qr/<token>` |
+| POST `/api/auth/2fa/verify` | `{ticket, code}` | `{token, user}`; **no auth**. Two-factor second step: 6 digits = TOTP / email code (per the enabled method), 8 hex chars = recovery code (single-use); max 5 tries per ticket; success issues the JWT + mc_auth cookie |
+| POST `/api/auth/2fa/email-code` | `{ticket}` | `{ok:true, cooldownSeconds}`; **no auth**, emails the second-factor code during login (60s cooldown) |
 | POST `/api/auth/qr/status` | `{token}` | `{status:"pending"\|"confirmed"\|"expired", token?, user?}`; **no auth**, desktop polls every 2.5s (dedicated 60/min limit; POST body keeps the ticket out of access logs). `confirmed` hands out the desktop JWT once — the first successful poll takes it, retries get expired; invalidated when the confirmer is banned |
 | POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`; **requires the phone's JWT** (authed group). Authorizes the desktop sign-in; invalid/expired QR→400 |
 | GET `/api/me` | — | `User` (with email) |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`. **Changing the bound email requires `emailCode`** (sent to the new address; stored and `email_verified=true` only after successful consumption; an empty `email` string means unbind and needs no verification); if the email is unchanged the verification state is untouched; with SMTP unconfigured the change returns 400. avatar is `data:image/(png\|jpeg\|webp);base64,…`, frontend compresses to 256×256, server validates prefix & ≤256KB, empty string clears | updated `User` |
 | POST `/api/me/email-code` | `{email}` (new address) | `{ok:true, cooldownSeconds}`; same as the current email→400, taken by someone else→409, SMTP unavailable→503; 5 times/min per user, 60-second cooldown per email |
 | POST `/api/me/logout-others` | — | `{ok:true}`; `token_version+1` invalidates all old JWTs; also actively `KickUser`s all established WS connections of that account (sending `kicked` frames), the current device must log in again too |
+| GET `/api/me/2fa` | — | `{enabled, method, email}`; the user's own 2FA status |
+| POST `/api/me/2fa/totp/setup` | — | `{secret, otpauthUrl}`; generates the TOTP secret (not enabled until enable passes) |
+| POST `/api/me/2fa/totp/enable` | `{code}` | `{ok:true, recoveryCodes[]}`; enables the app method + 8 recovery codes (sha256 stored) |
+| POST `/api/me/2fa/email/code` | — | `{ok:true, cooldownSeconds}`; purpose=twofa (60s cooldown, SMTP required) |
+| POST `/api/me/2fa/email/enable` | `{code}` | `{ok:true, recoveryCodes[]}`; enables the email method |
+| POST `/api/me/2fa/disable` | `{password}` | `{ok:true}`; password re-auth disables, clearing the secret and codes |
 | GET `/api/users/search` | `?kw=` (≤50) | `User summary[]` (no email, ≤20 rows) |
 | GET `/api/friends` | — | `FriendItem[]` (accepted friends; both-direction rows deduped per peer, one row per person) |
 | GET `/api/friends/requests` | — | `FriendRequestItem[]` (status=0 pointing at me) |
