@@ -68,6 +68,9 @@ curl https://site/api/conversations -H 'Authorization: Bearer <token>'
 | GET `/api/auth/sso/start` | `?redirect=` (site-relative) | 302 → the aggregated login center's authorize page |
 | GET `/api/auth/sso/callback` | center redirect `?code&state` | verifies → links/creates the account → 302 to `/sso/callback?ticket&redirect` |
 | POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`; **no auth**, single-use ticket valid 5 minutes |
+| POST `/api/auth/qr/start` | — | `{token, expiresAt}`; **no auth**. The desktop creates a QR session (5 minutes) and renders a QR pointing at `/app/qr/<token>` |
+| POST `/api/auth/qr/status` | `{token}` | `{status, token?, user?}`; **no auth**, desktop polls every 2.5s (rate limit 60/min). `confirmed` hands out the desktop JWT once |
+| POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`; **requires the phone's JWT**. Authorizes the desktop sign-in; invalid/expired QR→400 |
 | POST `/api/auth/migrate-login` | `{token, key}` | `{token, user}`; **no auth**, one-time legacy-site migration ticket (10 minutes); on failure use the original password |
 | GET `/api/me` | — | `User` (own record includes email / emailVerified) |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}` | updated `User`. Changing email requires `emailCode` (sent to the new address); empty-string `email` unbinds; avatar is a dataURL (≤256KB) or empty string to clear. Nickname/avatar changes broadcast `user_change` |

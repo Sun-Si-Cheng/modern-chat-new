@@ -139,6 +139,8 @@ export function showMessageNotification(
       onClick()
       n.close()
     }
+    // 移动端触觉反馈：后台收到消息时的短振动（桌面端无该 API，静默跳过）
+    navigator.vibrate?.(120)
   } catch {
     /* 某些移动端浏览器只允许经 Service Worker 发通知：静默跳过 */
   }

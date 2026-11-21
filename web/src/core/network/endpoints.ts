@@ -46,6 +46,23 @@ export const authApi = {
   ssoExchange: (body: { ticket: string }) =>
     // 公开接口：票据本身就是凭据，不带 Authorization、401 也不跳登录页
     http.post<AuthPayload>('/auth/sso/exchange', body, { skipAuth: true }),
+  /**
+   * 扫码登录：桌面端生成一次性会话（免鉴权），把返回 token 渲染成二维码。
+   * 会话 5 分钟有效，过期需重新生成。
+   */
+  qrStart: () => http.post<{ token: string; expiresAt: string }>('/auth/qr/start', {}, { skipAuth: true }),
+  /**
+   * 扫码登录：桌面端轮询结果（免鉴权）。confirmed 时 token/user 一次性下发——
+   * 首个成功轮询取走登录态，重试只会拿到 expired。
+   */
+  qrStatus: (token: string) =>
+    http.post<{ status: 'pending' | 'confirmed' | 'expired'; token?: string; user?: User }>(
+      '/auth/qr/status',
+      { token },
+      { skipAuth: true },
+    ),
+  /** 扫码登录：手机端（已登录）确认授权桌面登录；二维码无效/过期→400 */
+  qrConfirm: (token: string) => http.post<{ ok: true }>('/auth/qr/confirm', { token }),
   /** 发送注册验证码；返回剩余冷却秒数（冷却期内重复调用也返回 200） */
   emailCode: (email: string) =>
     http.post<{ ok: true; cooldownSeconds: number }>('/auth/email-code', { email }),

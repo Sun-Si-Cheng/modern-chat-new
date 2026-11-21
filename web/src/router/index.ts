@@ -9,6 +9,9 @@ const router = createRouter({
     // 统一登录回跳页：聚合中心授权后 302 到这里（带一次性 ticket）。
     // 不加 guest：本机残留登录态不能挡掉票据兑换，与 /forgot 同理。
     { path: '/sso/callback', name: 'sso-callback', component: () => import('@/views/SsoCallbackView.vue') },
+    // 扫码登录确认页（手机端）：桌面二维码内容指向这里。已登录→确认授权；
+    // 未登录→引导先登录（redirect 记住本页）。不加 guest 同理。
+    { path: '/qr/:token', name: 'qr-confirm', component: () => import('@/views/QrConfirmView.vue') },
     // 不加 guest：已登录用户点邮件里的 /forgot?token=xxx 必须能完成重置，
     // 否则会被守卫直接送到 /chat、把令牌丢掉
     { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue') },

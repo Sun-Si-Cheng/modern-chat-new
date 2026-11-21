@@ -68,6 +68,9 @@ curl https://站点/api/conversations -H 'Authorization: Bearer <token>'
 | GET `/api/auth/sso/start` | `?redirect=`（站内相对路径） | 302 → 聚合登录中心授权页 |
 | GET `/api/auth/sso/callback` | 中心回跳 `?code&state` | 校验 → 关联/建号 → 302 回 `/sso/callback?ticket&redirect` |
 | POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`；**免鉴权**，票据一次性、5 分钟有效 |
+| POST `/api/auth/qr/start` | — | `{token, expiresAt}`；**免鉴权**。桌面端生成扫码会话（5 分钟），前端渲染成指向 `/app/qr/<token>` 的二维码 |
+| POST `/api/auth/qr/status` | `{token}` | `{status, token?, user?}`；**免鉴权**，桌面 2.5s 轮询（限流 60/min）。confirmed 一次性下发桌面 JWT |
+| POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`；**需手机端 JWT**。授权桌面登录；二维码无效/过期→400 |
 | POST `/api/auth/migrate-login` | `{token, key}` | `{token, user}`；**免鉴权**，旧站迁移一次性票据（10 分钟），失败提示用原密码登录 |
 | GET `/api/me` | — | `User`（本人含 email / emailVerified） |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}` | 更新后 `User`。换绑邮箱必须带 `emailCode`（发往新邮箱）；空串 `email`=解绑；avatar 为 dataURL（≤256KB）或空串清除。昵称/头像变更后广播 `user_change` |

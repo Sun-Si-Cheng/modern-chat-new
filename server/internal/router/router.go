@@ -202,6 +202,13 @@ func New(d Deps) *gin.Engine {
 	api.GET("/auth/sso/callback", authLimit, authH.SSOCallback)
 	api.POST("/auth/sso/exchange", authLimit, authH.SSOExchange)
 
+	// 扫码登录（handler/auth_qr.go）：桌面展示二维码，手机端已登录会话扫码确认。
+	// 桌面未登录态轮询 status（POST 传 body，票据不进访问日志），专用限流 60/min
+	// —— authLimit 的 10/min 会被 2.5s 一次的轮询打满。
+	qrLimit := middleware.RateLimit(middleware.NewLimiterStore(60, 20), middleware.KeyByIP)
+	api.POST("/auth/qr/start", authLimit, authH.QRStart)
+	api.POST("/auth/qr/status", qrLimit, authH.QRStatus)
+
 	// 需登录（Auth → Ban → Maintenance：维护模式要能读到用户角色）
 	authed := api.Group(
 		"",
@@ -212,6 +219,8 @@ func New(d Deps) *gin.Engine {
 	{
 		authed.GET("/me", authH.Me)
 		authed.PATCH("/me", authH.UpdateMe)
+		// 扫码登录：手机端（已登录）确认授权桌面登录；维护模式随组内中间件 503
+		authed.POST("/auth/qr/confirm", authH.QRConfirm)
 		// 换绑邮箱：给「新邮箱」发验证码（按用户限流，60 秒冷却由 store 保证）
 		emailCodeLimit := middleware.RateLimit(middleware.NewLimiterStore(5, 5), middleware.KeyByUID)
 		authed.POST("/me/email-code", emailCodeLimit, authH.EmailCodeChange)

@@ -7,6 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, MailIcon, UserIcon } from 'tdesign-icons-vue-next'
+import QRCode from 'qrcode'
 
 import { authApi } from '@/core/network/endpoints'
 import AuthScene from '@/components/common/AuthScene.vue'
@@ -228,6 +229,70 @@ function startSso() {
   location.href = `/api/auth/sso/start?redirect=${encodeURIComponent(redirect)}`
 }
 
+// ===== 扫码登录（桌面端展示二维码，手机端扫码确认，handler/auth_qr.go） =====
+
+const qrOpen = ref(false)
+const qrImg = ref('')
+const qrState = ref<'pending' | 'expired'>('pending')
+const qrBusy = ref(false)
+let qrToken = ''
+let qrTimer: ReturnType<typeof setInterval> | null = null
+
+function stopQrPolling() {
+  if (qrTimer) {
+    clearInterval(qrTimer)
+    qrTimer = null
+  }
+}
+
+async function openQrLogin() {
+  stopQrPolling()
+  qrOpen.value = true
+  qrBusy.value = true
+  qrState.value = 'pending'
+  qrImg.value = ''
+  try {
+    const s = await authApi.qrStart()
+    qrToken = s.token
+    // 二维码内容 = 本站确认页地址：手机扫码后在该页用已登录会话确认
+    qrImg.value = await QRCode.toDataURL(`${location.origin}${import.meta.env.BASE_URL}qr/${s.token}`, {
+      width: 220,
+      margin: 1,
+    })
+    qrTimer = setInterval(pollQr, 2500)
+    void pollQr()
+  } catch {
+    qrState.value = 'expired'
+  } finally {
+    qrBusy.value = false
+  }
+}
+
+function closeQrLogin() {
+  stopQrPolling()
+  qrToken = ''
+  qrOpen.value = false
+}
+
+async function pollQr() {
+  if (!qrToken) return
+  try {
+    const s = await authApi.qrStatus(qrToken)
+    if (s.status === 'confirmed' && s.token && s.user) {
+      stopQrPolling()
+      auth.applyAuth({ token: s.token, user: s.user })
+      void MessagePlugin.success(t('auth.qrLoginOk'))
+      await router.replace('/chat')
+    } else if (s.status === 'expired') {
+      stopQrPolling()
+      qrState.value = 'expired'
+    }
+    // pending：继续轮询
+  } catch {
+    /* 网络抖动：等下一轮 */
+  }
+}
+
 onMounted(() => {
   void tryMigrateLogin()
   void authApi
@@ -239,6 +304,8 @@ onMounted(() => {
       /* 探测失败按未启用处理 */
     })
 })
+
+onBeforeUnmount(stopQrPolling)
 </script>
 
 <template>
@@ -256,6 +323,29 @@ onMounted(() => {
         <span class="auth-card__product">{{ siteName }}</span>
       </div>
 
+      <!-- 扫码登录：桌面展示二维码，手机端扫码后在本站确认页授权 -->
+      <template v-if="qrOpen">
+        <h1 class="auth-card__title">{{ t('auth.qrLogin') }}</h1>
+        <div class="auth-card__qr">
+          <img v-if="qrImg" :src="qrImg" alt="" width="200" height="200" />
+          <p v-if="qrState === 'pending'" class="auth-card__notice text-placeholder">
+            {{ t('auth.qrPending') }}
+          </p>
+          <template v-else>
+            <p class="auth-card__notice is-error">{{ t('auth.qrExpired') }}</p>
+            <UiButton theme="primary" :loading="qrBusy" @click="openQrLogin">
+              {{ t('auth.qrRefresh') }}
+            </UiButton>
+          </template>
+        </div>
+        <p class="auth-card__notice text-placeholder">{{ t('auth.qrHint') }}</p>
+        <div class="auth-card__links">
+          <button type="button" class="auth-card__link-btn" @click="closeQrLogin">
+            {{ t('auth.qrBack') }}
+          </button>
+        </div>
+      </template>
+      <template v-else>
       <h1 class="auth-card__title">
         {{ mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle') }}
       </h1>
@@ -424,6 +514,10 @@ onMounted(() => {
           >
             {{ t('auth.signupLink') }}
           </button>
+          <!-- 扫码登录入口：手机端已登录时扫桌面二维码即可登录 -->
+          <button type="button" class="auth-card__link-btn" @click="openQrLogin">
+            {{ t('auth.qrLogin') }}
+          </button>
         </template>
         <template v-else>
           <span class="text-placeholder">{{ t('auth.haveAccount') }}</span>
@@ -432,11 +526,24 @@ onMounted(() => {
           </button>
         </template>
       </div>
+      </template>
     </main>
   </div>
 </template>
 
 <style scoped>
+/* ===== 扫码登录 ===== */
+.auth-card__qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.auth-card__qr img {
+  border-radius: var(--mc-radius-md);
+  /* 二维码留白（margin:1）自带浅色底，深浅主题下都可扫 */
+}
+
 /* ===== 场景层：两段纯色（天 / 水）由一条地平线分开，无渐变、无装饰光斑 ===== */
 .auth-page {
   position: relative;
