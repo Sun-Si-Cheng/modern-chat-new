@@ -54,7 +54,7 @@ onBeforeUnmount(() => {
 /** 群全员禁言：普通成员不能发言，群主/管理员不受影响 */
 const muteAllBlocked = computed(() => {
   const id = convStore.currentConvId
-  const c = id ? convStore.conversations.find((x) => x.id === id) : null
+  const c = convStore.convById(id)
   if (!c || c.type !== 2 || !c.muteAll) return false
   const role = myMember.value?.role
   return !role || role === 'member'

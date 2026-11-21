@@ -37,7 +37,7 @@ watch(
 /** 会话名：服务端已按群名 / 单聊对方昵称填充，极端情况下回退到本地会话列表 */
 function convLabel(item: FavoriteItem): string {
   if (item.convName) return item.convName
-  const c = convStore.conversations.find((x) => x.id === item.conversationId)
+  const c = convStore.convById(item.conversationId)
   if (!c) return t('favorites.unknownConv')
   return c.type === 1 ? (c.peer?.nickname ?? t('favorites.unknownConv')) : (c.name ?? t('favorites.unknownConv'))
 }

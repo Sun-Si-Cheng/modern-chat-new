@@ -73,7 +73,7 @@ function showAnnouncement(id: number, content: string) {
   // 系统通知会话不在列表展示，但未读仍需清掉，避免后端留下永久的未读数
   const convId = systemConversation.value?.id
   if (convId) {
-    const conv = convStore.conversations.find((c) => c.id === convId)
+    const conv = convStore.convById(convId)
     if (conv) conv.unreadCount = 0
     void convApi.read(convId, id).catch(() => undefined)
   }
@@ -104,7 +104,7 @@ function notifyPreview(frame: Extract<ServerFrame, { type: 'message' }>): string
 function onMessageNotify(frame: ServerFrame) {
   if (frame.type !== 'message') return
   if (frame.from.id === auth.user?.id) return
-  const conv = convStore.conversations.find((c) => c.id === frame.convId)
+  const conv = convStore.convById(frame.convId)
   if (!conv || conv.muted) return
   const name = conv.type === 1 ? (conv.peer?.nickname ?? t('app.name')) : (conv.name ?? t('app.name'))
   showMessageNotification(

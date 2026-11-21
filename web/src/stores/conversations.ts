@@ -21,6 +21,79 @@ export const useConversationsStore = defineStore('conversations', () => {
   const drafts = reactive<Record<number, string>>({})
   const messagesByConv = reactive<Record<number, Message[]>>({})
 
+  // ===== 消息与会话索引 =====
+  // messagesByConv / conversations 的伴随索引：每帧 WS 消息的热路径此前要做
+  // 多次全表线性扫（去重、回显定位、已读游标、撤回/表情/送达定位），群突发时
+  // 成本 O(5n)。索引在唯一的几个写入口同步维护；存的是 reactive 数组里的
+  // 代理对象，帧处理器经索引拿到引用后原地修改，视图照常响应。
+  const msgIdx = new Map<number, Map<number, Message>>() // convId -> (id -> msg)
+  const msgByClient = new Map<string, Message>() // clientMsgId -> msg（全局唯一）
+  const maxIdByConv = new Map<number, number>() // convId -> 最大已落库消息 id
+  const convIdx = new Map<number, Conversation>() // convId -> conv
+  /** 会话列表结构变化计数（整表拉取/增删/替换）：convById 的读取方据此重算 */
+  const convListTick = ref(0)
+
+  function rebuildMsgIndex(convId: number) {
+    const list = messagesByConv[convId]
+    let idx = msgIdx.get(convId)
+    if (!idx) {
+      idx = new Map<number, Message>()
+      msgIdx.set(convId, idx)
+    }
+    idx.clear()
+    let max = 0
+    for (const [k, v] of msgByClient) if (v.conversationId === convId) msgByClient.delete(k)
+    for (const m of list ?? []) {
+      idx.set(m.id, m)
+      if (m.id > max) max = m.id
+      if (m.clientMsgId) msgByClient.set(m.clientMsgId, m)
+    }
+    maxIdByConv.set(convId, max)
+  }
+
+  function indexMsg(convId: number, m: Message | undefined) {
+    if (!m) return
+    let idx = msgIdx.get(convId)
+    if (!idx) {
+      idx = new Map<number, Message>()
+      msgIdx.set(convId, idx)
+    }
+    idx.set(m.id, m)
+    if (m.clientMsgId) msgByClient.set(m.clientMsgId, m)
+    if (m.id > (maxIdByConv.get(convId) ?? 0)) maxIdByConv.set(convId, m.id)
+  }
+
+  function unindexMsg(m: Message | undefined) {
+    if (!m) return
+    msgIdx.get(m.conversationId)?.delete(m.id)
+    if (m.clientMsgId && msgByClient.get(m.clientMsgId) === m) msgByClient.delete(m.clientMsgId)
+  }
+
+  /** 会话消息缓存整体丢弃（移除会话/登出） */
+  function dropMsgIndex(convId: number) {
+    msgIdx.delete(convId)
+    maxIdByConv.delete(convId)
+    for (const [k, v] of msgByClient) if (v.conversationId === convId) msgByClient.delete(k)
+  }
+
+  function rebuildConvIndex() {
+    convIdx.clear()
+    for (const c of conversations.value) convIdx.set(c.id, c)
+    convListTick.value++
+  }
+
+  /** 会话定位（热路径替代 conversations.find）：列表结构变化时读取方经 convListTick 重算 */
+  function convById(convId: number | null | undefined): Conversation | undefined {
+    void convListTick.value
+    if (convId == null) return undefined
+    return convIdx.get(convId)
+  }
+
+  /** 消息定位（热路径替代 list.find(m => m.id === ...)） */
+  function msgById(convId: number, id: number): Message | undefined {
+    return msgIdx.get(convId)?.get(id)
+  }
+
   /**
    * 草稿写入去抖：打字是最热的前端事件，每个按键都写响应式 drafts，
    * 侧栏每一行都读 draftOf（「有草稿」指示），等于按打字频率整表重渲。
@@ -84,17 +157,17 @@ export const useConversationsStore = defineStore('conversations', () => {
   )
 
   function isPinned(convId: number): boolean {
-    return conversations.value.find((c) => c.id === convId)?.pinned === true
+    return convById(convId)?.pinned === true
   }
 
   function isMuted(convId: number): boolean {
-    return conversations.value.find((c) => c.id === convId)?.muted === true
+    return convById(convId)?.muted === true
   }
 
   /** 更新个人设置：只改传了的字段，返回服务端确认后的值 */
   async function setPrefs(convId: number, prefs: { pinned?: boolean; muted?: boolean; archived?: boolean }) {
     const r = await convApi.setPrefs(convId, prefs)
-    const c = conversations.value.find((x) => x.id === convId)
+    const c = convById(convId)
     if (c) {
       c.pinned = r.pinned
       c.muted = r.muted
@@ -103,7 +176,7 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   function isArchived(convId: number): boolean {
-    return conversations.value.find((c) => c.id === convId)?.archived === true
+    return convById(convId)?.archived === true
   }
 
   async function togglePin(convId: number) {
@@ -122,8 +195,10 @@ export const useConversationsStore = defineStore('conversations', () => {
   async function removeConversation(convId: number) {
     await convApi.remove(convId)
     conversations.value = conversations.value.filter((c) => c.id !== convId)
+    rebuildConvIndex()
     if (currentConvId.value === convId) currentConvId.value = null
     delete messagesByConv[convId]
+    dropMsgIndex(convId)
     delete hasMoreByConv[convId]
     delete loadedFirstPageByConv[convId]
     lastReportedReadByConv.delete(convId)
@@ -133,10 +208,11 @@ export const useConversationsStore = defineStore('conversations', () => {
   async function clearConversation(convId: number) {
     const r = await convApi.clear(convId)
     messagesByConv[convId] = []
+    rebuildMsgIndex(convId)
     hasMoreByConv[convId] = false
     loadedFirstPageByConv[convId] = true
     lastReportedReadByConv.delete(convId)
-    const c = conversations.value.find((x) => x.id === convId)
+    const c = convById(convId)
     if (c) {
       c.unreadCount = 0
       c.mentionUnread = false
@@ -198,7 +274,7 @@ export const useConversationsStore = defineStore('conversations', () => {
   const readByConv = reactive<Record<number, Record<number, number>>>({})
 
   const currentConv = computed(
-    () => conversations.value.find((c) => c.id === currentConvId.value) ?? null,
+    () => convById(currentConvId.value) ?? null,
   )
   const currentMessages = computed(() =>
     currentConvId.value === null ? [] : (messagesByConv[currentConvId.value] ?? []),
@@ -208,6 +284,7 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   async function loadConversations() {
     conversations.value = await convApi.list()
+    rebuildConvIndex()
     // 服务端若返回精简字段，保证本地状态字段完整
     for (const c of conversations.value) {
       if (hasMoreByConv[c.id] === undefined) hasMoreByConv[c.id] = true
@@ -222,6 +299,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     const idx = conversations.value.findIndex((c) => c.id === conv.id)
     if (idx >= 0) conversations.value[idx] = { ...conversations.value[idx], ...conv }
     else conversations.value.push(conv)
+    rebuildConvIndex()
   }
 
   /** 用户资料变更（昵称/头像）后就地更新会话 peer 与成员缓存，无需重新拉取 */
@@ -267,6 +345,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         // 会话已失效（被踢 / 已退群）或网络异常：回退选择，避免停在空白会话
         console.warn('[conv] open failed:', e)
         messagesByConv[convId] = []
+        rebuildMsgIndex(convId)
         if (currentConvId.value === convId) currentConvId.value = null
         return
       } finally {
@@ -277,7 +356,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (currentConvId.value !== convId) return
     // 断线积压（游标上方）与游标下方的缺口都由 catchUp 补齐——
     // 后者常见于另一端已把消息读完（unreadCount=0）的多端场景
-    const conv = conversations.value.find((c) => c.id === convId)
+    const conv = convById(convId)
     const hasUnreadBacklog = (conv?.unreadCount ?? 0) > 0 && (conv?.lastReadMessageId ?? 0) > 0
     if (hasUnreadBacklog || hasCacheGap(convId)) {
       try {
@@ -303,6 +382,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       hasMoreByConv[convId] = page.hasMore
       if ((page.messages ?? []).length) {
         messagesByConv[convId] = [...(page.messages ?? []).slice().reverse(), ...list]
+        rebuildMsgIndex(convId)
       }
     } catch (e) {
       // 分页失败不影响已有消息，下次滚动会重试
@@ -338,7 +418,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     // 撤回超过 3 分钟的提示会被 MessagePane 整条移除，那时定位过去只剩空白，
     // pendingJumpId 也会永远清不掉（后续跳转带着脏状态）
     const has = () =>
-      (messagesByConv[convId] ?? []).some((m) => m.id === messageId && isVisibleMessage(m))
+      (() => {
+        const m = msgById(convId, messageId)
+        return !!m && isVisibleMessage(m)
+      })()
     if (has()) {
       pendingJumpId.value = messageId
       return true
@@ -392,8 +475,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     // 消息还没加载完（或加载失败）：此时算不出 upToId，先不清本地未读，
     // 否则本地红点消失、服务端仍记未读，刷新后红点复活
     if (!list) return
-    const maxId = maxMessageId(list)
-    const conv = conversations.value.find((c) => c.id === convId)
+    const maxId = maxIdByConv.get(convId) ?? 0
+    const conv = convById(convId)
     if (conv) {
       conv.unreadCount = 0
       // 服务端在 MarkRead 时一并清掉；本地同步置 false，否则「有人@我」要等刷新才消失
@@ -408,7 +491,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         setTimeout(() => {
           readDebounce.delete(convId)
           // 去抖窗口内可能有更新的消息：重算最新位置，只上报最终值
-          const latest = maxMessageId(messagesByConv[convId])
+          const latest = maxIdByConv.get(convId) ?? 0
           if (latest > 0 && latest !== lastReportedReadByConv.get(convId)) {
             // 只有帧真正发出去才记水位：SendFrame 返回 false 时（WS 未连接）帧会被丢弃，
             // 若先记水位，之后重连 resync 也不会再补发，服务端未读永远清不掉
@@ -497,10 +580,12 @@ export const useConversationsStore = defineStore('conversations', () => {
     }
     // 引用块要立刻显示：从当前缓存里找被引用的消息，拼一个本地摘要
     if (extra?.replyToId) {
-      const target = (messagesByConv[convId] ?? []).find((m) => m.id === extra.replyToId)
+      const target = msgById(convId, extra.replyToId)
       if (target) optimistic.replyTo = localReplyBrief(convId, target)
     }
-    ;(messagesByConv[convId] ??= []).push(optimistic)
+    const pushList = (messagesByConv[convId] ??= [])
+    pushList.push(optimistic)
+    indexMsg(convId, pushList[pushList.length - 1])
     // 连接不可用时立即标记失败，避免消息永远停在"发送中"
     const sent = sendFrame({
       type: 'chat',
@@ -628,6 +713,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     const list = messagesByConv[convId]
     if (!list) return
     messagesByConv[convId] = list.filter((m) => m.id !== messageId)
+    rebuildMsgIndex(convId)
   }
 
   // ===== 会话筛选（分组栏） =====
@@ -660,11 +746,12 @@ export const useConversationsStore = defineStore('conversations', () => {
     })
   }
 
-  /** 裁剪缓存并返回是否发生了裁剪（保留最新 MAX_CACHED_MESSAGES 条） */
-  function trimMessages(list: Message[]): boolean {
-    if (list.length <= MAX_CACHED_MESSAGES) return false
-    list.splice(0, list.length - MAX_CACHED_MESSAGES)
-    return true
+  /** 裁剪缓存并返回被裁掉的条目（保留最新 MAX_CACHED_MESSAGES 条） */
+  function trimMessages(list: Message[]): Message[] {
+    if (list.length <= MAX_CACHED_MESSAGES) return []
+    const removed = list.slice(0, list.length - MAX_CACHED_MESSAGES)
+    list.splice(0, removed.length)
+    return removed
   }
 
   /**
@@ -693,9 +780,10 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
     }
     sortMessages(list)
-    const trimmed = trimMessages(list)
+    const removed = trimMessages(list)
+    rebuildMsgIndex(convId)
     // 裁剪过说明本地已丢弃更早的消息，hasMore 必须保持 true 才能继续上翻
-    if (hasMore !== undefined && list.length) hasMoreByConv[convId] = trimmed ? true : hasMore
+    if (hasMore !== undefined && list.length) hasMoreByConv[convId] = removed.length ? true : hasMore
   }
 
   /**
@@ -795,7 +883,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         await loadLatest(id)
         // 断线期间积压超过一页时，仅拉最新页会漏消息：未读积压按已读游标补齐；
         // 另一端已读越过缺口（unreadCount=0）时本地缓存的中间断档也要补
-        const conv = conversations.value.find((c) => c.id === id)
+        const conv = convById(id)
         if (conv && (conv.unreadCount > 0 || hasCacheGap(id))) await catchUp(id)
         markRead(id)
       }
@@ -827,7 +915,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
       case 'recall': {
         const list = messagesByConv[frame.convId]
-        const msg = list?.find((m) => m.id === frame.messageId)
+        const msg = msgById(frame.convId, frame.messageId)
         if (msg) {
           msg.isRecalled = true
           // 服务端时间优先；老服务端/丢字段时用本地时间兜底
@@ -840,7 +928,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         }
         // 正在编辑这条消息：直接退出编辑态，否则要等提交时才被服务端拒绝
         if (editingMessage.value?.id === frame.messageId) setEditingMessage(null)
-        const conv = conversations.value.find((c) => c.id === frame.convId)
+        const conv = convById(frame.convId)
         if (conv && conv.lastMessageId === frame.messageId) {
           // 空内容 + 合成类型：列表按当前语言显示「消息已撤回」，
           // 而不是把中文写死在 store 里（英文界面也会是中文）
@@ -856,7 +944,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
       case 'message_update': {
         const list = messagesByConv[frame.convId]
-        const msg = list?.find((m) => m.id === frame.id)
+        const msg = msgById(frame.convId, frame.id)
         if (msg) {
           msg.content = frame.content
           msg.editedAt = frame.editedAt
@@ -868,7 +956,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         if (editingMessage.value?.id === frame.id) {
           editingMessage.value.content = frame.content
         }
-        const conv = conversations.value.find((c) => c.id === frame.convId)
+        const conv = convById(frame.convId)
         if (conv && conv.lastMessageId === frame.id) conv.lastMessagePreview = frame.content
         break
       }
@@ -879,7 +967,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       case 'read': {
         // 自己账号的已读：广播会同时到达本人其他在线端，用来同步清未读
         if (frame.userId === auth.user?.id) {
-          const conv = conversations.value.find((c) => c.id === frame.convId)
+          const conv = convById(frame.convId)
           if (conv) {
             // 其他端可能只读到更早的位置：只有读到的位置覆盖了本端最新消息时才清未读，
             // 否则会误清掉本端尚未看到的消息（刷新后红点又回来）
@@ -895,7 +983,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         break
       }
       case 'message_delivered': {
-        const m = messagesByConv[frame.convId]?.find((x) => x.id === frame.messageId)
+        const m = msgById(frame.convId, frame.messageId)
         if (m) m.deliveredAt = new Date().toISOString()
         break
       }
@@ -904,7 +992,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         // 预览/未读本地增量修正（与撤回帧同款）：被删的是最后一条时，预览回退到
         // 现在的最后一条；未读也同步扣减。只有「被删的是最后一条但本地没有这个
         // 会话的消息缓存」时才退回全量拉列表——那一种算不出新的预览。
-        const conv = conversations.value.find((c) => c.id === frame.convId)
+        const conv = convById(frame.convId)
         const list = messagesByConv[frame.convId]
         if (conv) {
           if (frame.messageId > (conv.lastReadMessageId ?? 0)) {
@@ -952,7 +1040,7 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   /** 表情回应增量：服务端只广播变化，前端按计数增减并维护 mine */
   function applyReactionFrame(frame: Extract<ServerFrame, { type: 'reaction' }>) {
-    const msg = messagesByConv[frame.convId]?.find((m) => m.id === frame.messageId)
+    const msg = msgById(frame.convId, frame.messageId)
     if (!msg) return
     const views = (msg.reactions ?? []).map((r) => ({ ...r }))
     const dec = (emoji: string) => {
@@ -995,11 +1083,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     const convId = frame.convId
     const list = (messagesByConv[convId] ??= [])
 
-    // 自己发出的回显：优先按 clientMsgId 替换 pending
+    // 自己发出的回显：优先按 clientMsgId 替换 pending（索引 O(1) 定位）
     if (frame.from.id === auth.user?.id) {
-      const pendingIdx = frame.clientMsgId
-        ? list.findIndex((m) => m.clientMsgId === frame.clientMsgId)
-        : -1
+      const pending = frame.clientMsgId ? msgByClient.get(frame.clientMsgId) : undefined
+      const pendingIdx = pending ? list.indexOf(pending) : -1
       const confirmed: Message = {
         id: frame.id,
         conversationId: convId,
@@ -1015,12 +1102,20 @@ export const useConversationsStore = defineStore('conversations', () => {
         createdAt: frame.createdAt,
         }
         if (frame.clientMsgId) clearPendingTimer(frame.clientMsgId)
-      if (pendingIdx >= 0) list.splice(pendingIdx, 1, confirmed)
-      else if (!list.some((m) => m.id === frame.id)) list.push(confirmed)
-      trimMessages(list)
+      if (pendingIdx >= 0) {
+        const old = list[pendingIdx]
+        list.splice(pendingIdx, 1, confirmed)
+        // 旧的乐观消息（负 id）从 id 索引摘除，避免残留孤儿条目
+        unindexMsg(old)
+        indexMsg(convId, list[pendingIdx])
+      } else if (!msgById(convId, frame.id)) {
+        list.push(confirmed)
+        indexMsg(convId, list[list.length - 1])
+      }
+      for (const m of trimMessages(list)) unindexMsg(m)
       // 发送者本端不会收到「纯新消息」的 conv_change，列表摘要只能在这里更新；
       // 漏更新会出现「消息已发出，但会话列表的预览与时间还是上一条」。
-      const sentConv = conversations.value.find((c) => c.id === convId)
+      const sentConv = convById(convId)
       if (sentConv) {
         sentConv.lastMessageId = frame.id
         sentConv.lastMessageAt = frame.createdAt
@@ -1033,7 +1128,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       return
     }
 
-    if (list.some((m) => m.id === frame.id)) return
+    if (msgById(convId, frame.id)) return
     list.push({
       id: frame.id,
       conversationId: convId,
@@ -1048,9 +1143,10 @@ export const useConversationsStore = defineStore('conversations', () => {
       forwarded: frame.forwarded,
       createdAt: frame.createdAt,
       })
-    trimMessages(list)
+    indexMsg(convId, list[list.length - 1])
+    for (const m of trimMessages(list)) unindexMsg(m)
 
-    const conv = conversations.value.find((c) => c.id === convId)
+    const conv = convById(convId)
     // 只有「当前会话 + 页面可见 + 用户贴着最新消息」才自动已读：
     // 后台标签页或正在上翻历史时把红点清掉，等于把没看过的消息当已读
     const autoRead =
@@ -1077,6 +1173,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     filter.value = 'all'
     editingMessage.value = null
     for (const k of Object.keys(messagesByConv)) delete messagesByConv[Number(k)]
+    msgIdx.clear()
+    msgByClient.clear()
+    maxIdByConv.clear()
+    convIdx.clear()
+    convListTick.value++
     for (const k of Object.keys(hasMoreByConv)) delete hasMoreByConv[Number(k)]
     for (const k of Object.keys(loadedFirstPageByConv)) delete loadedFirstPageByConv[Number(k)]
     for (const k of Object.keys(typingByConv)) delete typingByConv[Number(k)]
@@ -1094,6 +1195,7 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   return {
     conversations,
+    convById,
     currentConvId,
     currentConv,
     drafts,
