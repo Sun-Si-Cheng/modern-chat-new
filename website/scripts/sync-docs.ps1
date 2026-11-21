@@ -15,6 +15,7 @@ $map = [ordered]@{
   'CHANGELOG.md'          = 'changelog.md'
   'docs/设计文档.md'       = 'design.md'
   'docs/后端需求规格.md'   = 'api-spec.md'
+  'docs/API文档.md'        = 'api-reference.md'
   'docs/前端技术方案.md'   = 'frontend-guide.md'
   'docs/运维手册.md'       = 'ops-guide.md'
   'docs/安全与迁移指南.md'  = 'security-migration-guide.md'

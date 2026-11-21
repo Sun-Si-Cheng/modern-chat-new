@@ -54,6 +54,13 @@ const DOCS: DocItem[] = [
     descEn: 'Contracts, validation, error codes, acceptance',
   },
   {
+    file: 'api-reference.md',
+    zh: 'API 文档',
+    en: 'API reference',
+    descZh: 'REST + WebSocket 全量端点、参数、响应与错误码速查',
+    descEn: 'Full REST + WebSocket endpoints, params, responses & errors',
+  },
+  {
     file: 'frontend-guide.md',
     zh: '前端技术方案',
     en: 'Frontend guide',
