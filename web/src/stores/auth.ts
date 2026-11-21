@@ -1,10 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { ApiError, onUnauthorized } from '@/api/client'
+import { ApiError, onUnauthorized } from '@/core/network/http'
 
-import { authApi } from '@/api'
-import { getToken, setToken } from '@/api/client'
+import { authApi } from '@/core/network/endpoints'
+import { getToken, setToken } from '@/core/network/http'
 import type { User } from '@/types/proto'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -83,7 +83,7 @@ export const useAuthStore = defineStore('auth', () => {
     for (const fn of sessionEndHandlers) fn()
   }
 
-  // 401 由 api/client 统一捕获：同步清掉内存态，否则 store 里仍是「已登录」
+  // 401 由 core/network/http 统一捕获：同步清掉内存态，否则 store 里仍是「已登录」
   onUnauthorized(() => {
     logout()
   })

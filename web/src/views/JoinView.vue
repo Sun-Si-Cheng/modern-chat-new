@@ -5,7 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 
-import { inviteApi, type InviteInfo } from '@/api'
+import { inviteApi, type InviteInfo } from '@/core/network/endpoints'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useConversationsStore } from '@/stores/conversations'
 

@@ -8,7 +8,7 @@ import { Form as TForm, FormItem as TFormItem, MessagePlugin } from 'tdesign-vue
 import type { FormInstanceFunctions, FormProps } from 'tdesign-vue-next'
 import { LockOnIcon, MailIcon, UserIcon } from 'tdesign-icons-vue-next'
 
-import { authApi } from '@/api'
+import { authApi } from '@/core/network/endpoints'
 import AuthScene from '@/components/common/AuthScene.vue'
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
 import { useAppI18n } from '@/composables/useAppI18n'

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { siteApi, type SiteConfig } from '@/api'
+import { siteApi, type SiteConfig } from '@/core/network/endpoints'
 
 /**
  * 站点公开配置（GET /api/site，免登录）。

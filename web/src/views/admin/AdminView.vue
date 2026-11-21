@@ -13,7 +13,7 @@ import { SettingIcon } from 'tdesign-icons-vue-next'
 
 import AvatarBadge from '@/components/chat/AvatarBadge.vue'
 import AdminGroupsPanel from '@/views/admin/AdminGroupsPanel.vue'
-import { ApiError } from '@/api/client'
+import { ApiError } from '@/core/network/http'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { markAnnouncementSeen } from '@/composables/announcement'
 import {
@@ -31,7 +31,7 @@ import {
   type InviteCode,
   type StorageStats,
   type VersionInfo,
-} from '@/api'
+} from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()

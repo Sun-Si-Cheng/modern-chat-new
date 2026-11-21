@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { friendApi } from '@/api'
+import { friendApi } from '@/core/network/endpoints'
 import type { FriendItem, FriendRequestItem } from '@/types/proto'
 
 export const useFriendsStore = defineStore('friends', () => {

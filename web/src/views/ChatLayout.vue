@@ -21,7 +21,7 @@ import { lastSeenAnnouncementId, markAnnouncementSeen } from '@/composables/anno
 import { showMessageNotification } from '@/composables/notifications'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { convApi } from '@/api'
+import { convApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFavoritesStore } from '@/stores/favorites'

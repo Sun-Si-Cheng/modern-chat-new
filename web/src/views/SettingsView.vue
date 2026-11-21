@@ -24,7 +24,7 @@ import {
   measureLocalCache,
   type LocalCacheUsage,
 } from '@/composables/localCache'
-import { authApi, systemApi, type VersionInfo } from '@/api'
+import { authApi, systemApi, type VersionInfo } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'

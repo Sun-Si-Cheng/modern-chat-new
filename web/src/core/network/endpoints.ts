@@ -1,4 +1,4 @@
-import { ApiError, http, rawFetch } from './client'
+import { ApiError, http, rawFetch } from './http'
 import type {
   AdminGroupDetail,
   AdminGroupListResp,

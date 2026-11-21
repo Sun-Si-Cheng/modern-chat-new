@@ -13,7 +13,7 @@ import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMe
 import DeclarativeNodes from '@/components/declarative'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, moderationApi } from '@/api'
+import { convApi, moderationApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { useConversationsStore } from '@/stores/conversations'

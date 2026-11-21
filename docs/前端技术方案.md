@@ -33,12 +33,18 @@
 web/src/
 ├── main.ts                 # 应用装配：pinia / i18n / router；不全局注册 TDesign（见 §7）
 ├── App.vue                 # 根组件：RouterView + 全局样式
-├── api/
-│   ├── client.ts           # fetch 封装：Bearer 注入、错误归一化、401 清 token
-│   └── index.ts            # 分域 API：auth/user/conv/friend/plugin/admin
+├── core/
+│   └── network/            # 网络层（统一出口，业务只经此对接后端）
+│       ├── http.ts         # fetch 封装：Bearer 注入、错误归一化、401 清 token
+│       ├── endpoints.ts    # REST 用例清单：auth/user/conv/friend/plugin/admin
+│       └── ws.ts           # WebSocket 传输内核：连接/心跳/退避重连/握手统计
+├── features/               # 业务模块（独立开发、互不侵入，各含 README 边界规则）
+│   ├── chat/               # 聊天（现有 components/chat 逐步迁入）
+│   ├── contacts/           # 联系人（好友关系；现嵌在聊天侧栏呈现）
+│   └── settings/           # 设置（外观/偏好/账号安全）
 ├── stores/                 # Pinia（见 §3）
 │   ├── auth.ts             # token + 当前用户 + isAdmin
-│   ├── ws.ts               # WebSocket 连接、在线用户集合、收发出口、user_change 分发
+│   ├── ws.ts               # WS 业务状态机：在线集合、断线横幅、帧分发、会话探测
 │   ├── conversations.ts    # 会话列表、消息缓存、未读、筛选、发送与乐观消息
 │   ├── friends.ts          # 好友与申请
 │   ├── favorites.ts        # 收藏 id 集合与抽屉数据
@@ -48,7 +54,9 @@ web/src/
 │   └── prefs.ts            # 语言 / 主题 / 认证页背景 / 全站页面背景偏好（持久化）
 ├── composables/
 │   ├── useWebSocket.ts     # 连接生命周期：挂载连接、卸载断开、绑定上行出口
-│   ├── usePluginHost.ts    # 插件宿主：iframe 沙箱、postMessage 协议、事件总线
+│   ├── plugin/             # 插件宿主子模块：uiDesc（描述校验）/ permissions（权限表）
+│   │                       # / sandbox（CSP 与引导 HTML）；usePluginHost.ts 为编排器
+│   ├── usePluginHost.ts    # 插件宿主编排：iframe 沙箱生命周期、postMessage 协议、事件总线
 │   ├── notifications.ts    # 桌面通知 / Web Push 开关与发送
 │   ├── announcement.ts     # 全站公告本地已读位置
 │   ├── localCache.ts       # 本地缓存统计与清理（Cache Storage，不碰偏好）
@@ -73,6 +81,32 @@ web/src/
 ├── types/proto.ts          # WS 帧与业务实体的类型契约（与后端共用口径）
 └── assets/main.css         # 辅助令牌 --mc-* + 工具类 + 动效关键帧
 ```
+
+### 2.1 分层与模块边界（高内聚低耦合）
+
+```
+views / features/*        业务层：只调用 stores 与 endpoints 用例，不拼 URL、不发裸 fetch
+stores / composables      状态与组合层：状态机、副作用编排；跨模块能力经 store 暴露
+core/network              网络层：REST 传输（http）、用例清单（endpoints）、WS 传输内核（ws）
+components/ui             自研控件层：所有页面共享，令牌化样式
+components/declarative    插件声明式 UI 渲染器（内核）
+```
+
+- **网络层统一出口**：REST 走 `core/network/http` 的 `http()`（Bearer 注入、错误归一化、401 清 token），
+  端点一律登记在 `core/network/endpoints` 用例清单里（typed，即业务可用例）；WS 传输
+  （连接/心跳/退避重连/握手统计）在 `core/network/ws` 的 `WsChannel`，不含业务。
+  业务侧的 WS 状态机（在线集合、断线横幅、kicked 下线、会话探测）在 `stores/ws.ts`，
+  通过回调驱动通道——传输不 import 业务 store，依赖方向恒为 `业务 → core`。
+- **业务模块互不侵入**：`features/{chat,contacts,settings}` 各含 README（归属清单 + 边界规则）。
+  规则：模块间只允许经由共享层（stores / core/ / components/ui / endpoints 用例）调用对方能力；
+  模块间跳转用 router 与事件，不直接操作对方组件内部状态。新文件直接落 `features/<模块>/`，
+  存量文件按 README 归属清单随重构逐步迁入。已知耦合（ConvSidebar 同时承载会话与联系人、
+  DetailPanel 内联好友操作）见各 README「已知耦合」节，隔离需先设计模块间接口再动文件。
+- **设计令牌集中**：颜色/圆角/动效真源 = `assets/main.css`（`--td-*` / `--mc-*`），
+  页面禁止散落硬编码色值。闸门：`web/scripts/audit-tokens.mjs`（只报告不改码），
+  豁免 `var(--token, fallback)` 兜底写法与 JS 内的域数据色（头像色板 / 取色器）。
+  已知基线 32 处：AuthScene 装饰场景画（固定视觉稿）与暗色遮罩（遮罩恒黑属设计意图）
+  为有意为之，其余（如 AvatarBadge 的 `#e4efff`）随视觉重构逐个映射到令牌。
 
 ---
 

@@ -11,7 +11,7 @@ import { AddIcon, ChatIcon, SearchIcon, UserCircleIcon } from 'tdesign-icons-vue
 import AvatarBadge from './AvatarBadge.vue'
 import ContextMenu, { type ContextMenuItem } from '@/components/common/ContextMenu.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { convApi, searchApi, userApi } from '@/api'
+import { convApi, searchApi, userApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'

@@ -7,7 +7,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 
 import AvatarBadge from './AvatarBadge.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { userApi } from '@/api'
+import { userApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendsStore } from '@/stores/friends'
 import type { User } from '@/types/proto'

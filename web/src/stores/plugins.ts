@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { pluginApi } from '@/api'
+import { pluginApi } from '@/core/network/endpoints'
 import type { Plugin } from '@/types/proto'
 
 /** 用户已安装插件清单；沙箱宿主从 active 列表加载（§8） */

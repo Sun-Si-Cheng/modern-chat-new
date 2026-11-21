@@ -6,7 +6,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiDrawer from '@/components/ui/UiDrawer.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import { adminApi } from '@/api'
+import { adminApi } from '@/core/network/endpoints'
 import { useAppI18n } from '@/composables/useAppI18n'
 import type {
   AdminGroupDetail,

@@ -1,7 +1,7 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { convApi } from '@/api'
+import { convApi } from '@/core/network/endpoints'
 import type { Conversation, ConversationMember, Message, ReplyBrief } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useSiteStore } from './site'

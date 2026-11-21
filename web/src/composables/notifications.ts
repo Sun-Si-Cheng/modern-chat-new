@@ -1,4 +1,4 @@
-import { pushApi } from '@/api'
+import { pushApi } from '@/core/network/endpoints'
 
 /** 桌面通知：开关存本地，权限由浏览器控制 */
 const KEY = 'mc_notify_enabled'

@@ -4,7 +4,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'
 
 import AvatarBadge from './AvatarBadge.vue'
-import { mediaApi, stickerApi, type Sticker } from '@/api'
+import { mediaApi, stickerApi, type Sticker } from '@/core/network/endpoints'
 import { useAppI18n } from '@/composables/useAppI18n'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'

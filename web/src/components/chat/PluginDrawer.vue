@@ -8,7 +8,7 @@ import { ref, watch } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 
 import { useAppI18n } from '@/composables/useAppI18n'
-import { pluginApi } from '@/api'
+import { pluginApi } from '@/core/network/endpoints'
 import { usePluginHost } from '@/composables/usePluginHost'
 import { usePluginsStore } from '@/stores/plugins'
 import type { Plugin } from '@/types/proto'

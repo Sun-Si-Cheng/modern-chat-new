@@ -15,7 +15,7 @@ import { reactive, readonly } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 
 import type { Plugin, PanelDesc, ServerFrame } from '@/types/proto'
-import { convApi, pluginApi } from '@/api'
+import { convApi, pluginApi } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { usePluginsStore } from '@/stores/plugins'

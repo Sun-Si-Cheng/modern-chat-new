@@ -10,7 +10,7 @@ import { KeyIcon, LockOnIcon, MailIcon } from 'tdesign-icons-vue-next'
 import AuthScene from '@/components/common/AuthScene.vue'
 import QuickPrefs from '@/components/common/QuickPrefs.vue'
 import { useAppI18n } from '@/composables/useAppI18n'
-import { authApi } from '@/api'
+import { authApi } from '@/core/network/endpoints'
 
 const router = useRouter()
 const route = useRoute()

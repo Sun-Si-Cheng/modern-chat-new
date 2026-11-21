@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { favoriteApi } from '@/api'
+import { favoriteApi } from '@/core/network/endpoints'
 import type { FavoriteItem } from '@/types/proto'
 
 /** 消息收藏：收藏夹列表 + 消息是否已收藏的本地判断 */

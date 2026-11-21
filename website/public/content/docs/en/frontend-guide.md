@@ -33,12 +33,18 @@ Design principle: **keep the kernel thin**. Accounts / friends / conversations /
 web/src/
 ├── main.ts                 # App assembly: pinia / i18n / router; no global TDesign registration (see §7)
 ├── App.vue                 # Root: RouterView + global styles
-├── api/
-│   ├── client.ts           # fetch wrapper: Bearer injection, error normalization, 401 clears token
-│   └── index.ts            # Domain APIs: auth/user/conv/friend/plugin/admin
+├── core/
+│   └── network/            # network layer (single outbound; business only goes through it)
+│       ├── http.ts         # fetch wrapper: Bearer injection, error normalization, 401 clears token
+│       ├── endpoints.ts    # REST use-case registry: auth/user/conv/friend/plugin/admin
+│       └── ws.ts           # WebSocket transport kernel: connect/heartbeat/backoff/handshake stats
+├── features/               # business modules (independent, non-invasive; each has a README boundary)
+│   ├── chat/               # chat (existing components/chat migrates in gradually)
+│   ├── contacts/           # contacts (friend graph; presented inside the chat sidebar today)
+│   └── settings/           # settings (appearance / preferences / account security)
 ├── stores/                 # Pinia (see §3)
 │   ├── auth.ts             # token + current user + isAdmin
-│   ├── ws.ts               # WebSocket connection, online set, send/receive outlets, user_change dispatch
+│   ├── ws.ts               # WS business state machine: online set, offline banner, frame dispatch, session probe
 │   ├── conversations.ts    # conversation list, message cache, unread, filters, sending & optimistic messages
 │   ├── friends.ts          # friends & requests
 │   ├── favorites.ts        # favorite id set and drawer data
@@ -48,7 +54,9 @@ web/src/
 │   └── prefs.ts            # language / theme / auth-page background / site-wide page background preferences (persisted)
 ├── composables/
 │   ├── useWebSocket.ts     # connection lifecycle: connect on mount, disconnect on unmount, bind uplink outlets
-│   ├── usePluginHost.ts    # plugin host: iframe sandbox, postMessage protocol, event bus
+│   ├── plugin/             # plugin host submodules: uiDesc (desc validation) / permissions (maps)
+│   │                       # / sandbox (CSP & boot HTML); usePluginHost.ts orchestrates
+│   ├── usePluginHost.ts    # plugin host orchestration: iframe sandbox lifecycle, postMessage protocol, event bus
 │   ├── notifications.ts    # desktop notifications / Web Push toggle & delivery
 │   ├── announcement.ts     # local read position of the site-wide announcement
 │   ├── localCache.ts       # local cache stats & cleanup (Cache Storage; never touches preferences)
@@ -73,6 +81,20 @@ web/src/
 ├── types/proto.ts          # WS frame & entity type contracts (shared with backend)
 └── assets/main.css         # auxiliary tokens --mc-* + utility classes + motion keyframes
 ```
+
+### 2.1 Layering & module boundaries (high cohesion, low coupling)
+
+```
+views / features/*        business layer: only calls stores and endpoints use cases; never builds URLs or bare-fetches
+stores / composables      state & composition layer: state machines, side-effect orchestration; cross-module abilities exposed via stores
+core/network              network layer: REST transport (http), use-case registry (endpoints), WS transport kernel (ws)
+components/ui             shared widget layer: tokenized styles
+components/declarative    plugin declarative-UI renderer (kernel)
+```
+
+- **Single network outlet**: REST goes through `http()` in `core/network/http` (Bearer injection, error normalization, 401 clears token); every endpoint is registered in the typed use-case registry `core/network/endpoints`; the WS transport (connect / heartbeat / exponential-backoff reconnect / handshake-failure stats) lives in `WsChannel` in `core/network/ws`, business-free. The business WS state machine (online set, offline banner, kicked sign-out, session probe) stays in `stores/ws.ts` and drives the channel through callbacks — dependencies always point `business → core`.
+- **Business modules don't invade each other**: `features/{chat,contacts,settings}` each carry a README (ownership list + boundary rules + known coupling). Modules may reach each other only through shared layers (stores / core/ / components/ui / endpoint use cases); navigation between modules uses the router and events, never direct mutation of another module's component state. New files land directly in `features/<module>/`; existing files migrate per the README lists. Known coupling (ConvSidebar carries both conversations and contacts; DetailPanel inlines friend actions) is listed in each README — isolation requires designing the inter-module interfaces before moving files.
+- **Design tokens centralized**: the source of truth for colors / radii / motion is `assets/main.css` (`--td-*` / `--mc-*`); pages must not scatter hardcoded colors. Gate: `web/scripts/audit-tokens.mjs` (reports only, never rewrites), exempting `var(--token, fallback)` and domain-data colors in JS (avatar palette / color picker). Current baseline is 32 findings: the AuthScene decorative art (a fixed visual) and dark scrims (always-black by design) are intentional; the rest (e.g. AvatarBadge `#e4efff`) map to tokens during visual refactoring.
 
 ---
 

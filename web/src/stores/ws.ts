@@ -3,19 +3,19 @@ import { defineStore } from 'pinia'
 
 import { MessagePlugin } from 'tdesign-vue-next'
 
-import { authApi } from '@/api'
-import { ApiError } from '@/api/client'
-import type { ClientFrame, ServerFrame } from '@/types/proto'
+import { authApi } from '@/core/network/endpoints'
+import { ApiError } from '@/core/network/http'
+import { WsChannel } from '@/core/network/ws'
+import type { ServerFrame } from '@/types/proto'
 import { useAuthStore } from './auth'
 import { useConversationsStore } from './conversations'
 import { useFriendsStore } from './friends'
 
-const HEARTBEAT_INTERVAL = 25_000
-const MAX_RECONNECT_DELAY = 30_000
-/** 连续 N 次握手都未能建立时，用一次 REST 探测区分「会话失效」与「网络故障」 */
-const HANDSHAKE_FAIL_LIMIT = 3
-
-/** WebSocket 连接生命周期：心跳 + 指数退避重连 + 帧路由（§3 / §7） */
+/**
+ * WS 业务状态机：在线集合、断线横幅、帧的业务分发与会话探测。
+ * 连接/心跳/退避重连等纯传输逻辑在 core/network/ws.ts（WsChannel），
+ * 这里只回答"收到帧之后做什么"与"要不要继续连"。
+ */
 export const useWsStore = defineStore('ws', () => {
   const auth = useAuthStore()
   const conversations = useConversationsStore()
@@ -24,16 +24,6 @@ export const useWsStore = defineStore('ws', () => {
   const connected = ref(false)
   /** 在线用户 id 集合（含自己） */
   const onlineUsers = ref<Set<number>>(new Set())
-
-  let socket: WebSocket | null = null
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
-  let pongTimeout: ReturnType<typeof setTimeout> | null = null
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let reconnectDelay = 1000
-  let closedByUser = false
-  /** 连续「握手未建立就断开」的次数：成功 onopen 或用户主动断开时归零 */
-  let handshakeFails = 0
-  let probingSession = false
   /**
    * 是否成功建立过连接：用于区分首连与重连（重连后需补数据），
    * 界面也据此决定要不要显示「连接已断开」提示（首连中不闪）。
@@ -55,80 +45,32 @@ export const useWsStore = defineStore('ws', () => {
     return () => frameListeners.delete(fn)
   }
 
-  function wsUrl(): string {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    return `${proto}://${location.host}/ws?token=${encodeURIComponent(auth.token)}`
-  }
-
-  function connect() {
-    if (!auth.token) return
-    closedByUser = false
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
-
-    // 本次连接是否成功建立过：onclose 用它区分「握手被拒」与「已建立后断开」
-    let opened = false
-    const ws = new WebSocket(wsUrl())
-    socket = ws
-
-    // 每个回调都先判断自己是否仍是当前连接：快速切页时旧 socket 处于 CLOSING，
-    // connect() 会新建一条；旧连接的 onclose 若继续改状态，会把已连上的新连接
-    // 标成「已断开」，断线横幅将永远不消失（且会再排一次无意义的重连）
-    ws.onopen = () => {
-      if (ws !== socket) return
-      opened = true
+  const channel = new WsChannel({
+    url: () => {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+      return `${proto}://${location.host}/ws?token=${encodeURIComponent(auth.token)}`
+    },
+    canConnect: () => !!auth.token,
+    onOpen: () => {
       connected.value = true
-      reconnectDelay = 1000
-      handshakeFails = 0
-      startHeartbeat()
       // 重连（含从设置页回到聊天页后的重连）：断线期间的消息不会补发帧，
       // 必须重新对齐服务端状态，否则聊天区停留在旧缓存而侧栏红点照涨
       if (everConnected.value) void conversations.resync()
       hasConnected.value = true
       everConnected.value = true
-    }
-
-    ws.onmessage = (ev) => {
-      if (ws !== socket) return
-      let frame: ServerFrame
-      try {
-        frame = JSON.parse(ev.data as string) as ServerFrame
-      } catch {
-        return
-      }
-      handleFrame(frame)
-    }
-
-    ws.onclose = () => {
-      if (ws !== socket) return
+    },
+    onClose: () => {
       connected.value = false
       // 断开后无法再得知他人在线状态，清空避免继续显示过期的"在线"
       onlineUsers.value = new Set()
-      stopHeartbeat()
-      if (!closedByUser) {
-        // 从未建立成功的断开按握手失败计：连续多次通常是 token 失效/被封禁/维护模式。
-        // WebSocket 拿不到握手的 HTTP 状态码，达阈值后用一次 REST 探测分辨，
-        // 避免对失效的会话无限重连；瞬时断线一两次就能连上，不会走到探测
-        if (!opened) handshakeFails++
-        if (handshakeFails >= HANDSHAKE_FAIL_LIMIT) void probeSession()
-        scheduleReconnect()
-      }
-    }
-
-    ws.onerror = () => {
-      if (ws !== socket) return
-      ws.close()
-    }
-  }
+    },
+    onFrame: handleFrame,
+    onHandshakeFailThreshold: () => void probeSession(),
+  })
 
   function handleFrame(frame: ServerFrame) {
     frameListeners.forEach((fn) => fn(frame))
     switch (frame.type) {
-      case 'pong':
-        if (pongTimeout) {
-          clearTimeout(pongTimeout)
-          pongTimeout = null
-        }
-        break
       case 'presence':
         if (frame.online) onlineUsers.value.add(frame.userId)
         else onlineUsers.value.delete(frame.userId)
@@ -150,9 +92,8 @@ export const useWsStore = defineStore('ws', () => {
         break
       }
       case 'kicked': {
-        // 封禁/失效强制下线
-        closedByUser = true
-        socket?.close()
+        // 封禁/失效强制下线：主动断开（通道不再重连）并清空业务态
+        channel.disconnect()
         auth.logout()
         conversations.reset()
         onlineUsers.value.clear()
@@ -178,45 +119,17 @@ export const useWsStore = defineStore('ws', () => {
   }
 
   /** 返回是否真的写出：连接未就绪时调用方需要把消息标记为失败而不是静默丢弃 */
-  function send(frame: ClientFrame): boolean {
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(frame))
-      return true
-    }
-    return false
+  function send(frame: Parameters<typeof channel.send>[0]): boolean {
+    return channel.send(frame)
   }
-
-  // ===== 心跳 =====
-
-  function startHeartbeat() {
-    stopHeartbeat()
-    heartbeatTimer = setInterval(() => {
-      if (socket?.readyState !== WebSocket.OPEN) return
-      send({ type: 'ping' })
-      // 8s 未收到 pong 视为僵死，强制断开触发重连
-      pongTimeout = setTimeout(() => socket?.close(), 8000)
-    }, HEARTBEAT_INTERVAL)
-  }
-
-  function stopHeartbeat() {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer)
-      heartbeatTimer = null
-    }
-    if (pongTimeout) {
-      clearTimeout(pongTimeout)
-      pongTimeout = null
-    }
-  }
-
-  // ===== 重连 =====
 
   /**
    * 握手连续失败后的会话探测：借 GET /api/me 复用 REST 的 401 统一处理——
-   * token 失效时 client.ts 会清登录态、跳登录页并触发 disconnect（重连随之停止）；
+   * token 失效时 http 层会清登录态、跳登录页并触发 disconnect（重连随之停止）；
    * 403 说明 token 有效但被服务端拒绝（封禁），按收到 kicked 帧同等处理；
    * 网络故障 / 503 维护 / 其他则保留 token 继续退避重连，不破坏正常断线恢复。
    */
+  let probingSession = false
   async function probeSession() {
     if (probingSession || !auth.token) return
     probingSession = true
@@ -224,10 +137,9 @@ export const useWsStore = defineStore('ws', () => {
       await authApi.me()
     } catch (e) {
       const status = e instanceof ApiError ? e.status : 0
-      if (status === 401) return // client.ts 已统一处理：清登录态 + 跳登录页 + 停止重连
+      if (status === 401) return // http 层已统一处理：清登录态 + 跳登录页 + 停止重连
       if (status === 403) {
-        closedByUser = true
-        socket?.close()
+        channel.disconnect()
         auth.logout()
         conversations.reset()
         onlineUsers.value.clear()
@@ -238,33 +150,17 @@ export const useWsStore = defineStore('ws', () => {
       // 网络故障 / 维护模式：交还给退避重连，之后仍连续失败会再次探测
     } finally {
       probingSession = false
-      handshakeFails = 0
+      channel.resetHandshakeFails()
     }
   }
 
-  function scheduleReconnect() {
-    if (reconnectTimer) return
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null
-      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
-      if (auth.token) connect()
-    }, reconnectDelay)
+  function connect() {
+    channel.connect()
   }
 
   function disconnect() {
-    closedByUser = true
     hasConnected.value = false
-    handshakeFails = 0
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
-    stopHeartbeat()
-    // 先摘掉引用再关闭：旧连接的 onclose 会因 ws !== socket 直接返回，
-    // 不会覆盖新连接的状态，也不会再排重连
-    const old = socket
-    socket = null
-    old?.close()
+    channel.disconnect()
     connected.value = false
     onlineUsers.value = new Set()
   }
