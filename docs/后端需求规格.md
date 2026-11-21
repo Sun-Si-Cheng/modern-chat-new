@@ -86,6 +86,10 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/auth/logout` | — | `{ok:true}`；**免鉴权**（维护模式可用），只清 `mc_auth` cookie；不吊销 JWT、不踢 WS |
 | POST `/api/auth/forgot` | `{email}` | `{ok:true}`（无此邮箱也返回成功；开发期打印重置链接到日志） |
 | POST `/api/auth/reset` | `{token, newPassword}` | `{ok:true}`；`token_version+1` 全端失效 |
+| GET `/api/auth/sso/status` | — | `{enabled}`；**免鉴权**。统一登录（聚合登录中心）是否启用：`SSO_SITE_URL`/`SSO_HUB_URL`/`SSO_CLIENT_ID`/`SSO_CLIENT_SECRET` 都非空才为 `true`；未启用时下列 sso 接口一律 404 |
+| GET `/api/auth/sso/start` | `?redirect=`（站内相对路径） | 302 → 聚合中心授权页；state 由 HMAC 签名 + 一次性 nonce（Cookie 双绑定）防登录 CSRF |
+| GET `/api/auth/sso/callback` | 中心回跳 `?code&state` 或 `?error` | 校验 state → code 换 token → 取资料 → 按用户名（需邮箱一致）/邮箱关联或建号 → 签一次性票据 → 302 回 `SSO_SITE_URL + SSO_APP_BASE + /sso/callback?ticket&redirect` |
+| POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`；**免鉴权**，票据一次性、5 分钟有效，用后即废 |
 | GET `/api/me` | — | `User`（含 email） |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`。**换绑邮箱必须带 `emailCode`**（发往新邮箱、核销通过才落库并置 `email_verified=true`；空串 `email` 表示解绑、不需要验证）；邮箱未变化时不改动验证状态；SMTP 未配置时换绑返回 400。avatar 为 `data:image/(png\|jpeg\|webp);base64,…`，前端压至 256×256，服务端校验前缀与 ≤256KB，空串清除 | 更新后 `User` |
 | POST `/api/me/email-code` | `{email}`（新邮箱） | `{ok:true, cooldownSeconds}`；与当前邮箱相同→400，被他人占用→409，SMTP 不可用→503；每用户 5 次/分，同邮箱 60 秒冷却 |
@@ -148,6 +152,12 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/plugins/from-url` | `{url}` | `Plugin`；服务端拉取前执行 §6 SSRF 检查；同名升级语义同上 |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | 更新后 `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
+| GET `/api/music/status` | — | `{online, engine:"musicd", platforms}`；`online` = musicd 可达或兜底已配置。前端据此决定是否展示「在线音乐」标签页 |
+| GET `/api/music/search` | `?name=`（≤60 字）`&source=`（kw\|kg\|tx\|wy\|mg\|qs）`&page=`（1-99） | `{ok, data:{list,…}, list}`；代理 musicd 搜索（内置 SDK，串行队列 + 缓存） |
+| POST `/api/music/resolve` | `{songInfo, quality?, source?}` | `{ok, data:{url, direct:true, by?}}`；**只解析直链，不中转音频**——url 是第三方真实地址（带签名与时效），浏览器直连下载/缓存/播放。musicd 失败时降级旧播放器端点（响应带 `via:"legacy"`） |
+| POST `/api/music/lyric` | `{songInfo, source?}` | `{ok, data:{lyric, tlyric}}`；解析失败返回空歌词（不报错） |
+| GET `/api/music/sources` | — | `{ok, data:{count, sources, …}}`；当前加载的音源清单（后台展示用） |
+| POST `/api/music/sources/reload` | — | `{ok, data}`；重新扫描音源目录，**仅站长**（role=owner，否则 403） |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
 | GET `/api/admin/users` | `?page=&pageSize=&kw=&role=&status=`（`kw` 匹配用户名/昵称，`role`=user\|admin，`status`=active\|banned） | `{users: AdminUserRow[], total, page, pageSize}`；AdminUserRow = User + `createdAt` |
 | GET `/api/admin/users/:id` | — | `{user: AdminUserRow, stats:{conversations,messages,plugins}, online}` |

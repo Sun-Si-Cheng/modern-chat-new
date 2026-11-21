@@ -1,0 +1,38 @@
+[Unit]
+Description=ModernChat 自定义音源运行时 (musicd)
+Documentation=https://newchat.modern-chat.top/app/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/modernchat-nc/app/server/musicd
+ExecStart=/opt/node22/bin/node /opt/modernchat-nc/app/server/musicd/index.js
+Restart=always
+RestartSec=3
+# 音源脚本会做大量 HTTPS 请求，文件句柄给足
+LimitNOFILE=65535
+
+Environment=NODE_ENV=production
+Environment=MUSICD_HOST=127.0.0.1
+Environment=MUSICD_PORT=8310
+Environment=DATA_DIR=/opt/modernchat-nc/app/server/data
+# MUSICD_KEY 由 /etc/modernchat-nc/musicd.env 提供（与 Go 侧 MUSICD_KEY 一致）
+EnvironmentFile=-/etc/modernchat-nc/musicd.env
+
+# 只允许写自己的数据目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/modernchat-nc/app/server/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

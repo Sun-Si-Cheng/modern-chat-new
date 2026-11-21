@@ -86,6 +86,10 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/auth/logout` | — | `{ok:true}`; **no auth required** (available in maintenance mode), only clears the `mc_auth` cookie; does not revoke the JWT, does not kick WS |
 | POST `/api/auth/forgot` | `{email}` | `{ok:true}` (unknown emails also return success; dev prints the reset link to the log) |
 | POST `/api/auth/reset` | `{token, newPassword}` | `{ok:true}`; `token_version+1` kills all sessions |
+| GET `/api/auth/sso/status` | — | `{enabled}`; **no auth**. Whether unified login (aggregated login center) is enabled: true only when `SSO_SITE_URL`/`SSO_HUB_URL`/`SSO_CLIENT_ID`/`SSO_CLIENT_SECRET` are all set; when disabled every sso endpoint below answers 404 |
+| GET `/api/auth/sso/start` | `?redirect=` (site-relative path) | 302 → the center's authorize page; the state is HMAC-signed with a one-time nonce (double-bound to a cookie) against login CSRF |
+| GET `/api/auth/sso/callback` | center redirect `?code&state` or `?error` | verifies state → exchanges code for token → fetches profile → links or creates the local account by username (email must match, preventing account takeover) or email → issues a one-time ticket → 302 to `SSO_SITE_URL + SSO_APP_BASE + /sso/callback?ticket&redirect` |
+| POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`; **no auth**, the ticket is single-use and valid for 5 minutes |
 | GET `/api/me` | — | `User` (with email) |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`. **Changing the bound email requires `emailCode`** (sent to the new address; stored and `email_verified=true` only after successful consumption; an empty `email` string means unbind and needs no verification); if the email is unchanged the verification state is untouched; with SMTP unconfigured the change returns 400. avatar is `data:image/(png\|jpeg\|webp);base64,…`, frontend compresses to 256×256, server validates prefix & ≤256KB, empty string clears | updated `User` |
 | POST `/api/me/email-code` | `{email}` (new address) | `{ok:true, cooldownSeconds}`; same as the current email→400, taken by someone else→409, SMTP unavailable→503; 5 times/min per user, 60-second cooldown per email |
@@ -148,6 +152,12 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | POST `/api/plugins/from-url` | `{url}` | `Plugin`; §6 SSRF checks run before fetching; same-name upgrade semantics as above |
 | PATCH `/api/plugins/:id` | `{enabled:boolean}` | updated `Plugin` |
 | DELETE `/api/plugins/:id` | — | `{ok:true}` |
+| GET `/api/music/status` | — | `{online, engine:"musicd", platforms}`; `online` = musicd reachable or fallback configured. The frontend uses it to show the "online music" tab |
+| GET `/api/music/search` | `?name=` (≤60 chars) `&source=` (kw/kg/tx/wy/mg/qs) `&page=` (1-99) | `{ok, data:{list,…}, list}`; proxies musicd search (built-in SDK, serial queue + cache) |
+| POST `/api/music/resolve` | `{songInfo, quality?, source?}` | `{ok, data:{url, direct:true, by?}}`; **resolves direct links only, never relays audio** — url is the third party's real address (signed, time-limited); the browser downloads/caches/plays it directly. When musicd fails, falls back to the legacy player endpoint (response carries `via:"legacy"`) |
+| POST `/api/music/lyric` | `{songInfo, source?}` | `{ok, data:{lyric, tlyric}}`; returns empty lyrics on failure instead of an error |
+| GET `/api/music/sources` | — | `{ok, data:{count, sources, …}}`; the currently loaded source list (for the admin console) |
+| POST `/api/music/sources/reload` | — | `{ok, data}`; re-scans the source directory, **owner only** (role=owner, otherwise 403) |
 | GET `/api/admin/stats` | — | `{users:{total,today,banned,admins}, conversations:{single,group}, messages:{total,today}, plugins:{installed,enabled,disabled}, online, uptimeSeconds, goVersion}` |
 | GET `/api/admin/users` | `?page=&pageSize=&kw=&role=&status=` (`kw` matches username/nickname, `role`=user\|admin, `status`=active\|banned) | `{users: AdminUserRow[], total, page, pageSize}`; AdminUserRow = User + `createdAt` |
 | GET `/api/admin/users/:id` | — | `{user: AdminUserRow, stats:{conversations,messages,plugins}, online}` |

@@ -74,6 +74,9 @@ https://chat.example.com/qiniu/<key> → 对象存储 CDN（私有空间，需�
 | `RELEASE_API_URL` / `RELEASE_DL_URL` | 空 | 否 | 发行版模式：GitHub Release 最新版本 API 与下载前缀，由 `install.sh` 写入 `.env`；两值为空时安装目录有 `.git` 走源码模式，否则按 `RELEASE_REPO_GITHUB`（或默认官方仓库）派生 GitHub 地址兜底 |
 | `RELEASE_REPO_GITHUB` | `modern-day-team/modern-chat-new` | 否 | Release 托管仓库（`owner/repo`）：显式 URL 未配置时用它派生更新源，Release 放在 fork / 镜像仓库时配置 |
 | `GITHUB_TOKEN` | 空 | 否 | GitHub API 令牌（可选）：匿名 `api.github.com` 限流 60 次/小时/IP，配置后提升到 5000 次/小时，并支持私有仓库检查。仅随 GitHub 域更新请求发送，不落日志 |
+| `MUSICD_ENDPOINT` / `MUSICD_KEY` | `http://127.0.0.1:8310` / 空 | 否 | 在线音乐音源运行时 musicd（本机 Node 服务，仅回环监听）与共享密钥（`X-Music-Key`，两侧同值）。未部署 musicd 时聊天室「在线音乐」标签页自动隐藏；详见 `docs/在线音乐与自定义音源.md` |
+| `CHAT_MUSIC_ENDPOINT` / `CHAT_MUSIC_KEY` | 空 | 否 | 旧播放器端点兜底（musicd 不可用时仍能解析直链；两项都配置才启用） |
+| `SSO_SITE_URL` / `SSO_APP_BASE` / `SSO_HUB_URL` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | 空 / `/app` | 否 | 统一登录（聚合登录中心）：全部配置才启用，未启用时 `/api/auth/sso/*` 一律 404。`SSO_APP_BASE` 与前端挂载前缀一致（站点根部署设为空） |
 | `METRICS_TOKEN` | 空 | 否 | 非空时 `GET /api/metrics` 需 `Authorization: Bearer <token>`；留空则同站可匿名抓取，公网部署建议设置 |
 | `LEGACY_API_SECRET` | 空 | 否 | 旧站迁移密钥（≥32 字节），必须与旧站 `chat/migrate_config.php` 的 `MC_MIGRATE_SECRET` 完全一致。留空则 `/api/migrate/*` 全部返回「迁移未启用」 |
 | `LEGACY_DB_DSN` | 空 | 否 | 旧站库（**只读账号**）连接串，迁移程序只读不写。生产示例：`legacy_ro:<密码>@tcp(127.0.0.1:3306)/chat?charset=utf8mb4&parseTime=True&loc=Local` |
@@ -244,6 +247,30 @@ AUTO_CONFIRM=yes PURGE_DB=yes DELETE_FILES=yes bash scripts/uninstall.sh   # 免
 | 安装/更新日志 | 随安装目录删除；`/var/log/modernchat/` 保留 | 保留 |
 
 不卸载 Go / Node / MySQL / nginx 等系统级组件（可能被其它应用使用）。
+
+### 3.2.1 musicd 音源运行时（在线音乐，可选）
+
+聊天室「在线音乐」依赖本机 Node 服务 `musicd`（仓库 `server/musicd/`，零 npm 依赖，Node ≥ 20）：
+浏览器拿第三方直链自己下载播放，音频字节不经过本服务器。不部署则在线标签页自动隐藏。
+
+```bash
+# 1) 安装 Node 22 并同步仓库的 server/musicd/ 到服务器安装目录
+# 2) 生成共享密钥（与 Go 侧 .env 的 MUSICD_KEY 同值）
+echo "MUSICD_KEY=$(openssl rand -hex 32)" > /etc/modernchat-nc/musicd.env && chmod 600 /etc/modernchat-nc/musicd.env
+# 3) 安装 systemd 单元（模板见 server/musicd/modernchat-musicd.service，按实际路径改 WorkingDirectory/ExecStart）
+cp server/musicd/modernchat-musicd.service /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now modernchat-musicd
+# 4) Go 侧 .env 写入同一个 MUSICD_KEY 并重启主服务；主服务 systemd 加 drop-in 保证启动顺序：
+#    /etc/systemd/system/modernchat-nc.service.d/musicd-dep.conf
+#    [Unit]
+#    Wants=modernchat-musicd.service
+#    After=network-online.target modernchat-musicd.service
+```
+
+运维命令：`systemctl restart modernchat-musicd`（改音源脚本后需重启）；音源脚本放在
+`server/musicd/sources/`（管理员上传 / 手动放置，命名 `NN-lx-名称.js` / `NN-mf-名称.js`），
+后台 `POST /api/music/sources/reload`（仅站长）可热重载。链路、沙箱与安全边界见
+`docs/在线音乐与自定义音源.md`。
 
 ### 3.3 手工部署
 

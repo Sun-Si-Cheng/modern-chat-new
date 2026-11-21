@@ -6,6 +6,9 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
+    // 统一登录回跳页：聚合中心授权后 302 到这里（带一次性 ticket）。
+    // 不加 guest：本机残留登录态不能挡掉票据兑换，与 /forgot 同理。
+    { path: '/sso/callback', name: 'sso-callback', component: () => import('@/views/SsoCallbackView.vue') },
     // 不加 guest：已登录用户点邮件里的 /forgot?token=xxx 必须能完成重置，
     // 否则会被守卫直接送到 /chat、把令牌丢掉
     { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotView.vue') },

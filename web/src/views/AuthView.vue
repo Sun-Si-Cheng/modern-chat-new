@@ -214,8 +214,30 @@ async function tryMigrateLogin() {
   }
 }
 
+// ===== 统一登录（聚合登录中心，handler/sso.go） =====
+
+/** 后端配置了 SSO_* 才展示入口；接口失败按未启用处理，不影响密码登录 */
+const ssoEnabled = ref(false)
+
+/** 发起统一登录：302 到聚合中心授权页，回调后经 /sso/callback 换票据登录 */
+function startSso() {
+  const redirect =
+    typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      ? route.query.redirect
+      : '/chat'
+  location.href = `/api/auth/sso/start?redirect=${encodeURIComponent(redirect)}`
+}
+
 onMounted(() => {
   void tryMigrateLogin()
+  void authApi
+    .ssoStatus()
+    .then((s) => {
+      ssoEnabled.value = s.enabled
+    })
+    .catch(() => {
+      /* 探测失败按未启用处理 */
+    })
 })
 </script>
 
@@ -376,6 +398,19 @@ onMounted(() => {
           {{ mode === 'login' ? t('auth.actionLogin') : t('auth.actionRegister') }}
         </UiButton>
       </TForm>
+
+      <!-- 统一登录：后端配置聚合登录中心后才出现（仅登录形态） -->
+      <UiButton
+        v-if="mode === 'login' && ssoEnabled"
+        class="auth-card__sso"
+        variant="outline"
+        size="large"
+        block
+        :disabled="migrating"
+        @click="startSso"
+      >
+        {{ t('auth.ssoLogin') }}
+      </UiButton>
 
       <div class="auth-card__links">
         <template v-if="mode === 'login'">

@@ -11,15 +11,16 @@ $root = (Get-Item $PSCommandPath).Directory.Parent.Parent.FullName   # scripts �
 Set-Location $root
 
 $map = [ordered]@{
-  'README.md'            = 'getting-started.md'
-  'CHANGELOG.md'         = 'changelog.md'
-  'docs/设计文档.md'      = 'design.md'
-  'docs/后端需求规格.md'  = 'api-spec.md'
-  'docs/前端技术方案.md'  = 'frontend-guide.md'
-  'docs/运维手册.md'      = 'ops-guide.md'
-  'docs/安全与迁移指南.md' = 'security-migration-guide.md'
-  'server/README.md'     = 'server-readme.md'
-  'web/README.md'        = 'web-readme.md'
+  'README.md'             = 'getting-started.md'
+  'CHANGELOG.md'          = 'changelog.md'
+  'docs/设计文档.md'       = 'design.md'
+  'docs/后端需求规格.md'   = 'api-spec.md'
+  'docs/前端技术方案.md'   = 'frontend-guide.md'
+  'docs/运维手册.md'       = 'ops-guide.md'
+  'docs/安全与迁移指南.md'  = 'security-migration-guide.md'
+  'docs/在线音乐与自定义音源.md' = 'online-music.md'
+  'server/README.md'      = 'server-readme.md'
+  'web/README.md'         = 'web-readme.md'
 }
 
 $dst = 'website/public/content/docs'

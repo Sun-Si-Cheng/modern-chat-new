@@ -18,6 +18,7 @@ import type { Plugin, PanelDesc, ServerFrame, UIDescNode } from '@/types/proto'
 import { convApi, pluginApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
+import * as musicHost from '@/music/musicHost'
 import { usePluginsStore } from '@/stores/plugins'
 import { useWsStore } from '@/stores/ws'
 
@@ -43,9 +44,12 @@ export function validateUIDesc(node: unknown, depth = 0): UIDescNode | null {
   if (depth > 8 || !node || typeof node !== 'object') return null
   const n = node as Record<string, unknown>
   if (typeof n.component !== 'string' || !ALLOWED_COMPONENTS.has(n.component)) return null
-  if (!n.props || typeof n.props !== 'object') return null
+  // props 是可选的：list / divider 这类纯结构节点在业务上不需要 props，
+  // 渲染器也不读它。旧版强制要求 props，会让整个面板被判非法后丢弃。
+  const rawProps = n.props
+  if (rawProps !== undefined && rawProps !== null && typeof rawProps !== 'object') return null
   const props: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(n.props as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries((rawProps ?? {}) as Record<string, unknown>)) {
     // 仅放行原始值，杜绝对象/函数注入面
     if (['string', 'number', 'boolean'].includes(typeof v) || v === null) props[k] = v
   }
@@ -140,6 +144,22 @@ const API_PERMISSION: Record<string, string> = {
   'nav.openConversation': 'ui:host',
   'nav.jumpToMessage': 'ui:host',
   toast: 'ui:host',
+  // 音乐能力：音频解码/缓存/播放都在宿主执行（沙箱内没有 IndexedDB）
+  'music.state': 'music:control',
+  'music.playLocal': 'music:control',
+  'music.playOnline': 'music:control',
+  'music.toggle': 'music:control',
+  'music.next': 'music:control',
+  'music.prev': 'music:control',
+  'music.seek': 'music:control',
+  'music.volume': 'music:control',
+  'music.stop': 'music:control',
+  'music.playlists': 'music:control',
+  'music.playlistSongs': 'music:control',
+  'music.searchOnline': 'music:control',
+  'music.sources': 'music:control',
+  'music.setRepeat': 'music:control',
+  'music.repeat': 'music:control',
 }
 
 /** 插件注册的消息动作（右键菜单项） */
@@ -221,7 +241,7 @@ function bootHtml(pluginCode: string, allowedHosts: string[], token: string): st
       post({ __mc: "call", callId: callId, api: name, args: args });
     });
   }
-  var api = {
+  var sdk = {
     on: function (ev, fn) { (handlers[ev] || (handlers[ev] = [])).push(fn); },
     send: function (convId, payload, msgType) { return call("send", [convId, payload, msgType]); },
     registerMessageRenderer: function (type, fn) { renderers.set(type, fn); return call("registerMessageRenderer", [type]); },
@@ -249,16 +269,47 @@ function bootHtml(pluginCode: string, allowedHosts: string[], token: string): st
       set: function (k, v) { return call("storage.set", [k, v]); }
     },
     request: function (url, opts) { return call("request", [url, opts || {}]); },
-    theme: { apply: function (vars) { return call("theme.apply", [vars]); } }
+    theme: { apply: function (vars) { return call("theme.apply", [vars]); } },
+    /**
+     * 音乐能力（需 music:control）。
+     *
+     * 音频解码、AES 解密、IndexedDB 缓存与播放都在宿主执行 ——
+     * 沙箱是 opaque origin，IndexedDB 在其中不可用，所以这些不能放在插件里。
+     * 插件只负责 UI 与"放哪首歌"的意图。
+     */
+    music: {
+      state: function () { return call("music.state", []); },
+      playLocal: function (song) { return call("music.playLocal", [song]); },
+      playOnline: function (song) { return call("music.playOnline", [song]); },
+      toggle: function () { return call("music.toggle", []); },
+      next: function () { return call("music.next", []); },
+      prev: function () { return call("music.prev", []); },
+      seek: function (sec) { return call("music.seek", [sec]); },
+      volume: function (v) { return call("music.volume", [v]); },
+      stop: function () { return call("music.stop", []); },
+      playlists: function () { return call("music.playlists", []); },
+      playlistSongs: function (id) { return call("music.playlistSongs", [id]); },
+      searchOnline: function (name, source, page) { return call("music.searchOnline", [name, source, page]); },
+      sources: function () { return call("music.sources", []); },
+      setRepeat: function (mode) { return call("music.setRepeat", [mode]); },
+      repeat: function () { return call("music.repeat", []); }
+    }
   };
   window.__mcActivate = null;
+  // 插件代码放进独立函数作用域执行。
+  // 关键：不能与引导器同一个作用域 —— 插件顶层的 var/function 声明会与引导器
+  // 同名变量互相覆盖（插件写 var api = null 就把引导器的 sdk 顶掉，
+  // __mcActivate 收到 null 并抛 "Cannot read properties of null (reading 'on')"）。
+  // 也不能用 new Function：沙箱 CSP 只开 script-src 'unsafe-inline'，没有 'unsafe-eval'。
+  (function () {
 ${safeCode}
-  if (typeof __mcActivate === "function") {
-    try { __mcActivate(api); post({ __mc: "ready" }); }
+    // 两种入口写法都支持：顶层 function __mcActivate，或挂到 window 上
+    var entry = typeof __mcActivate === "function" ? __mcActivate : null;
+    if (!entry && typeof window.__mcActivate === "function") entry = window.__mcActivate;
+    if (!entry) { post({ __mc: "ready", error: "missing __mcActivate" }); return; }
+    try { entry(sdk); post({ __mc: "ready" }); }
     catch (e) { console.error("[plugin] activate error", e); post({ __mc: "ready", error: String((e && e.message) || e) }); }
-  } else {
-    post({ __mc: "ready", error: "missing __mcActivate" });
-  }
+  })();
 })();
 </script></body></html>`
 }
@@ -286,6 +337,8 @@ interface Runtime {
 interface PluginHostState {
   started: boolean
   panels: Record<number, PanelDesc> // pluginId -> panel desc
+  /** pluginId -> 插件名：面板按插件归类，界面才能各自只渲染该渲染的那部分 */
+  panelPlugins: Record<number, string>
   /** pluginId -> 该插件注册的右键菜单动作 */
   actions: Record<number, Array<{ id: string; label: string }>>
 }
@@ -295,7 +348,7 @@ function storageKey(pluginId: number, key: string) {
 }
 
 function createHost() {
-  const state = reactive<PluginHostState>({ started: false, panels: {}, actions: {} })
+  const state = reactive<PluginHostState>({ started: false, panels: {}, panelPlugins: {}, actions: {} })
   const runtimes = new Map<number, Runtime>()
   let offFrame: (() => void) | null = null
 
@@ -372,6 +425,77 @@ function createHost() {
           reply(runtime, callId, true)
           break
         }
+        // ---- 音乐能力（音频与缓存都在宿主执行） ----
+        case 'music.state': {
+          reply(runtime, callId, true, musicHost.musicState())
+          break
+        }
+        case 'music.playLocal': {
+          void musicHost.musicPlayLocal(args[0] as never).then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.playOnline': {
+          void musicHost.musicPlayOnline(args[0] as never).then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.toggle': {
+          void musicHost.musicToggle().then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.next': {
+          void musicHost.musicNext().then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.prev': {
+          void musicHost.musicPrev().then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.seek': {
+          void musicHost.musicSeek(Number(args[0] ?? 0)).then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.volume': {
+          const rv = musicHost.musicVolume(Number(args[0] ?? 0))
+          reply(runtime, callId, rv.ok, rv)
+          break
+        }
+        case 'music.stop': {
+          const rs = musicHost.musicStop()
+          reply(runtime, callId, rs.ok, rs)
+          break
+        }
+        case 'music.playlists': {
+          void musicHost.musicPlaylists().then((r) => reply(runtime, callId, true, r))
+          break
+        }
+        case 'music.playlistSongs': {
+          void musicHost.musicPlaylistSongs(Number(args[0] ?? 0)).then((r) => reply(runtime, callId, true, r))
+          break
+        }
+        case 'music.searchOnline': {
+          void musicHost
+            .musicSearchOnline(
+              String(args[0] ?? ''),
+              (args[1] as never) ?? 'kw',
+              Number(args[2] ?? 1) || 1,
+            )
+            .then((r) => reply(runtime, callId, r.ok, r))
+          break
+        }
+        case 'music.sources': {
+          reply(runtime, callId, true, musicHost.musicSources())
+          break
+        }
+        case 'music.setRepeat': {
+          const mode = String(args[0] ?? 'all')
+          musicHost.musicSetRepeat((mode as 'all' | 'off' | 'one') in { all: 1, off: 1, one: 1 } ? (mode as 'all' | 'off' | 'one') : 'all')
+          reply(runtime, callId, true)
+          break
+        }
+        case 'music.repeat': {
+          reply(runtime, callId, true, musicHost.musicRepeat())
+          break
+        }
         case 'addSidePanel': {
           const panel = validatePanel(args[0])
           if (!panel) {
@@ -379,6 +503,7 @@ function createHost() {
             return
           }
           state.panels[runtime.plugin.id] = panel
+          state.panelPlugins[runtime.plugin.id] = runtime.plugin.name
           reply(runtime, callId, true)
           break
         }
@@ -704,6 +829,7 @@ function createHost() {
     rt.themeVars.clear()
     runtimes.delete(pluginId)
     delete state.panels[pluginId]
+    delete state.panelPlugins[pluginId]
     delete state.actions[pluginId]
   }
 
@@ -758,6 +884,7 @@ function createHost() {
     // unmountRuntime 会删除当前项，Map 迭代器按序遍历时这是安全的
     for (const id of runtimes.keys()) unmountRuntime(id)
     state.panels = {}
+    state.panelPlugins = {}
     state.started = false
   }
 

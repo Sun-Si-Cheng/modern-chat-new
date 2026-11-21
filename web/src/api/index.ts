@@ -37,6 +37,15 @@ export const authApi = {
   migrateLogin: (body: { token: string; key: string }) =>
     // 公开接口：旧票据换会话与当前登录态无关，不带 Authorization、401 也不跳登录页
     http.post<AuthPayload>('/auth/migrate-login', body, { skipAuth: true }),
+  /** 统一登录是否启用（免鉴权）：登录页据此展示「统一登录」入口 */
+  ssoStatus: () => http.get<{ enabled: boolean }>('/auth/sso/status'),
+  /**
+   * 统一登录：聚合登录中心回调页带一次性 ticket 跳过来，换本站 JWT。
+   * 票据 5 分钟有效且只能用一次，失败即失效（回登录页重新发起）。
+   */
+  ssoExchange: (body: { ticket: string }) =>
+    // 公开接口：票据本身就是凭据，不带 Authorization、401 也不跳登录页
+    http.post<AuthPayload>('/auth/sso/exchange', body, { skipAuth: true }),
   /** 发送注册验证码；返回剩余冷却秒数（冷却期内重复调用也返回 200） */
   emailCode: (email: string) =>
     http.post<{ ok: true; cooldownSeconds: number }>('/auth/email-code', { email }),

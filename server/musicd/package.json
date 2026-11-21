@@ -1,0 +1,12 @@
+{
+  "name": "modernchat-musicd",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ModernChat 自定义音源运行时：解析第三方音乐直链（不代理音频字节）",
+  "main": "index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
