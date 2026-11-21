@@ -45,7 +45,11 @@ onMounted(() => {
     if (mutedUntil.value) muteTick.value = Date.now()
   }, 30_000)
 })
-onBeforeUnmount(() => clearInterval(muteTickTimer))
+onBeforeUnmount(() => {
+  clearInterval(muteTickTimer)
+  // 切会话（输入框随 :key 重建）前落定未决草稿：去抖窗口内的最后几个字不能丢
+  convStore.flushDraft(convStore.currentConvId)
+})
 
 /** 群全员禁言：普通成员不能发言，群主/管理员不受影响 */
 const muteAllBlocked = computed(() => {

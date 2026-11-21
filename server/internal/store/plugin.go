@@ -32,7 +32,9 @@ func (s *PluginStore) ByID(id uint) (*model.Plugin, error) {
 // ByUser 某用户安装的插件清单。
 func (s *PluginStore) ByUser(userID uint) ([]model.Plugin, error) {
 	var rows []model.Plugin
-	err := s.db.Where("installed_by = ?", userID).Order("created_at DESC").Find(&rows).Error
+	// 列表接口不取 code_text（≤1MB 的 MEDIUMTEXT）：View() 会 json:"-" 丢掉它，
+	// 前端拉源码走单独的 /plugins/:id/code，列表查询带上是纯读放大
+	err := s.db.Omit("code_text").Where("installed_by = ?", userID).Order("created_at DESC").Find(&rows).Error
 	return rows, err
 }
 
@@ -52,7 +54,8 @@ func (s *PluginStore) ByUserAndName(userID uint, name string) (*model.Plugin, er
 // Active 启用且未被全局下架。
 func (s *PluginStore) Active(userID uint) ([]model.Plugin, error) {
 	var rows []model.Plugin
-	err := s.db.Where("installed_by = ? AND enabled = ? AND global_disabled = ?", userID, true, false).
+	// 与 ByUser 同理：列表不带 code_text
+	err := s.db.Omit("code_text").Where("installed_by = ? AND enabled = ? AND global_disabled = ?", userID, true, false).
 		Order("created_at ASC").Find(&rows).Error
 	return rows, err
 }

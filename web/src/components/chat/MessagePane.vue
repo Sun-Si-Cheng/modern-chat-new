@@ -72,12 +72,17 @@ function recallLabel(m: Message): string {
 
 // 精确调度到最近的到期时刻，不做每秒轮询（有 2000 条历史的会话也不该空转）。
 // nowTick 到期后 computed 重算，提示随之下线。
+// 单次遍历取最小 deadline：不在 filter/map 里建中间数组（每条新消息都会重跑
+// 这个 getter，全量分配是纯浪费），且只为撤回消息解析时间。
 watch(
   () => {
-    const deadlines = messages.value
-      .filter((m) => m.isRecalled && recallVisible(m))
-      .map((m) => new Date(m.recalledAt as string).getTime() + RECALL_TTL)
-    return deadlines.length ? Math.min(...deadlines) : 0
+    let min = 0
+    for (const m of messages.value) {
+      if (!m.isRecalled || !recallVisible(m)) continue
+      const dl = new Date(m.recalledAt as string).getTime() + RECALL_TTL
+      if (min === 0 || dl < min) min = dl
+    }
+    return min
   },
   (deadline) => {
     clearTimeout(recallTimer)
@@ -1041,10 +1046,19 @@ function ensureRendered(m: Message) {
     })
 }
 
+// 新消息只会追加在尾部：append-only 时只扫新增段，避免每条消息 O(n) 全量重扫；
+// 其他变化（撤回移除/切会话重建）退回全量扫——ensureRendered 内部有
+// renderedMap 幂等护栏，重扫只是 Map 查询，不会重复请求渲染。
 watch(
   displayItems,
-  (items) => {
-    for (const it of items) if (it.kind === 'msg' && it.msg) ensureRendered(it.msg)
+  (items, prev) => {
+    const appendOnly =
+      !!prev && prev.length > 0 && items.length > prev.length && items[0]?.key === prev[0]?.key
+    const start = appendOnly ? prev.length : 0
+    for (let i = start; i < items.length; i++) {
+      const it = items[i]
+      if (it && it.kind === 'msg' && it.msg) ensureRendered(it.msg)
+    }
   },
   { immediate: true },
 )

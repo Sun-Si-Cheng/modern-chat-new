@@ -123,6 +123,24 @@ func (s *UserStore) ByID(id uint) (*model.User, error) {
 	return &u, nil
 }
 
+// ByIDBasic 只取身份与状态列（不含 PasswordHash，也不含 Avatar 的 256KB
+// MEDIUMTEXT）。/uploads 媒体鉴权与 WS 连接状态复核这类高频路径只需要
+// id / 封禁态 / token_version，全行拉取等于把 DB 读放大固定在请求速率上
+// （一页历史消息 = N 个媒体请求 = N 次 256KB 读取）。返回值只可用于鉴权
+// 判定与按 ID/昵称取值；需要完整资料（GET /me、UpdateMe 的保存）仍用 ByID，
+// 因为半缺字段的结构体再 Save 会把落掉的列写回零值。
+func (s *UserStore) ByIDBasic(id uint) (*model.User, error) {
+	var u model.User
+	err := s.db.Omit("password_hash", "avatar").First(&u, id).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (s *UserStore) ByEmail(email string) (*model.User, error) {
 	var u model.User
 	err := s.db.Where("email = ?", email).First(&u).Error

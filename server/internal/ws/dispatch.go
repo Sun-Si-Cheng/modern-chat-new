@@ -131,8 +131,15 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 	if !h.requireMember(c, f.ConvID, f.ClientMsgID) {
 		return
 	}
+	// 成员行一次取足：禁言检查与全员禁言的角色判定都复用它，
+	// 此前一条消息要重复查 2-3 次 MemberOf（逐帧成本 × 消息速率）。
+	member, err := h.deps.Convs.MemberOf(f.ConvID, c.UserID)
+	if err != nil || member == nil {
+		h.sendError(c, "无权访问该会话", f.ClientMsgID)
+		return
+	}
 	// 禁言：到时间自动失效；命中时直接拒绝发送
-	if h.memberMuted(c, f.ConvID) {
+	if h.memberMuted(member) {
 		h.sendError(c, "你已被禁言，暂时不能发送消息", f.ClientMsgID)
 		return
 	}
@@ -144,8 +151,7 @@ func (h *Hub) handleChat(c *Client, f *clientFrame) {
 		return
 	}
 	if conv != nil && conv.MuteAll {
-		m, _ := h.deps.Convs.MemberOf(f.ConvID, c.UserID)
-		if m == nil || (m.Role != "owner" && m.Role != "admin") {
+		if member.Role != "owner" && member.Role != "admin" {
 			h.sendError(c, "群已开启全员禁言，只有群主和管理员可以发言", f.ClientMsgID)
 			return
 		}
@@ -300,26 +306,41 @@ func (h *Hub) notifyPush(userIDs []uint, msg *model.Message) {
 	}
 	body := pushPreview(msg)
 	payload := ginH{"title": "ModernChat", "body": body, "convId": msg.ConversationID, "url": "/chat"}
+	offline := make([]uint, 0, len(userIDs))
 	for _, uid := range userIDs {
 		if uid == 0 || h.IsOnline(uid) {
 			continue
 		}
-		go func(uid uint) {
-			subs, err := h.deps.PushSubs.ForUser(uid)
-			if err != nil {
-				slog.Warn("push subscriptions lookup failed", "uid", uid, "err", err.Error())
-				return
-			}
+		offline = append(offline, uid)
+	}
+	if len(offline) == 0 {
+		return
+	}
+	// 一次 IN 查询取全部离线用户的订阅，替代「每离线用户一个 goroutine + 一次单查」：
+	// 大群多为离线时一条消息就是 N 次 RTT 与 N 个 goroutine，与消息速率相乘。
+	// goroutine 只为真正有订阅的用户创建（多数用户没有，数量骤减）；
+	// 发送并发仍由 service/push 内的信号量约束。
+	subs, err := h.deps.PushSubs.ForUsers(offline)
+	if err != nil {
+		slog.Warn("push subscriptions lookup failed", "count", len(offline), "err", err.Error())
+		return
+	}
+	byUser := make(map[uint][]model.PushSubscription)
+	for i := range subs {
+		byUser[subs[i].UserID] = append(byUser[subs[i].UserID], subs[i])
+	}
+	for _, list := range byUser {
+		go func(subs []model.PushSubscription) {
 			for i := range subs {
 				if err := h.deps.Push.Send(&subs[i], payload); err != nil {
 					if errors.Is(err, service.ErrPushGone) {
 						_ = h.deps.PushSubs.Remove(subs[i].Endpoint)
 					} else {
-						slog.Warn("push send failed", "uid", uid, "err", err.Error())
+						slog.Warn("push send failed", "uid", subs[i].UserID, "err", err.Error())
 					}
 				}
 			}
-		}(uid)
+		}(list)
 	}
 }
 
@@ -368,7 +389,8 @@ func (h *Hub) handleRead(c *Client, f *clientFrame) {
 	if h.deps == nil || h.deps.Messages == nil {
 		return
 	}
-	msg, err := h.deps.Messages.ByID(uint(f.UpToID))
+	// 归属校验只需要定位列，用 ByIDMeta 避开正文读放大（read 逐消息逐读者触发）
+	msg, err := h.deps.Messages.ByIDMeta(uint(f.UpToID))
 	if err != nil {
 		slog.Error("ws read lookup", "err", err.Error(), "uid", c.UserID, "conv", f.ConvID)
 		h.sendError(c, "服务器开小差了，请稍后再试")
@@ -403,7 +425,7 @@ func (h *Hub) handleRecall(c *Client, f *clientFrame) {
 	if f.MessageID == 0 {
 		return
 	}
-	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	msg, err := h.deps.Messages.ByIDMeta(uint(f.MessageID))
 	if err != nil || msg == nil || msg.SenderID != c.UserID {
 		return
 	}
@@ -451,7 +473,7 @@ func (h *Hub) handleDelivered(c *Client, f *clientFrame) {
 	if f.MessageID == 0 || h.deps == nil || h.deps.Messages == nil {
 		return
 	}
-	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	msg, err := h.deps.Messages.ByIDMeta(uint(f.MessageID))
 	if err != nil || msg == nil || msg.SenderID == c.UserID {
 		return
 	}
@@ -498,7 +520,13 @@ func (h *Hub) handleEdit(c *Client, f *clientFrame) {
 	if !h.requireMember(c, msg.ConversationID) {
 		return
 	}
-	if h.memberMuted(c, msg.ConversationID) {
+	member, err := h.deps.Convs.MemberOf(msg.ConversationID, c.UserID)
+	if err != nil {
+		slog.Error("ws edit member lookup", "err", err.Error(), "uid", c.UserID)
+		h.sendError(c, "服务器开小差了，请稍后再试")
+		return
+	}
+	if h.memberMuted(member) {
 		h.sendError(c, "你已被禁言，暂时不能编辑消息")
 		return
 	}
@@ -541,7 +569,7 @@ func (h *Hub) handleReaction(c *Client, f *clientFrame) {
 	if f.MessageID == 0 || h.deps == nil || h.deps.Messages == nil {
 		return
 	}
-	msg, err := h.deps.Messages.ByID(uint(f.MessageID))
+	msg, err := h.deps.Messages.ByIDMeta(uint(f.MessageID))
 	if err != nil || msg == nil || msg.IsRecalled {
 		return
 	}
@@ -604,7 +632,8 @@ func (h *Hub) checkConnState(c *Client, convID uint) bool {
 	if time.Since(time.Unix(0, c.connStateAt.Load())) < connStateTTL {
 		return true
 	}
-	u, err := h.deps.Users.ByID(c.UserID)
+	// 连接状态复核只判封禁 / token 版本，用 Basic 查询避开 avatar 读放大
+	u, err := h.deps.Users.ByIDBasic(c.UserID)
 	if err != nil {
 		slog.Error("ws conn state lookup", "err", err.Error(), "uid", c.UserID)
 		h.sendError(c, "服务器开小差了，请稍后再试")
@@ -639,16 +668,10 @@ func (h *Hub) denyConn(c *Client, convID uint, reason string) {
 	c.requestKick(true)
 }
 
-// memberMuted 调用者在该会话是否处于禁言期。
-func (h *Hub) memberMuted(c *Client, convID uint) bool {
-	if h.deps == nil || h.deps.Convs == nil {
-		return false
-	}
-	m, err := h.deps.Convs.MemberOf(convID, c.UserID)
-	if err != nil || m == nil {
-		return false
-	}
-	return m.MuteUntil != nil && m.MuteUntil.After(time.Now())
+// memberMuted 该成员行是否处于禁言期。只做纯判定（成员行由调用方取好），
+// 供 chat / edit 等上行路径复用同一行，避免同一帧重复查 MemberOf。
+func (h *Hub) memberMuted(m *model.ConversationMember) bool {
+	return m != nil && m.MuteUntil != nil && m.MuteUntil.After(time.Now())
 }
 
 // requireMember 上行帧的会话成员校验。clientMsgID 可选：chat 发送被拒时回传

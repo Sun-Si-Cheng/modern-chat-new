@@ -127,7 +127,10 @@ func UploadAuth(users *store.UserStore, secret string) gin.HandlerFunc {
 			abort401(c)
 			return
 		}
-		u, err := users.ByID(cl.UID)
+		// 媒体请求是最热的一条鉴权路径（一页图片消息 = N 次 /uploads 鉴权），
+		// 用 Basic 查询避开 avatar MEDIUMTEXT 与密码哈希的读放大；
+		// 该链路只判封禁态与身份，不返回资料。
+		u, err := users.ByIDBasic(cl.UID)
 		if err != nil {
 			slog.Error("upload auth load user", "err", err)
 			abort401(c)

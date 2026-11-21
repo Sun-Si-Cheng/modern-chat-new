@@ -74,10 +74,11 @@ func New(d Deps) *gin.Engine {
 	// REST 响应压缩（设计文档 §9.2）。
 	// /ws 必须排除：WebSocket 升级依赖 Hijack，被 gzip 包装的 ResponseWriter 会破坏握手；
 	// WS 侧用 permessage-deflate 单独压缩（见 internal/ws 的 upgraderFor）。
+	// /uploads 也排除：JPEG/视频/音频本身已是压缩格式，再 gzip 白耗 CPU 且几乎不再变小。
 	// MinLength=1024：小于该长度的响应压缩后反而更大（gzip 头 + 熵不足）。
 	r.Use(gzip.Gzip(
 		gzip.DefaultCompression,
-		gzip.WithExcludedPaths([]string{"/ws"}),
+		gzip.WithExcludedPaths([]string{"/ws", "/uploads"}),
 		gzip.WithMinLength(1024),
 	))
 	if d.Notifier != nil {

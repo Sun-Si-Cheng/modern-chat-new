@@ -32,6 +32,23 @@ func (s *MessageStore) ByID(id uint) (*model.Message, error) {
 	return &m, nil
 }
 
+// ByIDMeta 只取定位与状态列（不含 TEXT 正文），供 WS 上行的归属校验用：
+// read / delivered / reaction / recall 只需要 id、会话、发送者、撤回态与时间，
+// 每帧全行拉正文是纯读放大（read/delivered 是逐消息逐读者的最高频路径）。
+// 需要正文或要写 Content 的路径（edit / 幂等回放）仍用 ByID。
+func (s *MessageStore) ByIDMeta(id uint) (*model.Message, error) {
+	var m model.Message
+	err := s.db.Select("id", "conversation_id", "sender_id", "is_recalled", "created_at").
+		First(&m, id).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
 // ByClientMsg 幂等回查。
 func (s *MessageStore) ByClientMsg(convID uint, clientMsgID string) (*model.Message, error) {
 	var m model.Message

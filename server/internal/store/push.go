@@ -40,3 +40,11 @@ func (s *PushStore) ForUser(userID uint) ([]model.PushSubscription, error) {
 	err := s.db.Where("user_id = ?", userID).Find(&rows).Error
 	return rows, err
 }
+
+// ForUsers 一批用户的全部订阅端点（单条 IN 查询）。
+// 消息广播的离线推送按批取订阅，避免逐用户单查（大群一条消息 N 次 RTT）。
+func (s *PushStore) ForUsers(userIDs []uint) ([]model.PushSubscription, error) {
+	var rows []model.PushSubscription
+	err := s.db.Where("user_id IN ?", userIDs).Find(&rows).Error
+	return rows, err
+}

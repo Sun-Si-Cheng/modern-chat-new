@@ -38,7 +38,31 @@ var (
 	db        *gorm.DB
 	onlineFn  func() int
 	startedAt = time.Now()
+
+	// 用户 / 消息总量 gauge 的短 TTL 缓存：Prometheus 默认 15-30s 抓取一次，
+	// 每次都对 messages 全表 COUNT 在千万级时是秒级扫描，还会周期性挤占
+	// buffer pool。60s TTL 把抓取风暴变成每分钟最多一次查询——总量 gauge
+	// 短期不精确，运维指标可接受。
+	countsMu       sync.Mutex
+	countsAt       time.Time
+	countsUsers    int64
+	countsMessages int64
 )
+
+const countsTTL = time.Minute
+
+// cachedCounts 过期即重查，查询失败沿用旧值（与原实现「失败记 0」不同但更稳）。
+func cachedCounts() (users int64, messages int64) {
+	countsMu.Lock()
+	defer countsMu.Unlock()
+	if countsAt.IsZero() || time.Since(countsAt) >= countsTTL {
+		var u, m int64
+		db.Model(&model.User{}).Count(&u)
+		db.Model(&model.Message{}).Count(&m)
+		countsUsers, countsMessages, countsAt = u, m, time.Now()
+	}
+	return countsUsers, countsMessages
+}
 
 // Init 注入依赖。online 可为 nil（未启用 WS 时）。
 func Init(database *gorm.DB, online func() int) {
@@ -133,8 +157,7 @@ func render() string {
 
 	var users, messages int64
 	if db != nil {
-		db.Model(&model.User{}).Count(&users)
-		db.Model(&model.Message{}).Count(&messages)
+		users, messages = cachedCounts()
 	}
 	b.WriteString("# HELP modernchat_users_total 用户总数\n")
 	b.WriteString("# TYPE modernchat_users_total gauge\n")

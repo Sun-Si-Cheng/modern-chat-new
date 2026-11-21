@@ -45,6 +45,23 @@ export class WsChannel {
 
   constructor(opts: WsChannelOptions) {
     this.opts = opts
+    // 页面隐藏时浏览器会节流定时器：25s 心跳可能被拖到一分钟以上，而 8s pong
+    // 超时按真实时间走——超时定时器与 pong 到达的相对时序被打乱，后台标签页
+    // 会把还活着的连接误判成僵死并反复重连。回到前台时清掉未决超时并立即
+    // 补一帧 ping，重新对齐心跳节拍。
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return
+        if (this.pongTimeout) {
+          clearTimeout(this.pongTimeout)
+          this.pongTimeout = null
+        }
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.send({ type: 'ping' })
+          this.pongTimeout = setTimeout(() => this.socket?.close(), 8000)
+        }
+      })
+    }
   }
 
   get handshakeFails(): number {

@@ -21,8 +21,35 @@ export const useConversationsStore = defineStore('conversations', () => {
   const drafts = reactive<Record<number, string>>({})
   const messagesByConv = reactive<Record<number, Message[]>>({})
 
-  /** 记录/清除草稿（空串即清除） */
+  /**
+   * 草稿写入去抖：打字是最热的前端事件，每个按键都写响应式 drafts，
+   * 侧栏每一行都读 draftOf（「有草稿」指示），等于按打字频率整表重渲。
+   * 写入先落 pending，300ms 后才进响应式 drafts；读取走 draftOf（保持纯读，
+   * 切会话时由输入框组件在卸载前调 flushDraft 落定，保证不丢字）。
+   */
+  const draftTimers = new Map<number, ReturnType<typeof setTimeout>>()
+  const pendingDrafts = new Map<number, string>()
+  const DRAFT_DEBOUNCE_MS = 300
+
+  /** 记录/清除草稿（空串即清除）。打字路径用，写入去抖 */
   function setDraft(convId: number, text: string) {
+    pendingDrafts.set(convId, text)
+    const t = draftTimers.get(convId)
+    if (t) clearTimeout(t)
+    draftTimers.set(convId, setTimeout(() => flushDraft(convId), DRAFT_DEBOUNCE_MS))
+  }
+
+  /** 立即落定某会话的未决草稿（空串即清除）。切换会话/发送前调用 */
+  function flushDraft(convId: number | null | undefined) {
+    if (!convId) return
+    const t = draftTimers.get(convId)
+    if (t) {
+      clearTimeout(t)
+      draftTimers.delete(convId)
+    }
+    const text = pendingDrafts.get(convId)
+    if (text === undefined) return
+    pendingDrafts.delete(convId)
     if (text) drafts[convId] = text
     else delete drafts[convId]
   }
@@ -351,6 +378,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     autoReadPaused.value = v
   }
 
+  /**
+   * read 帧去抖：贴底读活跃群时每条新消息都触发 markRead，maxId 递增导致
+   * 每条消息都发一帧 read（上行帧数 ≈ 消息数），服务端按帧查库纯做无用功。
+   * 改为 trailing 去抖合并到最新 upToId；本地未读清除仍立即生效，
+   * 只有上报帧被合并——对方看到的「已读」最多延迟数百毫秒。
+   */
+  const readDebounce = new Map<number, ReturnType<typeof setTimeout>>()
+  const READ_DEBOUNCE_MS = 300
+
   function markRead(convId: number) {
     const list = messagesByConv[convId]
     // 消息还没加载完（或加载失败）：此时算不出 upToId，先不清本地未读，
@@ -365,12 +401,24 @@ export const useConversationsStore = defineStore('conversations', () => {
       conv.lastReadMessageId = Math.max(conv.lastReadMessageId ?? 0, maxId)
     }
     if (maxId > 0 && maxId !== lastReportedReadByConv.get(convId)) {
-      // 只有帧真正发出去才记水位：SendFrame 返回 false 时（WS 未连接）帧会被丢弃，
-      // 若先记水位，之后重连 resync 也不会再补发，服务端未读永远清不掉
-      if (sendFrame({ type: 'read', convId, upToId: maxId })) {
-        lastReportedReadByConv.set(convId, maxId)
-        readByConv[convId] = { ...readByConv[convId], [auth.user?.id ?? 0]: maxId }
-      }
+      const t = readDebounce.get(convId)
+      if (t) clearTimeout(t)
+      readDebounce.set(
+        convId,
+        setTimeout(() => {
+          readDebounce.delete(convId)
+          // 去抖窗口内可能有更新的消息：重算最新位置，只上报最终值
+          const latest = maxMessageId(messagesByConv[convId])
+          if (latest > 0 && latest !== lastReportedReadByConv.get(convId)) {
+            // 只有帧真正发出去才记水位：SendFrame 返回 false 时（WS 未连接）帧会被丢弃，
+            // 若先记水位，之后重连 resync 也不会再补发，服务端未读永远清不掉
+            if (sendFrame({ type: 'read', convId, upToId: latest })) {
+              lastReportedReadByConv.set(convId, latest)
+              readByConv[convId] = { ...readByConv[convId], [auth.user?.id ?? 0]: latest }
+            }
+          }
+        }, READ_DEBOUNCE_MS),
+      )
     }
   }
 
@@ -853,8 +901,27 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
       case 'message_admin_deleted': {
         removeMessageLocal(frame.convId, frame.messageId)
-        // 会话预览/未读可能来自这条被删消息，重新拉列表让服务端回退
-        void loadConversations()
+        // 预览/未读本地增量修正（与撤回帧同款）：被删的是最后一条时，预览回退到
+        // 现在的最后一条；未读也同步扣减。只有「被删的是最后一条但本地没有这个
+        // 会话的消息缓存」时才退回全量拉列表——那一种算不出新的预览。
+        const conv = conversations.value.find((c) => c.id === frame.convId)
+        const list = messagesByConv[frame.convId]
+        if (conv) {
+          if (frame.messageId > (conv.lastReadMessageId ?? 0)) {
+            conv.unreadCount = Math.max(0, conv.unreadCount - 1)
+          }
+          if (conv.lastMessageId === frame.messageId) {
+            const last = list?.length ? list[list.length - 1] : undefined
+            if (last) {
+              conv.lastMessageId = last.id
+              conv.lastMessagePreview = last.isRecalled ? '' : last.content
+              conv.lastMessageType = last.isRecalled ? 'recalled' : last.msgType
+              conv.lastMessageAt = last.createdAt
+            } else {
+              void loadConversations()
+            }
+          }
+        }
         break
       }
       case 'typing': {
@@ -1017,6 +1084,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     for (const k of Object.keys(drafts)) delete drafts[Number(k)]
     for (const t of pendingTimers.values()) clearTimeout(t)
     pendingTimers.clear()
+    for (const t of readDebounce.values()) clearTimeout(t)
+    readDebounce.clear()
+    for (const t of draftTimers.values()) clearTimeout(t)
+    draftTimers.clear()
+    pendingDrafts.clear()
     lastReportedReadByConv.clear()
   }
 
@@ -1026,6 +1098,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     currentConv,
     drafts,
     setDraft,
+    flushDraft,
     draftOf,
     replyTarget,
     pendingJumpId,
