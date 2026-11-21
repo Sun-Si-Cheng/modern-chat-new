@@ -37,6 +37,8 @@ type AuthHandler struct {
 	loginAttempts *store.LoginAttemptStore
 	// emailCodes 注册邮箱验证码
 	emailCodes *store.EmailCodeStore
+	// twofaCodes 两步验证一次性恢复码（两步验证关闭时也持有，动作幂等）
+	twofaCodes *store.TwofaRecoveryCodeStore
 	// migrate 旧站迁移服务（迁移功能关闭时也可为 nil，MigrateLogin 返回 503）
 	migrate *service.MigrateService
 }
@@ -52,12 +54,13 @@ func NewAuthHandler(
 	invites *store.InviteStore,
 	loginAttempts *store.LoginAttemptStore,
 	emailCodes *store.EmailCodeStore,
+	twofaCodes *store.TwofaRecoveryCodeStore,
 	migrate *service.MigrateService,
 ) *AuthHandler {
 	return &AuthHandler{
 		cfg: cfg, users: users, resets: resets, mailer: mailer,
 		convs: convs, msgs: msgs, settings: settings,
-		invites: invites, loginAttempts: loginAttempts,
+		invites: invites, loginAttempts: loginAttempts, twofaCodes: twofaCodes,
 		emailCodes: emailCodes, migrate: migrate,
 	}
 }
@@ -344,6 +347,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			msg += "（至 " + u.BannedUntil.Format("2006-01-02 15:04") + "）"
 		}
 		fail(c, http.StatusForbidden, msg)
+		return
+	}
+	// 两步验证（默认关闭，用户在设置页自行开启）：密码正确后还要第二因子。
+	// 这里只发短寿命的 2FA 票据（绑定 uid，5 分钟），真正的 JWT 等 verify 通过才签。
+	// 响应形状与常规登录不同（无 token/user），前端据此切到两步验证表单。
+	if u.TwofaEnabled {
+		ticket, tErr := twofaIssueTicket(u.ID)
+		if tErr != nil {
+			internal(c, tErr)
+			return
+		}
+		slog.Info("2fa required", "uid", u.ID, "method", u.TwofaMethod)
+		c.JSON(http.StatusOK, gin.H{"twofa": true, "ticket": ticket, "method": u.TwofaMethod})
 		return
 	}
 	token, err := middleware.IssueToken(u.ID, u.TokenVersion, h.cfg.JWTSecret)

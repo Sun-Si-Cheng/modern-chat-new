@@ -9,11 +9,17 @@ import type {
   FavoriteItem,
   FriendItem,
   FriendRequestItem,
+  LoginResult,
   Message,
   Plugin,
   SearchHit,
+  TwofaEnableResult,
+  TwofaStatus,
   User,
 } from '@/types/proto'
+
+// 供业务模块复用的登录/两步验证类型（与 proto.ts 同源）
+export type { LoginResult, TwofaStatus, TwofaEnableResult } from '@/types/proto'
 
 // ===== 认证（§6 auth） =====
 
@@ -29,7 +35,8 @@ export const authApi = {
     /** 邮件里的 6 位验证码 */
     emailCode?: string
   }) => http.post<AuthPayload>('/auth/register', body),
-  login: (body: { username: string; password: string }) => http.post<AuthPayload>('/auth/login', body),
+  login: (body: { username: string; password: string }) =>
+    http.post<LoginResult>('/auth/login', body),
   /**
    * 旧站迁移自动登录：旧站带一次性 {token, key} 跳转过来，换本站 JWT。
    * token/key 一次性、有时效，失败即失效（前端提示用原密码登录）。
@@ -63,6 +70,26 @@ export const authApi = {
     ),
   /** 扫码登录：手机端（已登录）确认授权桌面登录；二维码无效/过期→400 */
   qrConfirm: (token: string) => http.post<{ ok: true }>('/auth/qr/confirm', { token }),
+
+  /** 两步验证：登录第二因子校验（免鉴权，靠登录返回的票据；每票据最多试 5 次） */
+  twofaVerify: (ticket: string, code: string) =>
+    http.post<AuthPayload>('/auth/2fa/verify', { ticket, code }, { skipAuth: true }),
+  /** 两步验证：登录期向本人邮箱发送验证码（免鉴权，靠票据；60s 冷却） */
+  twofaEmailCodeForLogin: (ticket: string) =>
+    http.post<{ ok: true; cooldownSeconds: number }>('/auth/2fa/email-code', { ticket }, { skipAuth: true }),
+
+  /** 两步验证：本人状态（设置页） */
+  twofaStatus: () => http.get<TwofaStatus>('/me/2fa'),
+  /** 两步验证：生成 TOTP 密钥与 otpauth URL（前端本地渲染二维码） */
+  twofaTotpSetup: () => http.post<{ secret: string; otpauthUrl: string }>('/me/2fa/totp/setup'),
+  /** 两步验证：校验 6 位码后开启验证器应用方式，返回一次性恢复码 */
+  twofaTotpEnable: (code: string) => http.post<TwofaEnableResult>('/me/2fa/totp/enable', { code }),
+  /** 两步验证：向本人邮箱发送开启用验证码（60s 冷却） */
+  twofaEmailCode: () => http.post<{ ok: true; cooldownSeconds: number }>('/me/2fa/email/code'),
+  /** 两步验证：校验邮箱验证码后开启邮箱方式，返回一次性恢复码 */
+  twofaEmailEnable: (code: string) => http.post<TwofaEnableResult>('/me/2fa/email/enable', { code }),
+  /** 两步验证：关闭（需密码再认证，恢复码与密钥一并清除） */
+  twofaDisable: (password: string) => http.post<{ ok: true }>('/me/2fa/disable', { password }),
   /** 发送注册验证码；返回剩余冷却秒数（冷却期内重复调用也返回 200） */
   emailCode: (email: string) =>
     http.post<{ ok: true; cooldownSeconds: number }>('/auth/email-code', { email }),

@@ -72,10 +72,18 @@ curl https://站点/api/conversations -H 'Authorization: Bearer <token>'
 | POST `/api/auth/qr/status` | `{token}` | `{status, token?, user?}`；**免鉴权**，桌面 2.5s 轮询（限流 60/min）。confirmed 一次性下发桌面 JWT |
 | POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`；**需手机端 JWT**。授权桌面登录；二维码无效/过期→400 |
 | POST `/api/auth/migrate-login` | `{token, key}` | `{token, user}`；**免鉴权**，旧站迁移一次性票据（10 分钟），失败提示用原密码登录 |
+| POST `/api/auth/2fa/verify` | `{ticket, code}` | `{token, user}`；**免鉴权**。两步验证第二因子校验：6 位 = TOTP / 邮箱码（按开启方式），8 位十六进制（可带连字符）= 一次性恢复码；每票据最多试 5 次 |
+| POST `/api/auth/2fa/email-code` | `{ticket}` | `{ok:true, cooldownSeconds}`；**免鉴权**，登录两步验证阶段向本人邮箱发码（60s 冷却） |
 | GET `/api/me` | — | `User`（本人含 email / emailVerified） |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}` | 更新后 `User`。换绑邮箱必须带 `emailCode`（发往新邮箱）；空串 `email`=解绑；avatar 为 dataURL（≤256KB）或空串清除。昵称/头像变更后广播 `user_change` |
 | POST `/api/me/email-code` | `{email}`（新邮箱） | `{ok:true, cooldownSeconds}`；被他人占用→409 |
 | POST `/api/me/logout-others` | — | `{ok:true}`；`token_version+1` 全端失效并踢线（含 WS `kicked`） |
+| GET `/api/me/2fa` | — | `{enabled, method, email}`；本人两步验证状态（默认关闭，设置页展示） |
+| POST `/api/me/2fa/totp/setup` | — | `{secret, otpauthUrl}`；生成 TOTP 密钥（前端本地渲染 otpauth 二维码 / 手动录入），此时未启用 |
+| POST `/api/me/2fa/totp/enable` | `{code}` | `{ok:true, recoveryCodes[]}`；校验 6 位码后开启，返回 8 个一次性恢复码（明文仅此一次） |
+| POST `/api/me/2fa/email/code` | — | `{ok:true, cooldownSeconds}`；向本人邮箱发开启用验证码（60s 冷却，需 SMTP） |
+| POST `/api/me/2fa/email/enable` | `{code}` | `{ok:true, recoveryCodes[]}`；校验邮箱码后开启 |
+| POST `/api/me/2fa/disable` | `{password}` | `{ok:true}`；关闭（需密码再认证），密钥与恢复码一并清除 |
 | GET `/api/version` | — | `{version, commit, buildTime}`；**免鉴权** |
 
 ---

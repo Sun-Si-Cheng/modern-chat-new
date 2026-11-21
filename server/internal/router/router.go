@@ -113,7 +113,8 @@ func New(d Deps) *gin.Engine {
 	emailCodes := store.NewEmailCodeStore(d.DB, d.Cfg.JWTSecret)
 	// 旧站迁移：旧库连接懒建（首次请求才 dial），功能关闭时不连接、不影响启动
 	migrateSvc := service.NewMigrateService(d.Cfg, d.DB, users, convs, msgs)
-	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts, emailCodes, migrateSvc)
+	twofaCodes := store.NewTwofaRecoveryStore(d.DB)
+	authH := handler.NewAuthHandler(d.Cfg, users, resets, d.Mailer, convs, msgs, settings, invites, loginAttempts, emailCodes, twofaCodes, migrateSvc)
 	inviteH := handler.NewInviteHandler(invites)
 	userH := handler.NewUserHandler(users)
 	friendH := handler.NewFriendHandler(users, friends, convs, moderation)
@@ -209,6 +210,12 @@ func New(d Deps) *gin.Engine {
 	api.POST("/auth/qr/start", authLimit, authH.QRStart)
 	api.POST("/auth/qr/status", qrLimit, authH.QRStatus)
 
+	// 两步验证（handler/auth_2fa.go，默认关闭）：登录密码正确后若开了 2FA，
+	// 只发短寿命票据，verify 通过才签 JWT。verify/email-code 免鉴权靠票据，
+	// 每票据最多试 5 次 + authLimit 双重限流；设置页接口走 authed 组。
+	api.POST("/auth/2fa/verify", authLimit, authH.TwofaVerify)
+	api.POST("/auth/2fa/email-code", authLimit, authH.TwofaEmailCodeForLogin)
+
 	// 需登录（Auth → Ban → Maintenance：维护模式要能读到用户角色）
 	authed := api.Group(
 		"",
@@ -221,6 +228,13 @@ func New(d Deps) *gin.Engine {
 		authed.PATCH("/me", authH.UpdateMe)
 		// 扫码登录：手机端（已登录）确认授权桌面登录；维护模式随组内中间件 503
 		authed.POST("/auth/qr/confirm", authH.QRConfirm)
+		// 两步验证：状态 / 开启（TOTP、邮箱）/ 关闭（需密码再认证）
+		authed.GET("/me/2fa", authH.TwofaStatus)
+		authed.POST("/me/2fa/totp/setup", authH.TwofaTotpSetup)
+		authed.POST("/me/2fa/totp/enable", authH.TwofaTotpEnable)
+		authed.POST("/me/2fa/email/code", authH.TwofaEmailCode)
+		authed.POST("/me/2fa/email/enable", authH.TwofaEmailEnable)
+		authed.POST("/me/2fa/disable", authH.TwofaDisable)
 		// 换绑邮箱：给「新邮箱」发验证码（按用户限流，60 秒冷却由 store 保证）
 		emailCodeLimit := middleware.RateLimit(middleware.NewLimiterStore(5, 5), middleware.KeyByUID)
 		authed.POST("/me/email-code", emailCodeLimit, authH.EmailCodeChange)

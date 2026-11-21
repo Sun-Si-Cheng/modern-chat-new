@@ -90,10 +90,18 @@ AdminPluginRow  { name, version, installCount, enabledCount, globalDisabled, cre
 | GET `/api/auth/sso/start` | `?redirect=`（站内相对路径） | 302 → 聚合中心授权页；state 由 HMAC 签名 + 一次性 nonce（Cookie 双绑定）防登录 CSRF |
 | GET `/api/auth/sso/callback` | 中心回跳 `?code&state` 或 `?error` | 校验 state → code 换 token → 取资料 → 按用户名（需邮箱一致）/邮箱关联或建号 → 签一次性票据 → 302 回 `SSO_SITE_URL + SSO_APP_BASE + /sso/callback?ticket&redirect` |
 | POST `/api/auth/sso/exchange` | `{ticket}` | `{token, user}`；**免鉴权**，票据一次性、5 分钟有效，用后即废 |
+| POST `/api/auth/2fa/verify` | `{ticket, code}` | `{token, user}`；**免鉴权**。两步验证第二因子：6 位 = TOTP / 邮箱码（按开启方式），8 位十六进制 = 恢复码（单次有效）；每票据最多 5 次；成功签发 JWT + mc_auth cookie |
+| POST `/api/auth/2fa/email-code` | `{ticket}` | `{ok:true, cooldownSeconds}`；**免鉴权**，登录期向本人邮箱发码（60s 冷却） |
 | POST `/api/auth/qr/start` | — | `{token, expiresAt}`；**免鉴权**。桌面端生成扫码会话（5 分钟有效），前端渲染成指向 `/app/qr/<token>` 的二维码 |
 | POST `/api/auth/qr/status` | `{token}` | `{status:"pending"\|"confirmed"\|"expired", token?, user?}`；**免鉴权**，桌面 2.5s 轮询（专用限流 60/min；POST 传 body 防票据进访问日志）。confirmed 时下发桌面端 JWT 一次性消费——首个成功轮询取走，重试拿 expired；确认人被封禁则作废返回 expired |
 | POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`；**需手机端 JWT**（authed 组）。授权桌面登录；二维码无效/过期→400 |
 | GET `/api/me` | — | `User`（含 email） |
+| GET `/api/me/2fa` | — | `{enabled, method, email}`；本人两步验证状态 |
+| POST `/api/me/2fa/totp/setup` | — | `{secret, otpauthUrl}`；生成 TOTP 密钥（未启用，enable 通过才落开关） |
+| POST `/api/me/2fa/totp/enable` | `{code}` | `{ok:true, recoveryCodes[]}`；开启 app 方式 + 8 个恢复码（sha256 落库） |
+| POST `/api/me/2fa/email/code` | — | `{ok:true, cooldownSeconds}`；purpose=twofa（60s 冷却，需 SMTP） |
+| POST `/api/me/2fa/email/enable` | `{code}` | `{ok:true, recoveryCodes[]}`；开启 email 方式 |
+| POST `/api/me/2fa/disable` | `{password}` | `{ok:true}`；密码再认证后关闭，密钥与恢复码清除 |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}`。**换绑邮箱必须带 `emailCode`**（发往新邮箱、核销通过才落库并置 `email_verified=true`；空串 `email` 表示解绑、不需要验证）；邮箱未变化时不改动验证状态；SMTP 未配置时换绑返回 400。avatar 为 `data:image/(png\|jpeg\|webp);base64,…`，前端压至 256×256，服务端校验前缀与 ≤256KB，空串清除 | 更新后 `User` |
 | POST `/api/me/email-code` | `{email}`（新邮箱） | `{ok:true, cooldownSeconds}`；与当前邮箱相同→400，被他人占用→409，SMTP 不可用→503；每用户 5 次/分，同邮箱 60 秒冷却 |
 | POST `/api/me/logout-others` | — | `{ok:true}`；`token_version+1`，所有旧 JWT 失效；同时主动 `KickUser` 断开该账号全部已建 WS 连接（发送 `kicked` 帧），当前设备也需重新登录 |

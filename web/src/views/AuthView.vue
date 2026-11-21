@@ -146,7 +146,12 @@ async function doSubmit() {
   loading.value = true
   try {
     if (mode.value === 'login') {
-      await auth.login(loginForm.username, loginForm.password)
+      const result = await auth.login(loginForm.username, loginForm.password)
+      // 已开启两步验证：不落登录态，切到第二因子表单（票据绑定本次登录）
+      if ('twofa' in result) {
+        startTwofa(result.ticket, result.method)
+        return
+      }
     } else {
       await auth.register(
         registerForm.username,
@@ -227,6 +232,78 @@ function startSso() {
       ? route.query.redirect
       : '/chat'
   location.href = `/api/auth/sso/start?redirect=${encodeURIComponent(redirect)}`
+}
+
+// ===== 两步验证（登录第二因子，handler/auth_2fa.go，默认关闭） =====
+
+const twofaStep = ref(false)
+const twofaTicket = ref('')
+const twofaMethod = ref<'' | 'app' | 'email'>('')
+const twofaUsingRecovery = ref(false)
+const twofaCode = ref('')
+const twofaVerifying = ref(false)
+const twofaEmailCooldown = ref(0)
+let twofaEmailTimer: ReturnType<typeof setInterval> | null = null
+
+function startTwofa(ticket: string, method: '' | 'app' | 'email') {
+  twofaTicket.value = ticket
+  twofaMethod.value = method
+  twofaUsingRecovery.value = false
+  twofaCode.value = ''
+  twofaStep.value = true
+}
+
+function useRecovery() {
+  twofaUsingRecovery.value = true
+  twofaCode.value = ''
+}
+
+function backToPassword() {
+  stopTwofaEmailTimer()
+  twofaStep.value = false
+  twofaTicket.value = ''
+  twofaCode.value = ''
+  twofaUsingRecovery.value = false
+}
+
+function stopTwofaEmailTimer() {
+  if (twofaEmailTimer) {
+    clearInterval(twofaEmailTimer)
+    twofaEmailTimer = null
+  }
+}
+
+/** 登录期向本人邮箱发第二因子验证码（email 方式） */
+async function sendTwofaEmail() {
+  try {
+    const r = await authApi.twofaEmailCodeForLogin(twofaTicket.value)
+    twofaEmailCooldown.value = r.cooldownSeconds ?? 60
+    void MessagePlugin.success(t('auth.codeSent'))
+    stopTwofaEmailTimer()
+    twofaEmailTimer = setInterval(() => {
+      if (twofaEmailCooldown.value > 0) twofaEmailCooldown.value--
+      else stopTwofaEmailTimer()
+    }, 1000)
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.sendFailed'))
+  }
+}
+
+/** 校验第二因子（TOTP / 邮箱码 / 恢复码）并落登录态 */
+async function verifyTwofa() {
+  if (!twofaCode.value.trim()) return
+  twofaVerifying.value = true
+  try {
+    await auth.verifyTwofa(twofaTicket.value, twofaCode.value.trim())
+    stopTwofaEmailTimer()
+    void MessagePlugin.success(t('auth.loginOk'))
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/chat'
+    await router.push(redirect)
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.verifyFailed'))
+  } finally {
+    twofaVerifying.value = false
+  }
 }
 
 // ===== 扫码登录（桌面端展示二维码，手机端扫码确认，handler/auth_qr.go） =====
@@ -323,8 +400,92 @@ onBeforeUnmount(stopQrPolling)
         <span class="auth-card__product">{{ siteName }}</span>
       </div>
 
-      <!-- 扫码登录：桌面展示二维码，手机端扫码后在本站确认页授权 -->
-      <template v-if="qrOpen">
+      <!-- 两步验证：密码正确后的第二因子表单（默认关闭，开启后登录出现） -->
+      <template v-if="twofaStep">
+        <h1 class="auth-card__title">{{ t('auth.twofaLoginTitle') }}</h1>
+        <p class="auth-card__notice text-placeholder">{{ t('auth.twofaLoginDesc') }}</p>
+
+        <template v-if="!twofaUsingRecovery">
+          <p class="auth-card__notice text-placeholder">
+            {{
+              twofaMethod === 'app'
+                ? t('auth.twofaMethodApp')
+                : twofaMethod === 'email'
+                  ? t('auth.twofaMethodEmail')
+                  : t('auth.twofaNotConfigured')
+            }}
+          </p>
+          <UiInput
+            v-model="twofaCode"
+            size="large"
+            :maxlength="twofaUsingRecovery ? 20 : 6"
+            :placeholder="twofaUsingRecovery ? t('auth.twofaRecoveryCode') : t('auth.enterCode')"
+            clearable
+            @enter="verifyTwofa"
+          >
+          <UiButton
+            class="auth-card__submit"
+            theme="primary"
+            block
+            size="large"
+            :loading="twofaVerifying"
+            @click="verifyTwofa"
+          >
+            {{ t('auth.twofaVerify') }}
+          </UiButton>
+          <p v-if="twofaMethod === 'email'" class="auth-card__notice text-placeholder">
+            <button
+              type="button"
+              class="auth-card__link-btn"
+              :disabled="twofaEmailCooldown > 0"
+              @click="sendTwofaEmail"
+            >
+              {{ twofaEmailCooldown > 0 ? t('auth.twofaResendIn', { n: twofaEmailCooldown }) : t('auth.twofaSendCode') }}
+            </button>
+          </p>
+          <p class="auth-card__notice text-placeholder">
+            <button type="button" class="auth-card__link-btn" @click="useRecovery">
+              {{ t('auth.twofaUseRecovery') }}
+            </button>
+          </p>
+        </template>
+        <template v-else>
+          <p class="auth-card__notice text-placeholder">{{ t('auth.twofaRecoveryDesc') }}</p>
+          <UiInput
+            v-model="twofaCode"
+            size="large"
+            :maxlength="20"
+            :placeholder="t('auth.twofaRecoveryCode')"
+            clearable
+            @enter="verifyTwofa"
+          >
+          <UiButton
+            class="auth-card__submit"
+            theme="primary"
+            block
+            size="large"
+            :loading="twofaVerifying"
+            @click="verifyTwofa"
+          >
+            {{ t('auth.twofaVerify') }}
+          </UiButton>
+          <p class="auth-card__notice text-placeholder">
+            <button
+              type="button"
+              class="auth-card__link-btn"
+              @click="twofaUsingRecovery = false; twofaCode = ''"
+            >
+              {{ t('auth.twofaBackToCode') }}
+            </button>
+          </p>
+        </template>
+        <div class="auth-card__links">
+          <button type="button" class="auth-card__link-btn" @click="backToPassword">
+            {{ t('auth.twofaBackToLogin') }}
+          </button>
+        </div>
+      </template>
+      <template v-else-if="qrOpen">
         <h1 class="auth-card__title">{{ t('auth.qrLogin') }}</h1>
         <div class="auth-card__qr">
           <img v-if="qrImg" :src="qrImg" alt="" width="200" height="200" />

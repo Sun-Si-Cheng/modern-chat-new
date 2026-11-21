@@ -69,6 +69,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Friend{},
 		&model.Plugin{},
 		&model.PasswordReset{},
+		&model.TwofaRecoveryCode{},
 		&model.AdminAudit{},
 		&model.SystemSetting{},
 		&model.Sticker{},

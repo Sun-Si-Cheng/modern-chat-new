@@ -23,6 +23,24 @@ export interface AuthPayload {
   user: User
 }
 
+/** 登录结果：未开两步验证 = AuthPayload；已开启 = 先拿票据，verify 通过才发 JWT */
+export type LoginResult =
+  | AuthPayload
+  | { twofa: true; ticket: string; method: '' | 'app' | 'email' }
+
+/** 两步验证状态（仅本人可见，设置页展示） */
+export interface TwofaStatus {
+  enabled: boolean
+  method: '' | 'app' | 'email'
+  email: boolean
+}
+
+/** 启用两步验证的一次性恢复码（明文仅此一次下发） */
+export interface TwofaEnableResult {
+  ok: true
+  recoveryCodes: string[]
+}
+
 // ===== 会话 =====
 
 /** 1=单聊 2=群聊 3=系统公告会话 */

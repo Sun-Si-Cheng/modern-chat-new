@@ -11,15 +11,21 @@ type User struct {
 	Nickname     string `gorm:"size:20" json:"nickname"`
 	AvatarColor  string `gorm:"size:16" json:"avatarColor"`
 	// Avatar 自定义头像：前端压缩后的 data URL（≤256KB），空表示使用默认头像
-	Avatar        string     `gorm:"type:mediumtext" json:"avatar,omitempty"`
-	Email         *string    `gorm:"size:254;uniqueIndex" json:"email,omitempty"`
-	EmailVerified bool       `json:"-"`
-	Role          string     `gorm:"size:10;default:user" json:"role"` // user | admin
-	TokenVersion  int64      `gorm:"not null;default:1" json:"-"`
-	BannedUntil   *time.Time `json:"bannedUntil,omitempty"`
-	BanReason     *string    `gorm:"size:255" json:"banReason,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"-"`
+	Avatar        string  `gorm:"type:mediumtext" json:"avatar,omitempty"`
+	Email         *string `gorm:"size:254;uniqueIndex" json:"email,omitempty"`
+	EmailVerified bool    `json:"-"`
+	// 两步验证（默认关闭，用户在设置页自行开启）：method 为空串 = 未启用。
+	// Secret 为 TOTP 密钥（base32），验证器应用方式落库，邮箱方式不需要。
+	// 三个字段都不进 JSON——2FA 状态只经 /api/me/2fa 暴露给本人。
+	TwofaSecret  string     `gorm:"size:64;default:''" json:"-"`
+	TwofaMethod  string     `gorm:"size:8;default:''" json:"-"` // '' | app | email
+	TwofaEnabled bool       `gorm:"default:false" json:"-"`
+	Role         string     `gorm:"size:10;default:user" json:"role"` // user | admin
+	TokenVersion int64      `gorm:"not null;default:1" json:"-"`
+	BannedUntil  *time.Time `json:"bannedUntil,omitempty"`
+	BanReason    *string    `gorm:"size:255" json:"banReason,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"-"`
 }
 
 // IsBanned 当前是否处于封禁期。

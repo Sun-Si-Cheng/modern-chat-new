@@ -72,10 +72,18 @@ curl https://site/api/conversations -H 'Authorization: Bearer <token>'
 | POST `/api/auth/qr/status` | `{token}` | `{status, token?, user?}`; **no auth**, desktop polls every 2.5s (rate limit 60/min). `confirmed` hands out the desktop JWT once |
 | POST `/api/auth/qr/confirm` | `{token}` | `{ok:true}`; **requires the phone's JWT**. Authorizes the desktop sign-in; invalid/expired QR→400 |
 | POST `/api/auth/migrate-login` | `{token, key}` | `{token, user}`; **no auth**, one-time legacy-site migration ticket (10 minutes); on failure use the original password |
+| POST `/api/auth/2fa/verify` | `{ticket, code}` | `{token, user}`; **no auth**. Two-factor second step: 6 digits = TOTP / email code (per the enabled method), 8 hex chars (dashes optional) = one-time recovery code; max 5 tries per ticket |
+| POST `/api/auth/2fa/email-code` | `{ticket}` | `{ok:true, cooldownSeconds}`; **no auth**, sends the second-factor email code during login (60s cooldown) |
 | GET `/api/me` | — | `User` (own record includes email / emailVerified) |
 | PATCH `/api/me` | `{nickname?, email?, avatar?, emailCode?}` | updated `User`. Changing email requires `emailCode` (sent to the new address); empty-string `email` unbinds; avatar is a dataURL (≤256KB) or empty string to clear. Nickname/avatar changes broadcast `user_change` |
 | POST `/api/me/email-code` | `{email}` (new email) | `{ok:true, cooldownSeconds}`; taken by someone else→409 |
 | POST `/api/me/logout-others` | — | `{ok:true}`; `token_version+1` invalidates all devices and kicks them (incl. WS `kicked`) |
+| GET `/api/me/2fa` | — | `{enabled, method, email}`; the user's own 2FA status (off by default, shown in settings) |
+| POST `/api/me/2fa/totp/setup` | — | `{secret, otpauthUrl}`; generates the TOTP secret (the frontend renders the otpauth QR locally / manual entry) — not enabled yet |
+| POST `/api/me/2fa/totp/enable` | `{code}` | `{ok:true, recoveryCodes[]}`; verifies the 6-digit code, enables, returns 8 one-time recovery codes (plaintext shown only once) |
+| POST `/api/me/2fa/email/code` | — | `{ok:true, cooldownSeconds}`; emails the enabling code to the user (60s cooldown, SMTP required) |
+| POST `/api/me/2fa/email/enable` | `{code}` | `{ok:true, recoveryCodes[]}`; verifies the email code, enables |
+| POST `/api/me/2fa/disable` | `{password}` | `{ok:true}`; disables (password re-auth), clearing the secret and recovery codes |
 | GET `/api/version` | — | `{version, commit, buildTime}`; **no auth** |
 
 ---

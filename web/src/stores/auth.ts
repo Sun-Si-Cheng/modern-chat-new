@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { ApiError, onUnauthorized } from '@/core/network/http'
 
 import { authApi } from '@/core/network/endpoints'
+import type { LoginResult } from '@/types/proto'
 import { getToken, setToken } from '@/core/network/http'
 import type { User } from '@/types/proto'
 
@@ -28,8 +29,20 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = payload.user
   }
 
-  async function login(username: string, password: string) {
-    applyAuth(await authApi.login({ username, password }))
+  /**
+   * 密码登录：未开两步验证直接完成登录；已开启则**不落登录态**，返回
+   * 票据与方式（调用方切到两步验证表单，verifyTwofa 通过后再落登录态）。
+   */
+  async function login(username: string, password: string): Promise<LoginResult> {
+    const result = await authApi.login({ username, password })
+    if ('twofa' in result) return result
+    applyAuth(result)
+    return result
+  }
+
+  /** 两步验证第二因子校验通过：落登录态（TOTP / 邮箱码 / 恢复码都走这里） */
+  async function verifyTwofa(ticket: string, code: string) {
+    applyAuth(await authApi.twofaVerify(ticket, code))
   }
 
   async function register(
@@ -96,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
     /** 旧站迁移自动登录等场景：直接用服务端返回的会话写入本地 */
     applyAuth,
     login,
+    verifyTwofa,
     register,
     sendRegisterCode,
     sendEmailChangeCode,

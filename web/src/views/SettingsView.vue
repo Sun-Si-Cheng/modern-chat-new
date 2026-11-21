@@ -24,7 +24,9 @@ import {
   measureLocalCache,
   type LocalCacheUsage,
 } from '@/composables/localCache'
-import { authApi, systemApi, type VersionInfo } from '@/core/network/endpoints'
+import QRCode from 'qrcode'
+
+import { authApi, systemApi, type TwofaStatus, type VersionInfo } from '@/core/network/endpoints'
 import { useAuthStore } from '@/stores/auth'
 import { useConversationsStore } from '@/stores/conversations'
 import { useFriendsStore } from '@/stores/friends'
@@ -127,6 +129,7 @@ async function onNotifyToggle(v: unknown) {
 // 账号卡片会误显示「登录后可修改昵称与邮箱」。这里自行补一次资料拉取。
 onMounted(async () => {
   void refreshCacheUsage()
+  void loadTwofa()
   if (!auth.token || auth.user) return
   try {
     await auth.fetchMe()
@@ -134,6 +137,133 @@ onMounted(async () => {
     /* 令牌失效由请求拦截器统一处理 */
   }
 })
+
+// ===== 两步验证（默认关闭，设置页开启 / 关闭）=====
+
+const twofa = ref<TwofaStatus>({ enabled: false, method: '', email: false })
+/** '' = 未在流程中；choose = 选方式；app / email = 各自开启流程；recovery = 展示恢复码 */
+const twofaSetup = ref<'' | 'choose' | 'app' | 'email' | 'recovery'>('')
+const twofaSecret = ref('')
+const twofaOtpauthImg = ref('')
+const twofaSetupCode = ref('')
+const twofaEnabling = ref(false)
+const twofaRecovery = ref<string[]>([])
+const twofaEmailCd = ref(0)
+const twofaOffPassword = ref('')
+const twofaDisabling = ref(false)
+let twofaCdTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadTwofa() {
+  if (!auth.token) return
+  try {
+    twofa.value = await authApi.twofaStatus()
+  } catch {
+    /* 状态拉取失败按未开启展示 */
+  }
+}
+
+function stopTwofaCd() {
+  if (twofaCdTimer) {
+    clearInterval(twofaCdTimer)
+    twofaCdTimer = null
+  }
+}
+onBeforeUnmount(stopTwofaCd)
+
+async function startTwofaSetup(kind: 'app' | 'email') {
+  twofaSetup.value = kind
+  twofaSetupCode.value = ''
+  if (kind !== 'app') return
+  try {
+    const s = await authApi.twofaTotpSetup()
+    twofaSecret.value = s.secret
+    twofaOtpauthImg.value = await QRCode.toDataURL(s.otpauthUrl, { width: 180, margin: 1 })
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.setupFailed'))
+    twofaSetup.value = ''
+  }
+}
+
+function cancelTwofaSetup() {
+  twofaSetup.value = ''
+  twofaSecret.value = ''
+  twofaOtpauthImg.value = ''
+  twofaSetupCode.value = ''
+  twofaRecovery.value = []
+}
+
+async function enableTotp() {
+  twofaEnabling.value = true
+  try {
+    const r = await authApi.twofaTotpEnable(twofaSetupCode.value.trim())
+    twofaRecovery.value = r.recoveryCodes
+    twofaSetup.value = 'recovery'
+    await loadTwofa()
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.verifyFailed'))
+  } finally {
+    twofaEnabling.value = false
+  }
+}
+
+async function sendTwofaSetupCode() {
+  try {
+    const r = await authApi.twofaEmailCode()
+    twofaEmailCd.value = r.cooldownSeconds ?? 60
+    void MessagePlugin.success(t('auth.codeSent'))
+    stopTwofaCd()
+    twofaCdTimer = setInterval(() => {
+      if (twofaEmailCd.value > 0) twofaEmailCd.value--
+      else stopTwofaCd()
+    }, 1000)
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.sendFailed'))
+  }
+}
+
+async function enableEmail() {
+  twofaEnabling.value = true
+  try {
+    const r = await authApi.twofaEmailEnable(twofaSetupCode.value.trim())
+    twofaRecovery.value = r.recoveryCodes
+    twofaSetup.value = 'recovery'
+    await loadTwofa()
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.verifyFailed'))
+  } finally {
+    twofaEnabling.value = false
+  }
+}
+
+/** 恢复码以文本文件下载（仅展示一次，用户自行保存） */
+function downloadRecovery() {
+  const blob = new Blob([twofaRecovery.value.join('\\n')], { type: 'text/plain;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'modernchat-recovery-codes.txt'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+/** 启用流程收尾：隐藏恢复码展示 */
+function finishTwofaSetup() {
+  cancelTwofaSetup()
+}
+
+async function disableTwofa() {
+  twofaDisabling.value = true
+  try {
+    await authApi.twofaDisable(twofaOffPassword.value)
+    twofaOffPassword.value = ''
+    twofaSetup.value = ''
+    await loadTwofa()
+    void MessagePlugin.success(t('settings.twofaDisabled'))
+  } catch (e) {
+    void MessagePlugin.error(te(e) || t('auth.opFailed'))
+  } finally {
+    twofaDisabling.value = false
+  }
+}
 
 // ===== 布局（宽度可调 / 区域可改抽屉形态）=====
 
@@ -496,6 +626,141 @@ function goBack() {
         </p>
       </section>
 
+      <!-- 两步验证（默认关闭，可开可关） -->
+      <section class="settings-card">
+        <h2 class="settings-card__title">{{ t('settings.twofaTitle') }}</h2>
+        <p class="settings-card__hint text-placeholder">{{ t('settings.twofaHint') }}</p>
+
+        <template v-if="auth.user">
+          <!-- 状态行 -->
+          <div class="settings-row">
+            <div class="settings-row__text">
+              <span class="settings-row__label">{{ t('settings.twofaStatus') }}</span>
+              <span class="settings-row__hint text-placeholder">
+                {{
+                  twofa.enabled
+                    ? t('settings.twofaOn', {
+                        method: twofa.method === 'app' ? t('settings.twofaMethodApp') : t('settings.twofaMethodEmail'),
+                      })
+                    : t('settings.twofaOff')
+                }}
+              </span>
+            </div>
+            <UiButton
+              v-if="!twofa.enabled && twofaSetup === ''"
+              variant="outline"
+              size="small"
+              @click="twofaSetup = 'choose'"
+            >
+              {{ t('settings.twofaEnable') }}
+            </UiButton>
+          </div>
+
+          <!-- 开启：选方式 -->
+          <template v-if="!twofa.enabled && twofaSetup === 'choose'">
+            <div class="settings-row">
+              <div class="settings-row__text">
+                <span class="settings-row__label">{{ t('auth.twofaMethodApp') }}</span>
+                <span class="settings-row__hint text-placeholder">{{ t('auth.twofaMethodAppHint') }}</span>
+              </div>
+              <UiButton variant="outline" size="small" @click="startTwofaSetup('app')">
+                {{ t('settings.twofaChoose') }}
+              </UiButton>
+            </div>
+            <div class="settings-row settings-row--last">
+              <div class="settings-row__text">
+                <span class="settings-row__label">{{ t('auth.twofaMethodEmail') }}</span>
+                <span class="settings-row__hint text-placeholder">{{ t('auth.twofaMethodEmailHint') }}</span>
+              </div>
+              <UiButton
+                variant="outline"
+                size="small"
+                :disabled="!twofa.email"
+                @click="startTwofaSetup('email')"
+              >
+                {{ t('settings.twofaChoose') }}
+              </UiButton>
+            </div>
+            <p v-if="!twofa.email" class="settings-field__hint text-placeholder">
+              {{ t('settings.twofaNeedEmail') }}
+            </p>
+          </template>
+
+          <!-- 开启：验证器应用（扫码 / 手动录入 + 6 位码） -->
+          <template v-if="!twofa.enabled && twofaSetup === 'app'">
+            <p class="settings-field__hint">{{ t('auth.scanDesc', { issuer: 'ModernChat' }) }}</p>
+            <img v-if="twofaOtpauthImg" :src="twofaOtpauthImg" alt="" width="180" height="180" />
+            <p class="settings-field__hint text-placeholder">
+              {{ t('auth.manualCode') }}：<span class="num">{{ twofaSecret }}</span>
+            </p>
+            <div class="settings-field">
+              <UiInput v-model="twofaSetupCode" :maxlength="6" :placeholder="t('auth.enter6')" clearable />
+            </div>
+            <div class="settings-actions">
+              <UiButton theme="primary" :loading="twofaEnabling" @click="enableTotp">
+                {{ t('settings.twofaEnable') }}
+              </UiButton>
+              <UiButton variant="outline" @click="cancelTwofaSetup">{{ t('common.cancel') }}</UiButton>
+            </div>
+          </template>
+
+          <!-- 开启：邮箱验证码 -->
+          <template v-if="!twofa.enabled && twofaSetup === 'email'">
+            <p class="settings-field__hint">{{ t('auth.emailDesc', { email: profile.email || '' }) }}</p>
+            <div class="settings-code-row">
+              <UiInput v-model="twofaSetupCode" :maxlength="6" :placeholder="t('auth.enter6')" />
+              <UiButton variant="outline" :disabled="twofaEmailCd > 0" @click="sendTwofaSetupCode">
+                {{ twofaEmailCd > 0 ? t('auth.twofaResendIn', { n: twofaEmailCd }) : t('auth.twofaSendCode') }}
+              </UiButton>
+            </div>
+            <div class="settings-actions">
+              <UiButton theme="primary" :loading="twofaEnabling" :disabled="!twofaSetupCode" @click="enableEmail">
+                {{ t('settings.twofaEnable') }}
+              </UiButton>
+              <UiButton variant="outline" @click="cancelTwofaSetup">{{ t('common.cancel') }}</UiButton>
+            </div>
+          </template>
+
+          <!-- 启用成功：一次性展示恢复码 -->
+          <template v-if="twofaSetup === 'recovery'">
+            <p class="settings-field__hint">{{ t('auth.setupDoneDesc') }}</p>
+            <p class="settings-field__hint text-placeholder">{{ t('auth.recoveryWarn') }}</p>
+            <pre class="settings-twofa-codes num">{{ twofaRecovery.join('\\n') }}</pre>
+            <div class="settings-actions">
+              <UiButton variant="outline" size="small" @click="downloadRecovery">
+                {{ t('auth.downloadRecovery') }}
+              </UiButton>
+              <UiButton theme="primary" size="small" @click="finishTwofaSetup">
+                {{ t('auth.setupDone') }}
+              </UiButton>
+            </div>
+          </template>
+
+          <!-- 关闭：密码再认证 -->
+          <template v-if="twofa.enabled && twofaSetup !== 'recovery'">
+            <div class="settings-row">
+              <div class="settings-row__text">
+                <span class="settings-row__label">{{ t('settings.twofaDisableLabel') }}</span>
+                <span class="settings-row__hint text-placeholder">{{ t('settings.twofaDisableHint') }}</span>
+              </div>
+            </div>
+            <div class="settings-code-row">
+              <UiInput v-model="twofaOffPassword" type="password" :placeholder="t('auth.password')" clearable />
+              <UiButton
+                variant="outline"
+                theme="danger"
+                size="small"
+                :loading="twofaDisabling"
+                :disabled="!twofaOffPassword"
+                @click="disableTwofa"
+              >
+                {{ t('settings.twofaDisableBtn') }}
+              </UiButton>
+            </div>
+          </template>
+        </template>
+      </section>
+
       <!-- 布局 -->
       <section class="settings-card">
         <h2 class="settings-card__title">{{ t('settings.layout') }}</h2>
@@ -703,6 +968,17 @@ function goBack() {
 .settings-row__hint {
   font-size: 12px;
   line-height: 1.4;
+}
+
+/* ===== 两步验证恢复码 ===== */
+.settings-twofa-codes {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: var(--mc-radius-md);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.8;
+  white-space: pre-wrap;
 }
 
 /* ===== 布局分区 ===== */
